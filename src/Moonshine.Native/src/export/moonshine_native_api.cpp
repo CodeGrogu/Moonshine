@@ -1,5 +1,6 @@
 #define MOONSHINE_NATIVE_EXPORTS
 #include "moonshine/export/moonshine_native_api.h"
+#include <cstring>
 #include "moonshine/fec/reed_solomon_simd.hpp"
 #include "moonshine/ring_buffer/spsc_ring_buffer.hpp"
 #include "moonshine/jitter_buffer/jitter_buffer.hpp"
