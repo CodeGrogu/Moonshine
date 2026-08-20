@@ -23,3 +23,11 @@ add_executable(test_c_abi_export
 )
 target_link_libraries(test_c_abi_export PRIVATE Moonshine.Native)
 add_test(NAME test_c_abi_export COMMAND test_c_abi_export)
+
+if(WIN32)
+    add_custom_command(TARGET test_c_abi_export POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:Moonshine.Native>
+            $<TARGET_FILE_DIR:test_c_abi_export>
+    )
+endif()

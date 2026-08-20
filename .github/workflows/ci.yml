@@ -59,6 +59,9 @@ jobs:
         run: cmake --build build --config ${{ matrix.configuration }} --parallel
 
       - name: Run Native CTest Suite
+        env:
+          PATH: ${{ github.workspace }}/build/bin;${{ github.workspace }}/build/src/Moonshine.Native;${{ env.PATH }}
+          LD_LIBRARY_PATH: ${{ github.workspace }}/build/bin:${{ github.workspace }}/build/src/Moonshine.Native:${{ env.LD_LIBRARY_PATH }}
         run: ctest --test-dir build --output-on-failure -C ${{ matrix.configuration }} --timeout 60
 
       - name: Restore Managed .NET Solution
@@ -71,10 +74,15 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $nativeDll = "build/src/Moonshine.Native/Moonshine.Native.dll"
-          if (Test-Path $nativeDll) {
-            Get-ChildItem -Path "tests/*/bin/${{ matrix.configuration }}/net9.0" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-              Copy-Item $nativeDll $_.FullName -Force -ErrorAction SilentlyContinue
+          $candidates = @(
+            "build/bin/Moonshine.Native.dll",
+            "build/src/Moonshine.Native/Moonshine.Native.dll"
+          )
+          foreach ($cand in $candidates) {
+            if (Test-Path $cand) {
+              Get-ChildItem -Path "tests/*/bin/${{ matrix.configuration }}/net9.0" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+                Copy-Item $cand $_.FullName -Force -ErrorAction SilentlyContinue
+              }
             }
           }
 

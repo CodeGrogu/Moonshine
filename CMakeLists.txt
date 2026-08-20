@@ -5,6 +5,11 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Unified Output Directory so executables and shared DLLs share the same folder
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
+
 # Option switches
 option(MOONSHINE_ENABLE_AVX2 "Enable AVX2 SIMD optimizations" ON)
 option(MOONSHINE_ENABLE_AVX512 "Enable AVX-512 and GFNI SIMD optimizations" OFF)
