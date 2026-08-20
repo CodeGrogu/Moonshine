@@ -4,6 +4,7 @@
 #include "moonshine/ring_buffer/spsc_ring_buffer.hpp"
 #include "moonshine/jitter_buffer/jitter_buffer.hpp"
 #include "moonshine/video/video_decoder_interface.hpp"
+#include "moonshine/video/dxgi_swapchain.hpp"
 #include "moonshine/audio/wasapi_renderer.hpp"
 
 using namespace moonshine;
@@ -140,6 +141,50 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_video_submit_frame(MoonshineDecoderHa
     if (!handle || !frame) return -1;
     auto* dec = static_cast<video::IVideoDecoder*>(handle);
     return dec->SubmitFrame(*frame);
+}
+
+// ============================================================================
+// Low-Latency DXGI Flip Model Swapchain APIs
+// ============================================================================
+
+MOONSHINE_API MoonshineSwapchainHandle MOONSHINE_CONV moonshine_swapchain_create(
+    void* hwnd,
+    void* d3d11_device,
+    uint32_t width,
+    uint32_t height,
+    uint32_t buffer_count,
+    uint8_t is_hdr10
+) {
+    auto* swapchain = new video::DxgiSwapchain();
+    if (swapchain->Initialize(hwnd, d3d11_device, width, height, buffer_count, is_hdr10 != 0) != 0) {
+        delete swapchain;
+        return nullptr;
+    }
+    return static_cast<MoonshineSwapchainHandle>(swapchain);
+}
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_swapchain_destroy(MoonshineSwapchainHandle handle) {
+    if (!handle) return;
+    auto* swapchain = static_cast<video::DxgiSwapchain*>(handle);
+    delete swapchain;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_swapchain_present(MoonshineSwapchainHandle handle, uint32_t sync_interval, uint32_t flags) {
+    if (!handle) return -1;
+    auto* swapchain = static_cast<video::DxgiSwapchain*>(handle);
+    return swapchain->Present(sync_interval, flags);
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_swapchain_resize(MoonshineSwapchainHandle handle, uint32_t width, uint32_t height) {
+    if (!handle) return -1;
+    auto* swapchain = static_cast<video::DxgiSwapchain*>(handle);
+    return swapchain->Resize(width, height);
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_swapchain_set_hdr(MoonshineSwapchainHandle handle, uint8_t is_hdr10) {
+    if (!handle) return -1;
+    auto* swapchain = static_cast<video::DxgiSwapchain*>(handle);
+    return swapchain->SetHdr(is_hdr10 != 0);
 }
 
 // ============================================================================

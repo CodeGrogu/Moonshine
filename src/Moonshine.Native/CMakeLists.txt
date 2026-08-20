@@ -3,6 +3,7 @@ add_library(Moonshine.Native SHARED
     src/fec/reed_solomon_simd.cpp
     src/jitter_buffer/jitter_buffer.cpp
     src/video/d3d11_video_decoder.cpp
+    src/video/dxgi_swapchain.cpp
     src/audio/wasapi_renderer.cpp
 )
 
