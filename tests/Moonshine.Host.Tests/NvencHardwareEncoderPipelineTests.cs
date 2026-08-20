@@ -34,7 +34,7 @@ public class NvencHardwareEncoderPipelineTests
     public void NvencHardwareEncoderPipeline_ConfigureTuningAndIntraRefresh_UpdatesState()
     {
         using var pipeline = new NvencHardwareEncoderPipeline(1920, 1080);
-        
+
         bool tuningOk = pipeline.ConfigureTuning(NvencPreset.P2_Fast, NvencTuning.LowLatency);
         tuningOk.Should().BeTrue();
         pipeline.Preset.Should().Be(NvencPreset.P2_Fast);
