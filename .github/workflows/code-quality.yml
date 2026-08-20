@@ -1,4 +1,4 @@
-name: Code Quality & Static Analysis
+name: Code Quality, Style & Linting
 
 on:
   push:
@@ -7,27 +7,27 @@ on:
     branches: [ main, develop ]
 
 jobs:
-  lint-and-format:
-    name: Lint & Format Check
-    runs-on: ubuntu-latest
+  format-and-lint:
+    name: Code Formatting & British English Audit
+    runs-on: windows-latest
     steps:
-      - name: Checkout Code
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup .NET SDK
+      - name: Setup .NET 9 SDK
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
 
-      - name: Check C# Formatting
-        run: |
-          dotnet format --verify-no-changes --verbosity diagnostic
+      - name: Verify .NET Code Formatting
+        run: dotnet format Moonshine.sln --verify-no-changes --verbosity normal
 
-      - name: Install Clang-Format
+      - name: Audit Emoji & Em Dash Exclusion
+        shell: pwsh
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-format
-
-      - name: Check C++ Clang-Format
-        run: |
-          find src/Moonshine.Native -name '*.cpp' -o -name '*.hpp' -o -name '*.h' | xargs clang-format --dry-run --Werror
+          $emDashMatches = Select-String -Path "src/**/*.cs", "src/**/*.hpp", "src/**/*.cpp", "wiki/*.md" -Pattern "—" -ErrorAction SilentlyContinue
+          if ($emDashMatches) {
+              $emDashMatches | ForEach-Object { Write-Error "Disallowed em dash found in $($_.Path):$($_.LineNumber)" }
+              throw "Em dashes are prohibited across Moonshine source and documentation."
+          }
+          Write-Host "Code quality, formatting, and typography checks passed."

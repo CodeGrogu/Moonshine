@@ -48,10 +48,11 @@ int JitterBuffer::PushPacket(const MoonshinePacketDesc& packet) noexcept {
 
         if (slot.received_packets >= slot.total_packets && slot.total_packets > 0) {
             slot.is_complete = true;
+            return 1; // 1 = Frame is complete
         }
     }
 
-    return 0;
+    return 0; // Incomplete, still buffering
 }
 
 int JitterBuffer::PopFrame(MoonshineFrameDesc& out_frame) noexcept {

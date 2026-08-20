@@ -12,7 +12,9 @@
 **Protocols**
 - [GameStream Protocol](GameStream-Sunshine-Protocol)
 
-**Engineering**
+**Workflows and Quality Assurance**
+- [CI and GitHub Workflows](Continuous-Integration-and-Workflows)
+- [Exhaustive Testing Strategy](Exhaustive-Testing-Strategy)
 - [Benchmarking and Audit](Benchmarking-and-Performance-Audit)
 - [Developer Setup and Build](Developer-Setup-and-Build)
 

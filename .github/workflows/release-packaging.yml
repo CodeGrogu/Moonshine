@@ -1,0 +1,61 @@
+name: Release Packaging & Distribution
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  package-release:
+    name: Package Release (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            target: win-x64
+            archive-name: moonshine-win-x64.zip
+          - os: ubuntu-latest
+            target: linux-x64
+            archive-name: moonshine-linux-x64.tar.gz
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 9 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Publish Native AOT Executable
+        run: >
+          dotnet publish src/Moonshine.Client/Moonshine.Client.csproj
+          -c Release
+          -r ${{ matrix.target }}
+          --self-contained
+          -p:PublishAot=true
+          -o ./dist/${{ matrix.target }}
+
+      - name: Package Windows Artifacts
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path ./dist/win-x64/* -DestinationPath ./${{ matrix.archive-name }}
+          $hash = (Get-FileHash ./${{ matrix.archive-name }} -Algorithm SHA256).Hash
+          "$hash  ${{ matrix.archive-name }}" | Out-File -FilePath ./${{ matrix.archive-name }}.sha256 -Encoding ascii
+
+      - name: Package Linux Artifacts
+        if: runner.os == 'Linux'
+        run: |
+          tar -czvf ./${{ matrix.archive-name }} -C ./dist/linux-x64 .
+          sha256sum ./${{ matrix.archive-name }} > ./${{ matrix.archive-name }}.sha256
+
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ./${{ matrix.archive-name }}
+            ./${{ matrix.archive-name }}.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,72 @@
+name: Native AOT Publish & Trimming Audit
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  aot-publish-windows:
+    name: Native AOT Build (Windows x64)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 9 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Setup MSVC C++ Environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Publish Moonshine Client via Native AOT
+        run: >
+          dotnet publish src/Moonshine.Client/Moonshine.Client.csproj
+          -c Release
+          -r win-x64
+          --self-contained
+          -p:PublishAot=true
+          -p:TreatWarningsAsErrors=true
+          -o ./publish/win-x64
+
+      - name: Verify Binary Size and Existence
+        shell: pwsh
+        run: |
+          $exePath = "./publish/win-x64/Moonshine.Client.exe"
+          if (-not (Test-Path $exePath)) { throw "Native AOT executable not generated." }
+          $sizeMb = (Get-Item $exePath).Length / 1MB
+          Write-Host "Native AOT Binary Size: $([math]::Round($sizeMb, 2)) MB"
+          if ($sizeMb -gt 40.0) { throw "Native AOT binary exceeded 40MB size budget." }
+
+  aot-publish-linux:
+    name: Native AOT Build (Linux x64)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 9 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Install Native Toolchain Dependencies
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+
+      - name: Publish Moonshine Client via Native AOT
+        run: >
+          dotnet publish src/Moonshine.Client/Moonshine.Client.csproj
+          -c Release
+          -r linux-x64
+          --self-contained
+          -p:PublishAot=true
+          -p:TreatWarningsAsErrors=true
+          -o ./publish/linux-x64
+
+      - name: Verify Binary Size
+        run: |
+          test -f ./publish/linux-x64/Moonshine.Client
+          ls -lh ./publish/linux-x64/Moonshine.Client

@@ -1,4 +1,4 @@
-name: Moonshine Continuous Integration
+name: Continuous Integration
 
 on:
   push:
@@ -6,84 +6,79 @@ on:
   pull_request:
     branches: [ main, develop ]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build-and-test-windows:
-    name: Windows Build (Native C++ & .NET Native AOT)
-    runs-on: windows-latest
+  build-and-test:
+    name: ${{ matrix.os }} (${{ matrix.compiler }} / ${{ matrix.configuration }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ windows-latest, ubuntu-latest ]
+        configuration: [ Release, Debug ]
+        compiler: [ default ]
+        include:
+          - os: windows-latest
+            compiler: msvc
+            configuration: Release
+          - os: ubuntu-latest
+            compiler: clang
+            configuration: Release
+
     steps:
-      - name: Checkout Code
+      - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Setup .NET SDK
+      - name: Setup .NET 9 SDK
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
 
-      - name: Setup Ninja
-        uses: ashutoshvarma/setup-ninja@master
+      - name: Setup Ninja Build System
+        uses: ashutoshvarma/setup-ninja@v1.1
         with:
-          version: 1.11.1
+          version: '1.11.1'
 
-      - name: Setup MSVC Environment
+      - name: Setup MSVC Environment (Windows)
+        if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Configure CMake Native Project (Release AVX2)
-        run: |
-          cmake -B build -S . -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DMOONSHINE_ENABLE_AVX2=ON -DMOONSHINE_BUILD_TESTS=ON
+      - name: Configure CMake Native Engine
+        run: >
+          cmake -B build -S . -G "Ninja"
+          -DCMAKE_BUILD_TYPE=${{ matrix.configuration }}
+          -DMOONSHINE_ENABLE_AVX2=ON
+          -DMOONSHINE_BUILD_TESTS=ON
 
-      - name: Build Native C++ Engine
-        run: |
-          cmake --build build --config Release --parallel
+      - name: Compile Native C++23 Engine
+        run: cmake --build build --config ${{ matrix.configuration }} --parallel
 
-      - name: Run Native C++ Tests
-        run: |
-          ctest --test-dir build --output-on-failure -C Release
+      - name: Run Native CTest Suite
+        run: ctest --test-dir build --output-on-failure -C ${{ matrix.configuration }}
 
-      - name: Build Managed Solution (.NET)
-        run: |
-          dotnet build Moonshine.sln -c Release
+      - name: Restore Managed .NET Solution
+        run: dotnet restore Moonshine.sln
 
-      - name: Run Managed Unit Tests
-        run: |
-          dotnet test Moonshine.sln -c Release --no-build --verbosity normal
+      - name: Build Managed Solution (${{ matrix.configuration }})
+        run: dotnet build Moonshine.sln -c ${{ matrix.configuration }} --no-restore
 
-  build-and-test-linux:
-    name: Linux Build (GCC/Clang & .NET Native AOT)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - name: Execute Managed xUnit Test Suites
+        run: >
+          dotnet test Moonshine.sln
+          -c ${{ matrix.configuration }}
+          --no-build
+          --verbosity normal
+          --collect:"XPlat Code Coverage"
+          --results-directory ./TestResults
+
+      - name: Upload Test Coverage Artifacts
+        if: matrix.configuration == 'Release' && matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
         with:
-          submodules: recursive
-
-      - name: Install System Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build build-essential libasound2-dev libpulse-dev libvulkan-dev libva-dev
-
-      - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '9.0.x'
-
-      - name: Configure CMake Native Project
-        run: |
-          cmake -B build -S . -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DMOONSHINE_ENABLE_AVX2=ON -DMOONSHINE_BUILD_TESTS=ON
-
-      - name: Build Native C++ Engine
-        run: |
-          cmake --build build --config Release --parallel
-
-      - name: Run Native C++ Tests
-        run: |
-          ctest --test-dir build --output-on-failure -C Release
-
-      - name: Build Managed Solution (.NET)
-        run: |
-          dotnet build Moonshine.sln -c Release
-
-      - name: Run Managed Unit Tests
-        run: |
-          dotnet test Moonshine.sln -c Release --no-build --verbosity normal
+          name: code-coverage-report
+          path: ./TestResults/**/coverage.cobertura.xml

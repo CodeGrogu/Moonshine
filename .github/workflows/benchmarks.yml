@@ -1,38 +1,52 @@
-name: Moonshine Performance & Benchmarks
+name: Performance Micro-Benchmarks & Allocation Audit
 
 on:
   push:
     branches: [ main ]
   pull_request:
-    paths:
-      - 'src/**'
-      - 'CMakeLists.txt'
+    branches: [ main ]
 
 jobs:
-  benchmark:
-    name: Micro-Benchmarks & Allocation Audit
+  run-benchmarks:
+    name: Micro-Benchmarks & Zero-Allocation Gate
     runs-on: windows-latest
     steps:
-      - name: Checkout Code
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup .NET SDK
+      - name: Setup .NET 9 SDK
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
 
+      - name: Setup Ninja
+        uses: ashutoshvarma/setup-ninja@v1.1
+
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Setup Ninja
-        uses: ashutoshvarma/setup-ninja@master
-
-      - name: Build Native & Managed Release
+      - name: Build Native C++ Engine
         run: |
           cmake -B build -S . -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DMOONSHINE_ENABLE_AVX2=ON
-          cmake --build build --config Release
-          dotnet build src/Moonshine.Benchmarks/Moonshine.Benchmarks.csproj -c Release
+          cmake --build build --config Release --parallel
 
-      - name: Run Micro-Benchmarks
+      - name: Copy Native DLL to Benchmark Output
+        shell: pwsh
         run: |
-          dotnet run --project src/Moonshine.Benchmarks/Moonshine.Benchmarks.csproj -c Release --no-build -- --job short --filter *
+          $dll = "./build/src/Moonshine.Native/Moonshine.Native.dll"
+          Copy-Item $dll "./src/Moonshine.Benchmarks/bin/Release/net9.0/" -Force -ErrorAction SilentlyContinue
+
+      - name: Run BenchmarkDotNet Suite
+        run: >
+          dotnet run
+          --project src/Moonshine.Benchmarks/Moonshine.Benchmarks.csproj
+          -c Release
+          --
+          --job short
+          --filter *
+
+      - name: Upload Benchmark Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: ./BenchmarkDotNet.Artifacts/results/*

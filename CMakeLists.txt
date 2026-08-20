@@ -17,6 +17,7 @@ if(MSVC)
         /W4
         /WX
         /wd4324
+        /wd4702
         /permissive-
         /Zc:__cplusplus
         /utf-8

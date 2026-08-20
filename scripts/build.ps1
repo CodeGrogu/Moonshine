@@ -61,6 +61,13 @@ if ($DotNetExe) {
     # 4. Run Managed Tests
     if (-not $SkipTests) {
         Write-Host "`n[4/4] Executing .NET Test Suites..." -ForegroundColor Yellow
+        $nativeDll = Join-Path $BuildDir "src\Moonshine.Native\Moonshine.Native.dll"
+        if (Test-Path $nativeDll) {
+            Get-ChildItem -Path "$RootDir\tests\*\bin\$Configuration\net9.0" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+                Copy-Item $nativeDll $_.FullName -Force -ErrorAction SilentlyContinue
+            }
+        }
+        $env:PATH = "$BuildDir\src\Moonshine.Native;" + $env:PATH
         & $DotNetExe test "$RootDir\Moonshine.sln" -c $Configuration --no-build --verbosity normal
         if ($LASTEXITCODE -ne 0) { throw ".NET tests failed." }
     }

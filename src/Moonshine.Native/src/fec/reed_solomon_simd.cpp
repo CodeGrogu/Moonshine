@@ -67,6 +67,8 @@ uint8_t ReedSolomonSimd::GfInverseScalar(uint8_t a) noexcept {
 }
 
 void ReedSolomonSimd::VectorXor(uint8_t* dest, const uint8_t* src, size_t length) noexcept {
+    if (!dest || !src || length == 0) return;
+
     size_t i = 0;
 #if defined(__AVX2__) || defined(MOONSHINE_HAS_AVX2)
     // 32-byte chunks using 256-bit AVX2 registers
@@ -89,7 +91,7 @@ void ReedSolomonSimd::VectorXor(uint8_t* dest, const uint8_t* src, size_t length
 }
 
 void ReedSolomonSimd::VectorGfMulAdd(uint8_t* dest, const uint8_t* src, uint8_t coeff, size_t length) noexcept {
-    if (coeff == 0) return;
+    if (!dest || !src || length == 0 || coeff == 0) return;
     if (coeff == 1) {
         VectorXor(dest, src, length);
         return;
@@ -148,27 +150,29 @@ int ReedSolomonSimd::Reconstruct(
     const int* erased_indices,
     int erased_count
 ) noexcept {
-    if (erased_count <= 0) return 0;
+    if (!shards || !erased_indices) return -1;
+    if (total_shards <= 0 || shard_size <= 0) return -1;
+    if (erased_count <= 0) return -1;
     if (erased_count > total_shards) return -1;
 
     // Single parity recovery (Fast XOR Parity Shard Case)
     if (erased_count == 1 && erased_indices[0] < total_shards) {
         int lost_idx = erased_indices[0];
-        std::memset(shards[lost_idx], 0, shard_size);
+        if (lost_idx < 0) return -1;
+        std::memset(shards[lost_idx], 0, static_cast<size_t>(shard_size));
         for (int i = 0; i < total_shards; ++i) {
             if (i != lost_idx) {
-                VectorXor(shards[lost_idx], shards[i], shard_size);
+                VectorXor(shards[lost_idx], shards[i], static_cast<size_t>(shard_size));
             }
         }
         return 0;
     }
 
-    // Multi-shard recovery with Vandermonde Matrix inversion
-    // (Optimized for 2-4 parity shards common in Moonlight/Sunshine)
+    // Multi-shard recovery
     for (int e = 0; e < erased_count; ++e) {
         int lost_idx = erased_indices[e];
         if (lost_idx < 0 || lost_idx >= total_shards) continue;
-        std::memset(shards[lost_idx], 0, shard_size);
+        std::memset(shards[lost_idx], 0, static_cast<size_t>(shard_size));
         
         for (int i = 0; i < total_shards; ++i) {
             bool is_erased = false;
@@ -180,7 +184,7 @@ int ReedSolomonSimd::Reconstruct(
             }
             if (!is_erased) {
                 uint8_t coeff = GfMultiplyScalar(static_cast<uint8_t>(i + 1), static_cast<uint8_t>(lost_idx + 1));
-                VectorGfMulAdd(shards[lost_idx], shards[i], coeff, shard_size);
+                VectorGfMulAdd(shards[lost_idx], shards[i], coeff, static_cast<size_t>(shard_size));
             }
         }
     }

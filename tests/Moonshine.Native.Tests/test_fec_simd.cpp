@@ -1,70 +1,147 @@
-#include "moonshine/export/moonshine_native_api.h"
 #include <iostream>
 #include <vector>
 #include <cstring>
 #include <cstdlib>
+#include "moonshine/fec/reed_solomon_simd.hpp"
 
-#define MOONSHINE_TEST_ASSERT(cond) \
-    do { \
-        if (!(cond)) { \
-            std::cerr << "Assertion failed: " #cond << " at " << __FILE__ << ":" << __LINE__ << "\n"; \
-            std::exit(1); \
-        } \
-    } while (0)
+#define TEST_ASSERT(expr) do { \
+    if (!(expr)) { \
+        std::cerr << "Assertion failed: " #expr " at " << __FILE__ << ":" << __LINE__ << std::endl; \
+        std::abort(); \
+    } \
+} while(0)
 
-void test_vector_xor_abi() {
-    std::cout << "[Test] moonshine_vector_xor AVX2 / SIMD ... ";
-    constexpr size_t size = 1024;
-    std::vector<uint8_t> a(size, 0xAA);
-    std::vector<uint8_t> b(size, 0x55);
+using namespace moonshine::fec;
 
-    moonshine_vector_xor(a.data(), b.data(), size);
+void TestVectorXorBasic()
+{
+    std::cout << "[Test] VectorXor basic 32-byte alignment..." << std::endl;
+    alignas(32) uint8_t dest[64];
+    alignas(32) uint8_t src[64];
 
-    for (size_t i = 0; i < size; ++i) {
-        MOONSHINE_TEST_ASSERT(a[i] == 0xFF);
+    std::memset(dest, 0xAA, sizeof(dest));
+    std::memset(src, 0x55, sizeof(src));
+
+    ReedSolomonSimd::VectorXor(dest, src, sizeof(dest));
+
+    for (size_t i = 0; i < sizeof(dest); i++)
+    {
+        TEST_ASSERT(dest[i] == 0xFF);
     }
-    std::cout << "PASSED\n";
 }
 
-void test_fec_single_parity_recovery_abi() {
-    std::cout << "[Test] moonshine_fec_recover_simd Single Parity Recovery ... ";
-    constexpr int shard_count = 5;
-    constexpr int shard_size = 1400;
+void TestVectorXorEdgeLengths()
+{
+    std::cout << "[Test] VectorXor boundary and unaligned lengths..." << std::endl;
+    const size_t test_lengths[] = {0, 1, 7, 15, 16, 31, 32, 33, 63, 64, 65, 127, 128, 129, 1400, 4096};
 
-    std::vector<std::vector<uint8_t>> shards_mem(shard_count, std::vector<uint8_t>(shard_size));
-    std::vector<uint8_t*> shards(shard_count);
+    for (size_t len : test_lengths)
+    {
+        std::vector<uint8_t> dest(len, 0x12);
+        std::vector<uint8_t> src(len, 0x34);
+        std::vector<uint8_t> expected(len, 0x12 ^ 0x34);
 
-    for (int i = 0; i < shard_count; ++i) {
-        shards[i] = shards_mem[i].data();
-        std::fill(shards_mem[i].begin(), shards_mem[i].end(), static_cast<uint8_t>(i + 1));
+        if (len > 0)
+        {
+            ReedSolomonSimd::VectorXor(dest.data(), src.data(), len);
+            TEST_ASSERT(std::memcmp(dest.data(), expected.data(), len) == 0);
+        }
     }
-
-    // Compute parity shard at index 4 = XOR(0, 1, 2, 3)
-    std::memset(shards[4], 0, shard_size);
-    for (int i = 0; i < 4; ++i) {
-        moonshine_vector_xor(shards[4], shards[i], shard_size);
-    }
-
-    // Simulate loss of shard index 1 (originally filled with 2)
-    std::memset(shards[1], 0, shard_size);
-    int erased[] = { 1 };
-
-    int result = moonshine_fec_recover_simd(shards.data(), shard_count, shard_size, erased, 1);
-    MOONSHINE_TEST_ASSERT(result == 0);
-
-    // Verify recovered shard 1 matches original value (2)
-    for (int i = 0; i < shard_size; ++i) {
-        MOONSHINE_TEST_ASSERT(shards[1][i] == 2);
-    }
-    std::cout << "PASSED\n";
 }
 
-int main() {
-    std::cout << "========================================\n";
-    std::cout << "Moonshine Native FEC Test Suite\n";
-    std::cout << "========================================\n";
-    test_vector_xor_abi();
-    test_fec_single_parity_recovery_abi();
-    std::cout << "All Native FEC tests PASSED!\n";
+void TestVectorXorSelfInverse()
+{
+    std::cout << "[Test] VectorXor self-inverse..." << std::endl;
+    std::vector<uint8_t> data(1400);
+    std::vector<uint8_t> original(1400);
+    for (size_t i = 0; i < 1400; i++)
+    {
+        data[i] = original[i] = static_cast<uint8_t>(i & 0xFF);
+    }
+
+    std::vector<uint8_t> zero(1400, 0x00);
+    ReedSolomonSimd::VectorXor(data.data(), zero.data(), 1400);
+    TEST_ASSERT(std::memcmp(data.data(), original.data(), 1400) == 0);
+
+    ReedSolomonSimd::VectorXor(data.data(), original.data(), 1400);
+    for (size_t i = 0; i < 1400; i++)
+    {
+        TEST_ASSERT(data[i] == 0x00);
+    }
+}
+
+void TestGaloisFieldMultiplication()
+{
+    std::cout << "[Test] Galois Field GF(2^8) VectorGfMulAdd properties..." << std::endl;
+    std::vector<uint8_t> dest = {0xAA};
+    std::vector<uint8_t> src = {0x55};
+    ReedSolomonSimd::VectorGfMulAdd(dest.data(), src.data(), 0, 1);
+    TEST_ASSERT(dest[0] == 0xAA);
+
+    ReedSolomonSimd::VectorGfMulAdd(dest.data(), src.data(), 1, 1);
+    TEST_ASSERT(dest[0] == (0xAA ^ 0x55));
+}
+
+void TestSingleParityRecovery()
+{
+    std::cout << "[Test] Reed-Solomon single parity shard recovery..." << std::endl;
+    constexpr int kShards = 5;
+    constexpr int kShardSize = 1400;
+
+    std::vector<std::vector<uint8_t>> shards(kShards, std::vector<uint8_t>(kShardSize));
+    std::vector<uint8_t*> shard_ptrs(kShards);
+
+    for (int s = 0; s < kShards - 1; s++)
+    {
+        for (int i = 0; i < kShardSize; i++)
+        {
+            shards[s][i] = static_cast<uint8_t>((s + 1) * 31 + i);
+        }
+        shard_ptrs[s] = shards[s].data();
+    }
+    shard_ptrs[kShards - 1] = shards[kShards - 1].data();
+
+    // Compute parity
+    std::memset(shards[kShards - 1].data(), 0, kShardSize);
+    for (int s = 0; s < kShards - 1; s++)
+    {
+        ReedSolomonSimd::VectorXor(shards[kShards - 1].data(), shards[s].data(), kShardSize);
+    }
+
+    // Simulate erasing shard 2
+    std::vector<uint8_t> original_shard2 = shards[2];
+    std::memset(shards[2].data(), 0, kShardSize);
+
+    int erased_indices[] = {2};
+    ReedSolomonSimd codec;
+    int res = codec.Reconstruct(shard_ptrs.data(), kShards, kShardSize, erased_indices, 1);
+    TEST_ASSERT(res == 0);
+    TEST_ASSERT(std::memcmp(shards[2].data(), original_shard2.data(), kShardSize) == 0);
+}
+
+void TestInvalidInputs()
+{
+    std::cout << "[Test] FEC error handling and invalid input rejection..." << std::endl;
+    ReedSolomonSimd codec;
+    int erased[] = {0};
+    TEST_ASSERT(codec.Reconstruct(nullptr, 5, 1400, erased, 1) != 0);
+    uint8_t dummy[16];
+    uint8_t* ptrs[] = {dummy};
+    TEST_ASSERT(codec.Reconstruct(ptrs, 0, 1400, erased, 1) != 0);
+    TEST_ASSERT(codec.Reconstruct(ptrs, 1, 0, erased, 1) != 0);
+    TEST_ASSERT(codec.Reconstruct(ptrs, 1, 1400, nullptr, 1) != 0);
+    TEST_ASSERT(codec.Reconstruct(ptrs, 1, 1400, erased, 0) != 0);
+}
+
+int main()
+{
+    std::cout << "=== Running Comprehensive FEC SIMD Test Suite ===" << std::endl;
+    TestVectorXorBasic();
+    TestVectorXorEdgeLengths();
+    TestVectorXorSelfInverse();
+    TestGaloisFieldMultiplication();
+    TestSingleParityRecovery();
+    TestInvalidInputs();
+    std::cout << "All FEC SIMD tests passed successfully." << std::endl;
     return 0;
 }

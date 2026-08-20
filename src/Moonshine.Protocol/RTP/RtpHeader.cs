@@ -64,17 +64,24 @@ public struct RtpSequenceUnwrapper
             return sequenceNumber;
         }
 
-        const int rolloverThreshold = 32768;
-        int diff = sequenceNumber - (int)_highestSeq;
+        short diff = (short)(sequenceNumber - (ushort)_highestSeq);
 
         if (diff > 0)
         {
+            if (sequenceNumber < _highestSeq)
+            {
+                _cycles += 0x10000;
+            }
             _highestSeq = sequenceNumber;
+            return _cycles + sequenceNumber;
         }
-        else if (diff < -rolloverThreshold)
+        else if (diff < 0)
         {
-            _cycles += 0x10000;
-            _highestSeq = sequenceNumber;
+            if (sequenceNumber > _highestSeq && _cycles >= 0x10000)
+            {
+                return (_cycles - 0x10000) + sequenceNumber;
+            }
+            return _cycles + sequenceNumber;
         }
 
         return _cycles + sequenceNumber;

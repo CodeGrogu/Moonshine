@@ -1,0 +1,69 @@
+name: Native Sanitizers & Concurrency Verification
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 2 * * *' # Nightly at 02:00 UTC
+
+jobs:
+  address-and-undefined-sanitizer:
+    name: ASan + UBSan (Linux Clang)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Clang & Ninja
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-18 ninja-build
+
+      - name: Configure CMake with ASan and UBSan
+        run: |
+          cmake -B build-asan -S . -G "Ninja" \
+            -DCMAKE_C_COMPILER=clang-18 \
+            -DCMAKE_CXX_COMPILER=clang++-18 \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g" \
+            -DMOONSHINE_BUILD_TESTS=ON
+
+      - name: Compile with Sanitizers
+        run: cmake --build build-asan --parallel
+
+      - name: Run Native Test Suite under ASan/UBSan
+        env:
+          ASAN_OPTIONS: "detect_leaks=1:abort_on_error=1"
+          UBSAN_OPTIONS: "print_stacktrace=1:halt_on_error=1"
+        run: ctest --test-dir build-asan --output-on-failure
+
+  thread-sanitizer:
+    name: TSan Lock-Free Queue Concurrency (Linux Clang)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Clang & Ninja
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-18 ninja-build
+
+      - name: Configure CMake with ThreadSanitizer
+        run: |
+          cmake -B build-tsan -S . -G "Ninja" \
+            -DCMAKE_C_COMPILER=clang-18 \
+            -DCMAKE_CXX_COMPILER=clang++-18 \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_FLAGS="-fsanitize=thread -g" \
+            -DMOONSHINE_BUILD_TESTS=ON
+
+      - name: Compile with TSan
+        run: cmake --build build-tsan --parallel
+
+      - name: Run SPSC Stress Tests under TSan
+        env:
+          TSAN_OPTIONS: "halt_on_error=1:second_deadlock_stack=1"
+        run: ctest --test-dir build-tsan --output-on-failure

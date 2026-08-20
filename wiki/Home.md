@@ -18,7 +18,9 @@ Moonshine is a next-generation, ultra-low-latency game streaming client engineer
 ### Protocols and Networking
 - [[GameStream and Sunshine Protocol|GameStream-Sunshine-Protocol]]: mDNS discovery, X.509 certificate exchange, AES-128-GCM pairing handshake, RTSP session control, and RTP data streaming.
 
-### Engineering and Performance
+### Workflows, Testing and Performance
+- [[CI and GitHub Workflows|Continuous-Integration-and-Workflows]]: Multi-OS CI matrix, ASan/TSan sanitizers, AOT trimming verification, and security audits.
+- [[Exhaustive Testing Strategy|Exhaustive-Testing-Strategy]]: Unit testing matrix across native SIMD, concurrency, and managed protocols.
 - [[Benchmarking and Performance Audit|Benchmarking-and-Performance-Audit]]: Micro-benchmarks, BenchmarkDotNet methodology, allocation verification, and profiling workflows.
 - [[Developer Setup and Build|Developer-Setup-and-Build]]: Toolchain prerequisites (MSVC, CMake, Ninja, .NET 9 SDK) and automated verification commands.
 
