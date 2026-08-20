@@ -13,6 +13,7 @@
 - [GameStream Protocol](GameStream-Sunshine-Protocol)
 - [Real-Time Host Discovery](Real-Time-Host-Discovery)
 - [Cryptographic Pairing Pipeline](Cryptographic-Pairing-Pipeline)
+- [RTSP Stream Control and SDP](RTSP-Stream-Control-and-SDP)
 
 **Workflows and Quality Assurance**
 - [CI and GitHub Workflows](Continuous-Integration-and-Workflows)
