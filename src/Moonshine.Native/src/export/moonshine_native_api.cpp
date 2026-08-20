@@ -38,6 +38,10 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_vector_xor(
     fec::ReedSolomonSimd::VectorXor(dest, src, length);
 }
 
+MOONSHINE_API uint32_t MOONSHINE_CONV moonshine_fec_get_simd_architecture(void) {
+    return static_cast<uint32_t>(fec::ReedSolomonSimd::GetDetectedArchitecture());
+}
+
 // ============================================================================
 // Lock-Free SPSC Queue Management APIs
 // ============================================================================
