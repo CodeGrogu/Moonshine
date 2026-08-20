@@ -14,6 +14,7 @@
 - [Real-Time Host Discovery](Real-Time-Host-Discovery)
 - [Cryptographic Pairing Pipeline](Cryptographic-Pairing-Pipeline)
 - [RTSP Stream Control and SDP](RTSP-Stream-Control-and-SDP)
+- [Zero-Copy UDP Ingestion](Zero-Copy-UDP-Ingestion)
 
 **Workflows and Quality Assurance**
 - [CI and GitHub Workflows](Continuous-Integration-and-Workflows)
