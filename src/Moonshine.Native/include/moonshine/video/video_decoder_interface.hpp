@@ -31,12 +31,37 @@ public:
 
     static void QueryCaps(MoonshineDecoderCaps& out_caps) noexcept;
 
+    [[nodiscard]] uint32_t GetDecodedFrames() const noexcept { return decoded_frames_; }
+    [[nodiscard]] bool IsInitialized() const noexcept { return initialized_; }
+
 private:
     void* hwnd_{nullptr};
     uint32_t width_{0};
     uint32_t height_{0};
     VideoCodec codec_{VideoCodec::HEVC};
     bool initialized_{false};
+    uint32_t decoded_frames_{0};
+};
+
+class D3D12VideoDecoder final : public IVideoDecoder {
+public:
+    D3D12VideoDecoder();
+    ~D3D12VideoDecoder() override;
+
+    int Initialize(void* hwnd, uint32_t width, uint32_t height, VideoCodec codec) override;
+    int SubmitFrame(const MoonshineFrameDesc& frame) override;
+    void Shutdown() override;
+
+    [[nodiscard]] uint32_t GetDecodedFrames() const noexcept { return decoded_frames_; }
+    [[nodiscard]] bool IsInitialized() const noexcept { return initialized_; }
+
+private:
+    void* hwnd_{nullptr};
+    uint32_t width_{0};
+    uint32_t height_{0};
+    VideoCodec codec_{VideoCodec::HEVC};
+    bool initialized_{false};
+    uint32_t decoded_frames_{0};
 };
 
 } // namespace moonshine::video

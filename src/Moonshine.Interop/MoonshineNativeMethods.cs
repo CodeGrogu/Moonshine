@@ -123,6 +123,10 @@ public static unsafe partial class MoonshineNativeMethods
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial IntPtr VideoCreateD3D11(IntPtr hwnd, uint width, uint height, uint codec);
 
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_video_create_d3d12")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial IntPtr VideoCreateD3D12(IntPtr hwnd, uint width, uint height, uint codec);
+
     [LibraryImport(LibraryName, EntryPoint = "moonshine_video_destroy")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial void VideoDestroy(IntPtr handle);
