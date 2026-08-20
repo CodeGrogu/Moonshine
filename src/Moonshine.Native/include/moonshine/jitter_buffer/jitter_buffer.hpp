@@ -55,7 +55,6 @@ public:
 private:
     const size_t max_frames_;
     std::vector<FrameSlot> slots_;
-    uint32_t expected_frame_index_{0};
     uint32_t last_popped_frame_index_{0};
 };
 

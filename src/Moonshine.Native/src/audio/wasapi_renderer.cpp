@@ -15,6 +15,9 @@ WasapiRenderer::~WasapiRenderer() {
 }
 
 int WasapiRenderer::Initialize() {
+    (void)sample_rate_;
+    (void)channels_;
+    (void)exclusive_;
     initialized_ = true;
     return 0;
 }

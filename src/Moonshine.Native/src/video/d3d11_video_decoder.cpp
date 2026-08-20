@@ -22,6 +22,10 @@ int D3D11VideoDecoder::SubmitFrame(const MoonshineFrameDesc& frame) {
     if (!initialized_ || !frame.frame_buffer || frame.total_bytes == 0) {
         return -1;
     }
+    (void)hwnd_;
+    (void)width_;
+    (void)height_;
+    (void)codec_;
     // High-performance hardware decode submission simulation / D3D11VA pipeline
     return 0;
 }
