@@ -19,7 +19,7 @@ using Microsoft::WRL::ComPtr;
 
 namespace moonshine::capture {
 
-class WgcDesktopCapture : public IDesktopCapture {
+class MOONSHINE_API WgcDesktopCapture : public IDesktopCapture {
 public:
     explicit WgcDesktopCapture(void* hmonitor = nullptr, uint32_t target_fps = 60);
     ~WgcDesktopCapture() override;

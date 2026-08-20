@@ -17,7 +17,7 @@ using Microsoft::WRL::ComPtr;
 
 namespace moonshine::capture {
 
-class DxgiDesktopDuplicator : public IDesktopCapture {
+class MOONSHINE_API DxgiDesktopDuplicator : public IDesktopCapture {
 public:
     explicit DxgiDesktopDuplicator(uint32_t adapter_index = 0, uint32_t output_index = 0);
     ~DxgiDesktopDuplicator() override;

@@ -1,11 +1,12 @@
 #pragma once
 
+#include "moonshine/export/moonshine_native_api.h"
 #include <cstdint>
 #include <cstddef>
 
 namespace moonshine::capture {
 
-struct CaptureFrame {
+struct MOONSHINE_API CaptureFrame {
     void*    texture_handle = nullptr;
     uint32_t width = 0;
     uint32_t height = 0;
@@ -15,7 +16,7 @@ struct CaptureFrame {
     bool     cursor_visible = false;
 };
 
-class IDesktopCapture {
+class MOONSHINE_API IDesktopCapture {
 public:
     virtual ~IDesktopCapture() = default;
     virtual bool initialize() = 0;
