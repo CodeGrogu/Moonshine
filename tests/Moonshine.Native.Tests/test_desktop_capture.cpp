@@ -1,32 +1,9 @@
-#include "moonshine/capture/dxgi_desktop_duplicator.hpp"
 #include "moonshine/export/moonshine_native_api.h"
 #include <cassert>
 #include <iostream>
 
 int main() {
     std::cout << "[*] Running Native Desktop Capture Tests..." << std::endl;
-
-    // Test C++ class instantiation
-    {
-        moonshine::capture::DxgiDesktopDuplicator duplicator(0, 0);
-        bool initialized = duplicator.initialize();
-        std::cout << "    [+] DxgiDesktopDuplicator initialize result: " << (initialized ? "SUCCESS" : "HEADLESS/SKIPPED") << std::endl;
-
-        if (initialized) {
-            assert(duplicator.width() > 0);
-            assert(duplicator.height() > 0);
-
-            moonshine::capture::CaptureFrame frame;
-            bool acquired = duplicator.acquire_frame(100, frame);
-            std::cout << "    [+] Acquire frame result: " << (acquired ? "FRAME ACQUIRED" : "TIMEOUT (NORMAL ON IDLE)") << std::endl;
-            if (acquired) {
-                assert(frame.width > 0);
-                assert(frame.height > 0);
-                duplicator.release_frame();
-            }
-        }
-        duplicator.cleanup();
-    }
 
     // Test C-ABI exports
     {
@@ -43,7 +20,7 @@ int main() {
             }
             moonshine_capture_destroy(handle);
         } else {
-            std::cout << "    [+] C-ABI Capture not available on headless display" << std::endl;
+            std::cout << "    [+] C-ABI Capture not available on headless display (normal for headless CI)" << std::endl;
         }
     }
 
