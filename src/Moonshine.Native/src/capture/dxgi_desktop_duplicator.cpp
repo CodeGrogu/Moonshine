@@ -195,6 +195,9 @@ bool DxgiDesktopDuplicator::acquire_frame(uint32_t timeout_ms, CaptureFrame& out
 
     return true;
 #else
+    (void)timeout_ms;
+    (void)m_adapter_index;
+    (void)m_output_index;
     m_mock_frame_counter++;
     auto now = std::chrono::steady_clock::now().time_since_epoch();
     uint64_t micros = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(now).count());
