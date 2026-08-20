@@ -136,6 +136,37 @@ public static unsafe partial class MoonshineNativeMethods
     public static partial int VideoSubmitFrame(IntPtr handle, in MoonshineFrameDesc frame);
 
     // ========================================================================
+    // Low-Latency DXGI Flip Model Swapchain APIs
+    // ========================================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_swapchain_create")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial IntPtr SwapchainCreate(
+        IntPtr hwnd,
+        IntPtr d3d11Device,
+        uint width,
+        uint height,
+        uint bufferCount,
+        byte isHdr10
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_swapchain_destroy")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void SwapchainDestroy(IntPtr handle);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_swapchain_present")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int SwapchainPresent(IntPtr handle, uint syncInterval, uint flags);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_swapchain_resize")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int SwapchainResize(IntPtr handle, uint width, uint height);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_swapchain_set_hdr")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int SwapchainSetHdr(IntPtr handle, byte isHdr10);
+
+    // ========================================================================
     // Audio APIs
     // ========================================================================
 

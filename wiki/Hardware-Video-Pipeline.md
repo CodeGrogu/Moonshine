@@ -58,7 +58,22 @@ To achieve sub-millisecond decode latency at 4K 120 FPS:
 
 ---
 
-## 4. Hardware Capability Telemetry (`QueryCaps`)
+## 4. Low-Latency DXGI Flip Model Swapchain (`DxgiSwapchainPipeline`)
+
+Moonshine integrates a custom DXGI Flip Model swapchain presentation engine delivering sub-0.5ms presentation overhead on Windows 10 and 11:
+
+### A. Flip Discard and Tearing (VRR)
+- **`DXGI_SWAP_EFFECT_FLIP_DISCARD`**: Completely bypasses Desktop Window Manager (DWM) redirection surfaces. The GPU presents the decoded back-buffer directly to the display scanout.
+- **`DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING` & `DXGI_PRESENT_ALLOW_TEARING`**: Enables seamless Variable Refresh Rate (VRR / NVIDIA G-Sync / AMD FreeSync) presentation without tearing or micro-stuttering.
+- **`DXGI_MWA_NO_ALT_ENTER`**: Prevents legacy DXGI window hooks from interfering with high-frame-rate streaming.
+
+### B. True 10-bit HDR10 Rec.2020 Color Spaces
+- **SDR Standard**: `DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709` over `DXGI_FORMAT_B8G8R8A8_UNORM`.
+- **HDR10 Wide Color Gamut**: `DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020` over `DXGI_FORMAT_R10G10B10A2_UNORM` configured via `IDXGISwapChain3::SetColorSpace1`.
+
+---
+
+## 5. Hardware Capability Telemetry (`QueryCaps`)
 
 The native bridge queries the active GPU adapter capabilities:
 - **`MaxWidth` / `MaxHeight`**: Maximum hardware resolution (up to 7680x4320 8K).

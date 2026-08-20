@@ -143,6 +143,25 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_video_destroy(MoonshineDecoderHandle
 MOONSHINE_API int MOONSHINE_CONV moonshine_video_submit_frame(MoonshineDecoderHandle handle, const MoonshineFrameDesc* frame);
 
 // ============================================================================
+// Low-Latency DXGI Flip Model Swapchain APIs
+// ============================================================================
+
+typedef void* MoonshineSwapchainHandle;
+
+MOONSHINE_API MoonshineSwapchainHandle MOONSHINE_CONV moonshine_swapchain_create(
+    void* hwnd,
+    void* d3d11_device,
+    uint32_t width,
+    uint32_t height,
+    uint32_t buffer_count,
+    uint8_t is_hdr10
+);
+MOONSHINE_API void MOONSHINE_CONV moonshine_swapchain_destroy(MoonshineSwapchainHandle handle);
+MOONSHINE_API int MOONSHINE_CONV moonshine_swapchain_present(MoonshineSwapchainHandle handle, uint32_t sync_interval, uint32_t flags);
+MOONSHINE_API int MOONSHINE_CONV moonshine_swapchain_resize(MoonshineSwapchainHandle handle, uint32_t width, uint32_t height);
+MOONSHINE_API int MOONSHINE_CONV moonshine_swapchain_set_hdr(MoonshineSwapchainHandle handle, uint8_t is_hdr10);
+
+// ============================================================================
 // Sub-5ms WASAPI Low-Latency Audio APIs
 // ============================================================================
 
