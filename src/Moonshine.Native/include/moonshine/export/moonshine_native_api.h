@@ -198,6 +198,12 @@ MOONSHINE_API MoonshineCaptureHandle MOONSHINE_CONV moonshine_capture_create_dxg
     uint32_t* out_width,
     uint32_t* out_height
 );
+MOONSHINE_API MoonshineCaptureHandle MOONSHINE_CONV moonshine_capture_create_wgc(
+    void* hmonitor,
+    uint32_t target_fps,
+    uint32_t* out_width,
+    uint32_t* out_height
+);
 MOONSHINE_API void MOONSHINE_CONV moonshine_capture_destroy(MoonshineCaptureHandle handle);
 MOONSHINE_API int MOONSHINE_CONV moonshine_capture_acquire_frame(
     MoonshineCaptureHandle handle,

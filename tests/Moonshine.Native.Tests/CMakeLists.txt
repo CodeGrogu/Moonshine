@@ -26,10 +26,15 @@ add_test(NAME test_c_abi_export COMMAND test_c_abi_export)
 
 add_executable(test_desktop_capture 
     test_desktop_capture.cpp
-    ${CMAKE_SOURCE_DIR}/src/Moonshine.Native/src/capture/dxgi_desktop_duplicator.cpp
 )
 target_link_libraries(test_desktop_capture PRIVATE Moonshine.Native)
 add_test(NAME test_desktop_capture COMMAND test_desktop_capture)
+
+add_executable(test_wgc_capture 
+    test_wgc_capture.cpp
+)
+target_link_libraries(test_wgc_capture PRIVATE Moonshine.Native)
+add_test(NAME test_wgc_capture COMMAND test_wgc_capture)
 
 if(WIN32)
     add_custom_command(TARGET test_c_abi_export POST_BUILD

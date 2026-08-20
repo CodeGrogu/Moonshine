@@ -199,6 +199,15 @@ public static unsafe partial class MoonshineNativeMethods
         out uint outHeight
     );
 
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_capture_create_wgc")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial IntPtr CaptureCreateWgc(
+        IntPtr hmonitor,
+        uint targetFps,
+        out uint outWidth,
+        out uint outHeight
+    );
+
     [LibraryImport(LibraryName, EntryPoint = "moonshine_capture_destroy")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial void CaptureDestroy(IntPtr handle);

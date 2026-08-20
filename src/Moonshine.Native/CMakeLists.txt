@@ -6,6 +6,7 @@ add_library(Moonshine.Native SHARED
     src/video/dxgi_swapchain.cpp
     src/audio/wasapi_renderer.cpp
     src/capture/dxgi_desktop_duplicator.cpp
+    src/capture/wgc_desktop_capture.cpp
 )
 
 target_include_directories(Moonshine.Native

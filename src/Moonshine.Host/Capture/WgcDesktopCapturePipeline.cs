@@ -3,23 +3,14 @@ using Moonshine.Interop;
 
 namespace Moonshine.Host.Capture;
 
-public sealed record CaptureMetrics(
-    ulong FramesCaptured,
-    ulong TimeoutsCount,
-    ulong CaptureErrorsCount,
-    ulong LastFrameTimestampQpc,
-    uint Width,
-    uint Height
-);
-
 /// <summary>
-/// Direct3D 11/12 DXGI Desktop Duplication Capture Pipeline.
-/// Provides high-throughput, zero-copy VRAM surface acquisition for video encoders.
+/// Modern Windows.Graphics.Capture & Direct3D 12 Low-Latency Desktop Ingestion Pipeline.
+/// Provides high-precision frame pacing and hybrid GPU multi-adapter compatibility.
 /// </summary>
-public sealed class DxgiDesktopCapturePipeline : IDesktopCapturePipeline
+public sealed class WgcDesktopCapturePipeline : IDesktopCapturePipeline
 {
-    private readonly uint _adapterIndex;
-    private readonly uint _outputIndex;
+    private readonly IntPtr _hmonitor;
+    private readonly uint _targetFps;
     private IntPtr _handle;
     private uint _width;
     private uint _height;
@@ -33,6 +24,7 @@ public sealed class DxgiDesktopCapturePipeline : IDesktopCapturePipeline
 
     public uint Width => Volatile.Read(ref _width);
     public uint Height => Volatile.Read(ref _height);
+    public uint TargetFps => _targetFps;
     public bool IsAvailable => _handle != IntPtr.Zero;
 
     public CaptureMetrics Metrics => new(
@@ -44,10 +36,10 @@ public sealed class DxgiDesktopCapturePipeline : IDesktopCapturePipeline
         Volatile.Read(ref _height)
     );
 
-    public DxgiDesktopCapturePipeline(uint adapterIndex = 0, uint outputIndex = 0)
+    public WgcDesktopCapturePipeline(IntPtr hmonitor = 0, uint targetFps = 60)
     {
-        _adapterIndex = adapterIndex;
-        _outputIndex = outputIndex;
+        _hmonitor = hmonitor;
+        _targetFps = targetFps > 0 ? targetFps : 60;
         Initialize();
     }
 
@@ -61,16 +53,10 @@ public sealed class DxgiDesktopCapturePipeline : IDesktopCapturePipeline
                 _handle = IntPtr.Zero;
             }
 
-            _handle = MoonshineNativeMethods.CaptureCreateDxgi(_adapterIndex, _outputIndex, out _width, out _height);
+            _handle = MoonshineNativeMethods.CaptureCreateWgc(_hmonitor, _targetFps, out _width, out _height);
         }
     }
 
-    /// <summary>
-    /// Acquires the next available desktop frame texture.
-    /// </summary>
-    /// <param name="timeoutMs">Timeout in milliseconds to wait for a new presented frame.</param>
-    /// <param name="frame">Descriptor populated with shared texture handle and metadata.</param>
-    /// <returns>True if a new frame was acquired; false on timeout or error.</returns>
     public bool TryAcquireNextFrame(uint timeoutMs, out MoonshineCaptureFrameDesc frame)
     {
         lock (_lock)
@@ -91,20 +77,15 @@ public sealed class DxgiDesktopCapturePipeline : IDesktopCapturePipeline
 
             if (result == 0)
             {
-                // Timeout (no new frame rendered by desktop)
                 Interlocked.Increment(ref _timeoutsCount);
                 return false;
             }
 
-            // Error occurred (e.g. display mode change or device lost)
             Interlocked.Increment(ref _captureErrorsCount);
             return false;
         }
     }
 
-    /// <summary>
-    /// Releases the currently held desktop duplication frame.
-    /// </summary>
     public void ReleaseFrame()
     {
         lock (_lock)

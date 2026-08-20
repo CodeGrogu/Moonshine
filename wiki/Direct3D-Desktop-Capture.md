@@ -1,6 +1,6 @@
 # Direct3D Desktop Capture Engine
 
-The **Moonshine Host Desktop Capture Subsystem** provides a zero-copy, ultra-low-latency desktop screen capture pipeline implemented directly on top of Microsoft DirectX Graphics Infrastructure (DXGI) Desktop Duplication (`IDXGIOutputDuplication`) and Direct3D 11/12.
+The **Moonshine Host Desktop Capture Subsystem** provides a zero-copy, ultra-low-latency desktop screen capture pipeline implemented directly on top of Microsoft DirectX Graphics Infrastructure (DXGI) Desktop Duplication (`IDXGIOutputDuplication`), Windows.Graphics.Capture (WGC), and Direct3D 11/12.
 
 ---
 
@@ -14,11 +14,14 @@ Screen capture latency is critical in high-framerate cloud and LAN game streamin
 │            (DirectX Backbuffer Swapchain)                │
 └────────────────────────────┬─────────────────────────────┘
                              │
-                             ▼
-┌──────────────────────────────────────────────────────────┐
-│             IDXGIOutputDuplication (Native C++23)        │
-│          AcquireNextFrame(timeoutMs, &frameInfo)         │
-└────────────────────────────┬─────────────────────────────┘
+              ┌──────────────┴──────────────┐
+              ▼                             ▼
+┌───────────────────────────┐ ┌───────────────────────────┐
+│  IDXGIOutputDuplication   │ │ Windows.Graphics.Capture  │
+│       (Direct3D 11)       │ │     (Direct3D 11/12)      │
+└─────────────┬─────────────┘ └─────────────┬─────────────┘
+              │                             │
+              └──────────────┬──────────────┘
                              │ (Zero-Copy GPU Surface Copy)
                              ▼
 ┌──────────────────────────────────────────────────────────┐
@@ -35,16 +38,14 @@ Screen capture latency is critical in high-framerate cloud and LAN game streamin
 
 ---
 
-## 2. DXGI Desktop Duplicator Lifecycle & Error Recovery
+## 2. Windows.Graphics.Capture & Direct3D 12 Low-Latency Pipeline
 
-Desktop capture sessions are susceptible to runtime display events (resolution changes, HDR toggles, full-screen transitions, monitor disconnects). The Moonshine native capture engine implements automatic error detection and recovery:
+While `IDXGIOutputDuplication` delivers excellent performance for single-GPU desktop configurations, `Windows.Graphics.Capture` (WGC) provides modern advantages on multi-adapter / hybrid GPU laptop systems (e.g. Intel/AMD integrated display output with NVIDIA discrete GPU rendering) and window-targeted capture.
 
-1. **`DXGI_ERROR_WAIT_TIMEOUT`**:
-   - The desktop environment did not render any new frame within the specified timeout window.
-   - Handled gracefully without dropping connection or thrashing memory.
-2. **`DXGI_ERROR_ACCESS_LOST` / `DXGI_ERROR_INVALID_CALL`**:
-   - Triggered when the desktop display mode alters or a full-screen exclusive application starts.
-   - The engine automatically releases existing COM handles, resets device contexts, re-enumerates adapters, and restarts the duplication session transparently in < 50ms.
+### Key Capabilities
+1. **Free-Threaded Frame Arrival**: Dispatches frame acquisition events on dedicated worker threads with minimal lock contention.
+2. **High-Precision Frame Pacing**: Calculates hardware QPC intervals ($\Delta t_{\text{target}} = \frac{f_{\text{QPC}}}{\text{FPS}}$) to pace frame acquisition smoothly at 60Hz, 120Hz, 144Hz, and 240Hz.
+3. **Direct3D 12 Surface Sharing**: Integrates NT shared handles for direct cross-adapter texture consumption in hardware video encoders.
 
 ---
 
@@ -68,6 +69,12 @@ MOONSHINE_API MoonshineCaptureHandle moonshine_capture_create_dxgi(
     uint32_t* out_width,
     uint32_t* out_height
 );
+MOONSHINE_API MoonshineCaptureHandle moonshine_capture_create_wgc(
+    void* hmonitor,
+    uint32_t target_fps,
+    uint32_t* out_width,
+    uint32_t* out_height
+);
 MOONSHINE_API void moonshine_capture_destroy(MoonshineCaptureHandle handle);
 MOONSHINE_API int moonshine_capture_acquire_frame(
     MoonshineCaptureHandle handle,
@@ -79,17 +86,21 @@ MOONSHINE_API void moonshine_capture_release_frame(MoonshineCaptureHandle handle
 
 ---
 
-## 4. Managed Orchestration (`DxgiDesktopCapturePipeline`)
+## 4. Managed Orchestration (`UnifiedDesktopCaptureEngine`)
 
-The managed .NET 9 Native AOT pipeline wraps the native C++ engine with zero GC heap allocations and atomic metrics reporting:
+The managed .NET 9 Native AOT coordinator automatically selects the optimal capture backend based on system topology, or allows explicit selection:
 
 ```csharp
-using var pipeline = new DxgiDesktopCapturePipeline(adapterIndex: 0, outputIndex: 0);
+// Automatic backend detection (prioritises DXGI with seamless WGC fallback)
+using var engine = new UnifiedDesktopCaptureEngine(
+    preferredBackend: CaptureBackend.Automatic,
+    targetFps: 120
+);
 
-if (pipeline.TryAcquireNextFrame(timeoutMs: 16, out MoonshineCaptureFrameDesc frame))
+if (engine.TryAcquireNextFrame(timeoutMs: 16, out MoonshineCaptureFrameDesc frame))
 {
     // Pass frame.TextureHandle directly to hardware video encoder
-    pipeline.ReleaseFrame();
+    engine.ReleaseFrame();
 }
 ```
 
