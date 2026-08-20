@@ -1,0 +1,141 @@
+## ----------------------------------------------------------------------
+## Moonshine - Comprehensive .gitignore
+## ----------------------------------------------------------------------
+
+# =========================
+# Visual Studio / MSBuild
+# =========================
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+ARM/
+ARM64/
+*.apk
+*.aab
+
+# MSBuild Binary Log & Structured Log
+*.binlog
+
+# Visual Studio Code & JetBrains
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.DotSettings.user
+
+# =========================
+# C++ / CMake / Ninja / Compilers
+# =========================
+build/
+build-*/
+out/
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+Testing/
+Makefile
+*.ninja
+*.ninja_deps
+*.ninja_log
+*.cmake
+!CMakeLists.txt
+!CMakePresets.json
+!cmake/*.cmake
+
+# Compiled Object files & Static/Dynamic Libraries
+*.obj
+*.o
+*.lib
+*.a
+*.la
+*.lo
+*.exp
+*.ilk
+*.pdb
+*.idb
+*.d
+*.dll
+*.so
+*.so.*
+*.dylib
+*.exe
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Clang / Clang-Tidy / Bear
+compile_commands.json
+.cache/
+*.plist
+
+# =========================
+# .NET / C# / Native AOT
+# =========================
+*.publish.xml
+publish/
+*.aot.log
+*.aot.json
+
+# NuGet
+*.nupkg
+*.snupkg
+**/packages/*
+!**/packages/build/
+project.lock.json
+project.assets.json
+*.nuget.props
+*.nuget.targets
+
+# BenchmarkDotNet artifacts
+BenchmarkDotNet.Artifacts/
+
+# Test Results & Code Coverage
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+coverage/
+*.lcov
+
+# =========================
+# Operating System & Temporary Files
+# =========================
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+*~
+*.swp
+*.swo
+*.tmp
+*.bak
+*.log
+
+# =========================
+# Moonshine Runtime & Local Configs
+# =========================
+*.dump
+*.dmp
+*.pcap
+*.pcapng
+local_settings.json
+moonshine_dev.pfx
+moonshine_dev.crt
+moonshine_dev.key

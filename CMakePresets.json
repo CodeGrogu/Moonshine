@@ -1,0 +1,73 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "windows-default",
+      "displayName": "Windows Default MSVC",
+      "description": "Configures build using Visual Studio MSVC with Ninja",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "MOONSHINE_ENABLE_AVX2": "ON",
+        "MOONSHINE_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "windows-release-avx2",
+      "displayName": "Windows Release (AVX2 Optimized)",
+      "description": "Maximum optimization for modern x86_64 CPUs with AVX2/FMA",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/release-avx2",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "MOONSHINE_ENABLE_AVX2": "ON",
+        "MOONSHINE_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "windows-debug",
+      "displayName": "Windows Debug (Diagnostics & ASan)",
+      "description": "Debug configuration with AddressSanitizer and full debug symbols",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MOONSHINE_ENABLE_AVX2": "ON",
+        "MOONSHINE_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "linux-release-avx2",
+      "displayName": "Linux Release (AVX2 Optimized)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/linux-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "MOONSHINE_ENABLE_AVX2": "ON",
+        "MOONSHINE_BUILD_TESTS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "release-avx2",
+      "configurePreset": "windows-release-avx2",
+      "configuration": "Release"
+    },
+    {
+      "name": "debug",
+      "configurePreset": "windows-debug",
+      "configuration": "Debug"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "all-tests",
+      "configurePreset": "windows-release-avx2",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

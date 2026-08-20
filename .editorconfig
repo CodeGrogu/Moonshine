@@ -1,0 +1,64 @@
+# Moonshine Root EditorConfig
+root = true
+
+# All files
+[*]
+indent_style = space
+indent_size = 4
+end_of_line = lf
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+# C# Files (.cs)
+[*.cs]
+indent_size = 4
+csharp_indent_braces = false
+csharp_new_line_before_open_brace = all
+csharp_new_line_before_else = true
+csharp_new_line_before_catch = true
+csharp_new_line_before_finally = true
+csharp_space_after_cast = false
+csharp_space_after_keywords_in_control_flow_statements = true
+csharp_space_before_colon_in_inheritance_clause = true
+csharp_space_after_colon_in_inheritance_clause = true
+csharp_space_around_binary_operators = before_and_after
+
+# C# Performance & Naming Conventions
+dotnet_style_qualification_for_field = false:suggestion
+dotnet_style_qualification_for_property = false:suggestion
+dotnet_style_qualification_for_method = false:suggestion
+dotnet_style_qualification_for_event = false:suggestion
+dotnet_style_prefer_auto_properties = true:suggestion
+dotnet_style_prefer_inferred_tuple_names = true:suggestion
+dotnet_style_prefer_inferred_anonymous_type_member_names = true:suggestion
+dotnet_style_predefined_type_for_locals_parameters_members = true:suggestion
+dotnet_style_predefined_type_for_member_access = true:suggestion
+dotnet_style_readonly_struct = true:warning
+dotnet_style_prefer_readonly = true:suggestion
+
+# C# Nullable Analysis
+dotnet_diagnostic.CS8600.severity = error
+dotnet_diagnostic.CS8602.severity = error
+dotnet_diagnostic.CS8603.severity = error
+dotnet_diagnostic.CS8604.severity = error
+dotnet_diagnostic.CS8618.severity = error
+
+# C++ Files (.cpp, .hpp, .c, .h)
+[*.{cpp,hpp,c,h}]
+indent_size = 4
+tab_width = 4
+cpp_indent_braces = false
+cpp_new_line_before_open_brace = all
+
+# JSON, YAML & Markdown
+[*.{json,yml,yaml}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+indent_size = 2
+
+# Build Scripts & Project Files
+[*.{csproj,props,targets,xml,config,sln}]
+indent_size = 2

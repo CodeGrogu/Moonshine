@@ -1,0 +1,64 @@
+cmake_minimum_required(VERSION 3.25)
+project(Moonshine VERSION 1.0.0 LANGUAGES C CXX)
+
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+# Option switches
+option(MOONSHINE_ENABLE_AVX2 "Enable AVX2 SIMD optimizations" ON)
+option(MOONSHINE_ENABLE_AVX512 "Enable AVX-512 and GFNI SIMD optimizations" OFF)
+option(MOONSHINE_BUILD_TESTS "Build native test suite" ON)
+option(MOONSHINE_BUILD_BENCHMARKS "Build native micro-benchmarks" ON)
+
+# Global Compiler Flags for Maximum Performance
+if(MSVC)
+    add_compile_options(
+        /W4
+        /WX
+        /wd4324
+        /permissive-
+        /Zc:__cplusplus
+        /utf-8
+        /Oi
+        /Ot
+        /favor:blend
+    )
+    if(MOONSHINE_ENABLE_AVX2)
+        add_compile_options(/arch:AVX2)
+        add_compile_definitions(MOONSHINE_HAS_AVX2=1)
+    endif()
+    if(MOONSHINE_ENABLE_AVX512)
+        add_compile_options(/arch:AVX512)
+        add_compile_definitions(MOONSHINE_HAS_AVX512=1)
+    endif()
+    # Link-time Code Generation / Whole Program Optimization for Release
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /GL /O2 /Gy")
+    set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} /LTCG /OPT:REF /OPT:ICF")
+else()
+    add_compile_options(
+        -Wall
+        -Wextra
+        -Werror
+        -pedantic
+        -O3
+        -fPIC
+    )
+    if(MOONSHINE_ENABLE_AVX2)
+        add_compile_options(-mavx2 -mfma)
+        add_compile_definitions(MOONSHINE_HAS_AVX2=1)
+    endif()
+    if(MOONSHINE_ENABLE_AVX512)
+        add_compile_options(-mavx512f -mavx512bw -mavx512dq -mgfni)
+        add_compile_definitions(MOONSHINE_HAS_AVX512=1)
+    endif()
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -flto")
+endif()
+
+# Include Subdirectories
+add_subdirectory(src/Moonshine.Native)
+
+if(MOONSHINE_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests/Moonshine.Native.Tests)
+endif()

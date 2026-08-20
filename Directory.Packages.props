@@ -1,0 +1,20 @@
+<Project>
+  <ItemGroup>
+    <!-- Core & High Performance IO -->
+    <PackageVersion Include="System.IO.Pipelines" Version="9.0.2" />
+    <PackageVersion Include="System.Threading.Channels" Version="9.0.2" />
+    <PackageVersion Include="Microsoft.Extensions.Logging" Version="9.0.2" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="9.0.2" />
+    
+    <!-- Benchmarking -->
+    <PackageVersion Include="BenchmarkDotNet" Version="0.14.0" />
+    <PackageVersion Include="BenchmarkDotNet.Diagnostics.Windows" Version="0.14.0" />
+    
+    <!-- Testing -->
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.13.0" />
+    <PackageVersion Include="xunit" Version="2.9.3" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.0.2" />
+    <PackageVersion Include="coverlet.collector" Version="6.0.4" />
+    <PackageVersion Include="FluentAssertions" Version="8.0.1" />
+  </ItemGroup>
+</Project>

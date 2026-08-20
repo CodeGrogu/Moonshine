@@ -1,0 +1,11 @@
+add_executable(test_fec_simd test_fec_simd.cpp)
+target_link_libraries(test_fec_simd PRIVATE Moonshine.Native)
+add_test(NAME test_fec_simd COMMAND test_fec_simd)
+
+add_executable(test_spsc_ring_buffer test_spsc_ring_buffer.cpp)
+target_link_libraries(test_spsc_ring_buffer PRIVATE Moonshine.Native)
+add_test(NAME test_spsc_ring_buffer COMMAND test_spsc_ring_buffer)
+
+add_executable(test_jitter_buffer test_jitter_buffer.cpp)
+target_link_libraries(test_jitter_buffer PRIVATE Moonshine.Native)
+add_test(NAME test_jitter_buffer COMMAND test_jitter_buffer)

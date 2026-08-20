@@ -1,0 +1,38 @@
+name: Moonshine Performance & Benchmarks
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'CMakeLists.txt'
+
+jobs:
+  benchmark:
+    name: Micro-Benchmarks & Allocation Audit
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Setup Ninja
+        uses: ashutoshvarma/setup-ninja@master
+
+      - name: Build Native & Managed Release
+        run: |
+          cmake -B build -S . -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DMOONSHINE_ENABLE_AVX2=ON
+          cmake --build build --config Release
+          dotnet build src/Moonshine.Benchmarks/Moonshine.Benchmarks.csproj -c Release
+
+      - name: Run Micro-Benchmarks
+        run: |
+          dotnet run --project src/Moonshine.Benchmarks/Moonshine.Benchmarks.csproj -c Release --no-build -- --job short --filter *
