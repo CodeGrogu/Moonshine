@@ -1,0 +1,131 @@
+using Moonshine.Interop;
+
+namespace Moonshine.Host.Encoding;
+
+/// <summary>
+/// Unified Multi-Vendor Hardware Video Encoder Engine.
+/// Orchestrates GPU vendor auto-detection, zero-copy VRAM surface encoding,
+/// dynamic congestion bitrate scaling, and instant IDR keyframe recovery.
+/// </summary>
+public sealed class UnifiedHardwareEncoderEngine : IDisposable
+{
+    private readonly HardwareVideoEncoderPipeline _pipeline;
+    private long _framesEncoded;
+    private long _keyframesEmitted;
+    private long _bytesEmitted;
+    private long _encodingErrors;
+    private bool _disposed;
+    private readonly Lock _lock = new();
+
+    public uint Width => _pipeline.Width;
+    public uint Height => _pipeline.Height;
+    public uint Fps => _pipeline.Fps;
+    public uint BitrateKbps => _pipeline.BitrateKbps;
+    public VideoCodec Codec => _pipeline.Codec;
+    public EncoderVendor Vendor => _pipeline.Vendor;
+    public bool IsActive => _pipeline.IsActive && !_disposed;
+
+    public long FramesEncoded => Interlocked.Read(ref _framesEncoded);
+    public long KeyframesEmitted => Interlocked.Read(ref _keyframesEmitted);
+    public long BytesEmitted => Interlocked.Read(ref _bytesEmitted);
+    public long EncodingErrors => Interlocked.Read(ref _encodingErrors);
+
+    public UnifiedHardwareEncoderEngine(
+        uint width,
+        uint height,
+        uint fps = 60,
+        uint bitrateKbps = 20000,
+        VideoCodec codec = VideoCodec.HevcMain10,
+        RateControlMode rcMode = RateControlMode.ConstantBitrate,
+        EncoderVendor preferredVendor = EncoderVendor.Auto,
+        IntPtr d3dDevice = 0
+    )
+    {
+        _pipeline = new HardwareVideoEncoderPipeline(
+            width,
+            height,
+            fps,
+            bitrateKbps,
+            (uint)(bitrateKbps * 1.5),
+            codec,
+            rcMode,
+            preferredVendor,
+            d3dDevice
+        );
+    }
+
+    public bool TryEncodeFrame(
+        IntPtr d3dTexture,
+        bool forceIdr,
+        out MoonshineEncodedPacketDesc desc,
+        Span<byte> outBitstream,
+        out int bytesWritten
+    )
+    {
+        lock (_lock)
+        {
+            if (_disposed || !_pipeline.IsActive)
+            {
+                desc = default;
+                bytesWritten = 0;
+                return false;
+            }
+
+            bool success = _pipeline.TryEncodeFrame(d3dTexture, forceIdr, out desc, outBitstream, out bytesWritten);
+            if (success)
+            {
+                Interlocked.Increment(ref _framesEncoded);
+                if (desc.IsKeyframe != 0)
+                {
+                    Interlocked.Increment(ref _keyframesEmitted);
+                }
+                Interlocked.Add(ref _bytesEmitted, bytesWritten);
+                return true;
+            }
+
+            Interlocked.Increment(ref _encodingErrors);
+            return false;
+        }
+    }
+
+    public bool ReconfigureBitrate(uint newBitrateKbps, uint newFps = 0)
+    {
+        lock (_lock)
+        {
+            if (_disposed || !_pipeline.IsActive) return false;
+            uint fps = (newFps > 0) ? newFps : _pipeline.Fps;
+            return _pipeline.Reconfigure(newBitrateKbps, fps);
+        }
+    }
+
+    public void RequestKeyframe()
+    {
+        lock (_lock)
+        {
+            if (!_disposed && _pipeline.IsActive)
+            {
+                _pipeline.RequestKeyframe();
+            }
+        }
+    }
+
+    public static bool TryQueryCapabilities(
+        EncoderVendor vendor,
+        out MoonshineEncoderCaps caps,
+        IntPtr d3dDevice = 0
+    )
+    {
+        int res = MoonshineNativeMethods.EncoderQueryCaps((uint)vendor, d3dDevice, out caps);
+        return res > 0;
+    }
+
+    public void Dispose()
+    {
+        lock (_lock)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _pipeline.Dispose();
+        }
+    }
+}

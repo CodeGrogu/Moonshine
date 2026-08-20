@@ -263,4 +263,51 @@ public static unsafe partial class MoonshineNativeMethods
     [LibraryImport(LibraryName, EntryPoint = "moonshine_color_converter_destroy")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial void ColorConverterDestroy(IntPtr handle);
+
+    // ========================================================================
+    // Multi-Vendor Hardware Video Encoder APIs (NVENC, AMF, QuickSync, D3D11)
+    // ========================================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_encoder_query_caps")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int EncoderQueryCaps(
+        uint vendor,
+        IntPtr d3dDevice,
+        out MoonshineEncoderCaps outCaps
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_encoder_create")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial IntPtr EncoderCreate(
+        uint vendor,
+        IntPtr d3dDevice,
+        in MoonshineEncoderConfig config
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_encoder_encode_frame")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int EncoderEncodeFrame(
+        IntPtr handle,
+        IntPtr d3dTexture,
+        int forceIdr,
+        out MoonshineEncodedPacketDesc outDesc,
+        byte* outBuffer,
+        uint maxBufferSize,
+        out uint outSize
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_encoder_reconfigure")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int EncoderReconfigure(
+        IntPtr handle,
+        in MoonshineEncoderConfig newConfig
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_encoder_request_keyframe")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void EncoderRequestKeyframe(IntPtr handle);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_encoder_destroy")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void EncoderDestroy(IntPtr handle);
 }
