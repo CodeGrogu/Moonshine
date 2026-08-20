@@ -181,4 +181,8 @@ public static unsafe partial class MoonshineNativeMethods
     [LibraryImport(LibraryName, EntryPoint = "moonshine_audio_submit_pcm")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int AudioSubmitPcm(IntPtr handle, float* pcmData, uint sampleCount);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_audio_get_metrics")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void AudioGetMetrics(IntPtr handle, out ulong outFramesRendered, out uint outUnderruns);
 }
