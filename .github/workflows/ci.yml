@@ -59,9 +59,6 @@ jobs:
         run: cmake --build build --config ${{ matrix.configuration }} --parallel
 
       - name: Run Native CTest Suite
-        env:
-          PATH: ${{ github.workspace }}/build/bin;${{ github.workspace }}/build/src/Moonshine.Native;${{ env.PATH }}
-          LD_LIBRARY_PATH: ${{ github.workspace }}/build/bin:${{ github.workspace }}/build/src/Moonshine.Native:${{ env.LD_LIBRARY_PATH }}
         run: ctest --test-dir build --output-on-failure -C ${{ matrix.configuration }} --timeout 60
 
       - name: Restore Managed .NET Solution
