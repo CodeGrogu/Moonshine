@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -18,11 +19,16 @@ public sealed class MoonshinePairingManager
 
     public MoonshinePairingManager(HttpClient? httpClient = null)
     {
+#pragma warning disable CA5359 // GameStream and Sunshine hosts use self-signed local certificates for pairing
         _httpClient = httpClient ?? new HttpClient(new SocketsHttpHandler
         {
-            ServerCertificateCustomValidationCallback = (_, _, _, _) => true, // Sunshine self-signed certs
+            SslOptions = new System.Net.Security.SslClientAuthenticationOptions
+            {
+                RemoteCertificateValidationCallback = (_, _, _, _) => true
+            },
             ConnectTimeout = TimeSpan.FromSeconds(5)
         });
+#pragma warning restore CA5359
     }
 
     public static (string CertPem, string KeyPem, X509Certificate2 Cert) GenerateClientCertificate()
@@ -51,7 +57,7 @@ public sealed class MoonshinePairingManager
             string certHex = Convert.ToHexString(Encoding.UTF8.GetBytes(certPem)).ToLowerInvariant();
 
             // 3. Step 1: Exchange certificates & salts
-            string getCertUrl = $"https://{hostIp}:{port}/pair?uniqueid={uniqueId}&devicename=Moonshine&update=1&phrase=getservercert&salt={clientSaltHex}&clientcert={certHex}";
+            string getCertUrl = string.Create(CultureInfo.InvariantCulture, $"https://{hostIp}:{port}/pair?uniqueid={uniqueId}&devicename=Moonshine&update=1&phrase=getservercert&salt={clientSaltHex}&clientcert={certHex}");
             string respXml = await _httpClient.GetStringAsync(getCertUrl, ct).ConfigureAwait(false);
 
             var doc = XDocument.Parse(respXml);
@@ -90,7 +96,7 @@ public sealed class MoonshinePairingManager
             string challengeHex = Convert.ToHexString(challengePayload).ToLowerInvariant();
 
             // 7. Step 2: Send encrypted challenge
-            string challengeUrl = $"https://{hostIp}:{port}/pair?uniqueid={uniqueId}&devicename=Moonshine&clientchallenge={challengeHex}";
+            string challengeUrl = string.Create(CultureInfo.InvariantCulture, $"https://{hostIp}:{port}/pair?uniqueid={uniqueId}&devicename=Moonshine&clientchallenge={challengeHex}");
             string challengeRespXml = await _httpClient.GetStringAsync(challengeUrl, ct).ConfigureAwait(false);
 
             var challengeDoc = XDocument.Parse(challengeRespXml);

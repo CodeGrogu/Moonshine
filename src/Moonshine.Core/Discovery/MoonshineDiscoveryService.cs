@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.Http;
 using System.Xml.Linq;
 
@@ -34,7 +35,7 @@ public sealed class MoonshineDiscoveryService : IDisposable
     {
         try
         {
-            string url = $"http://{hostIp}:{port}/serverinfo";
+            string url = string.Create(CultureInfo.InvariantCulture, $"http://{hostIp}:{port}/serverinfo");
             string responseXml = await _httpClient.GetStringAsync(url, ct).ConfigureAwait(false);
             return ParseServerInfoXml(hostIp, port, responseXml);
         }
@@ -43,7 +44,7 @@ public sealed class MoonshineDiscoveryService : IDisposable
             // Fallback to HTTPS port (47984) if HTTP is disabled
             try
             {
-                string httpsUrl = $"https://{hostIp}:47984/serverinfo";
+                string httpsUrl = string.Create(CultureInfo.InvariantCulture, $"https://{hostIp}:47984/serverinfo");
                 string responseXml = await _httpClient.GetStringAsync(httpsUrl, ct).ConfigureAwait(false);
                 return ParseServerInfoXml(hostIp, 47984, responseXml);
             }
@@ -67,7 +68,7 @@ public sealed class MoonshineDiscoveryService : IDisposable
             string appversion = root.Element("appversion")?.Value ?? "1.0";
             string gpu = root.Element("gputype")?.Value ?? "NVIDIA / AMD / Intel";
             bool isPaired = root.Element("PairStatus")?.Value == "1";
-            int codecSupport = int.TryParse(root.Element("ServerCodecModeSupport")?.Value, out int c) ? c : 0;
+            int codecSupport = int.TryParse(root.Element("ServerCodecModeSupport")?.Value, CultureInfo.InvariantCulture, out int c) ? c : 0;
 
             return new HostServerInfo(hostname, hostIp, port, mac, appversion, gpu, isPaired, codecSupport);
         }

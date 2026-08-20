@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Globalization;
 using System.Text;
 
 namespace Moonshine.Protocol.RTSP;
@@ -20,6 +21,8 @@ public enum RtspMethod
 /// </summary>
 public sealed class RtspMessage
 {
+    private static readonly string[] LineSeparators = ["\r\n", "\n"];
+
     public RtspMethod Method { get; set; }
     public string Uri { get; set; } = string.Empty;
     public int CSeq { get; set; }
@@ -48,29 +51,29 @@ public sealed class RtspMessage
 
         if (IsResponse)
         {
-            sb.Append($"RTSP/1.0 {StatusCode} {StatusMessage}\r\n");
+            sb.Append(CultureInfo.InvariantCulture, $"RTSP/1.0 {StatusCode} {StatusMessage}\r\n");
         }
         else
         {
-            sb.Append($"{Method.ToString().ToUpperInvariant()} {Uri} RTSP/1.0\r\n");
+            sb.Append(CultureInfo.InvariantCulture, $"{Method.ToString().ToUpperInvariant()} {Uri} RTSP/1.0\r\n");
         }
 
-        sb.Append($"CSeq: {CSeq}\r\n");
+        sb.Append(CultureInfo.InvariantCulture, $"CSeq: {CSeq}\r\n");
 
         if (!string.IsNullOrEmpty(SessionId))
         {
-            sb.Append($"Session: {SessionId}\r\n");
+            sb.Append(CultureInfo.InvariantCulture, $"Session: {SessionId}\r\n");
         }
 
         foreach (var (key, value) in Headers)
         {
-            sb.Append($"{key}: {value}\r\n");
+            sb.Append(CultureInfo.InvariantCulture, $"{key}: {value}\r\n");
         }
 
         if (!string.IsNullOrEmpty(Body))
         {
             byte[] bodyBytes = Encoding.UTF8.GetBytes(Body);
-            sb.Append($"Content-Length: {bodyBytes.Length}\r\n\r\n");
+            sb.Append(CultureInfo.InvariantCulture, $"Content-Length: {bodyBytes.Length}\r\n\r\n");
             sb.Append(Body);
         }
         else
@@ -88,7 +91,7 @@ public sealed class RtspMessage
     {
         message = new RtspMessage();
         string text = Encoding.UTF8.GetString(data);
-        var lines = text.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+        var lines = text.Split(LineSeparators, StringSplitOptions.None);
 
         if (lines.Length == 0 || string.IsNullOrWhiteSpace(lines[0]))
         {
@@ -100,7 +103,7 @@ public sealed class RtspMessage
         {
             message.IsResponse = true;
             var parts = firstLine.Split(' ', 3);
-            if (parts.Length >= 2 && int.TryParse(parts[1], out int status))
+            if (parts.Length >= 2 && int.TryParse(parts[1], CultureInfo.InvariantCulture, out int status))
             {
                 message.StatusCode = status;
                 message.StatusMessage = parts.Length > 2 ? parts[2] : "OK";
@@ -136,7 +139,7 @@ public sealed class RtspMessage
                 string headerName = line[..colon].Trim();
                 string headerValue = line[(colon + 1)..].Trim();
 
-                if (headerName.Equals("CSeq", StringComparison.OrdinalIgnoreCase) && int.TryParse(headerValue, out int cseq))
+                if (headerName.Equals("CSeq", StringComparison.OrdinalIgnoreCase) && int.TryParse(headerValue, CultureInfo.InvariantCulture, out int cseq))
                 {
                     message.CSeq = cseq;
                 }

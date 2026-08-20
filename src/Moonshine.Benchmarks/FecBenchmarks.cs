@@ -65,12 +65,12 @@ public unsafe class FecBenchmarks
     }
 
     [Benchmark]
-    public void SimdReedSolomonFecRecovery()
+    public int SimdReedSolomonFecRecovery()
     {
         fixed (byte** ptrs = _shardPointers)
         fixed (int* erased = _erasedIndices)
         {
-            MoonshineNativeMethods.FecRecoverSimd(ptrs, ShardCount, ShardSize, erased, _erasedIndices.Length);
+            return MoonshineNativeMethods.FecRecoverSimd(ptrs, ShardCount, ShardSize, erased, _erasedIndices.Length);
         }
     }
 }

@@ -3,16 +3,14 @@ using Moonshine.Client;
 using Moonshine.Interop;
 
 Console.WriteLine("=================================================================");
-Console.WriteLine("⚡ Moonshine - Ultra-Low-Latency GameStream Client Engine");
+Console.WriteLine("Moonshine - Ultra-Low-Latency GameStream Client Engine");
 Console.WriteLine("Engineered in C# 13 (.NET Native AOT) & C++23 AVX2/AVX-512 SIMD");
 Console.WriteLine("=================================================================\n");
-
-var engine = new MoonshineClientEngine();
 
 Console.WriteLine("[Hardware] Querying Native Video Decoder Capabilities...");
 try
 {
-    var caps = engine.QueryHardwareCaps();
+    var caps = MoonshineClientEngine.QueryHardwareCaps();
     Console.WriteLine($"  - Max Resolution: {caps.MaxWidth}x{caps.MaxHeight} @ {caps.MaxFps} FPS");
     Console.WriteLine($"  - Hardware AV1 Support:  {(caps.SupportsAv1 != 0 ? "YES" : "NO")}");
     Console.WriteLine($"  - Hardware HEVC Support: {(caps.SupportsHevc != 0 ? "YES" : "NO")}");

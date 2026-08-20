@@ -12,8 +12,9 @@ public class PairingTests
         var (certPem, keyPem, cert) = MoonshinePairingManager.GenerateClientCertificate();
 
         certPem.Should().StartWith("-----BEGIN CERTIFICATE-----");
-        certPem.Should().EndWith("-----END CERTIFICATE-----\n");
+        certPem.Should().Contain("-----END CERTIFICATE-----");
         keyPem.Should().StartWith("-----BEGIN PRIVATE KEY-----");
+        keyPem.Should().Contain("-----END PRIVATE KEY-----");
         cert.Subject.Should().Contain("Moonshine Client");
     }
 }

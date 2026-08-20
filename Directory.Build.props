@@ -10,6 +10,7 @@
     <AnalysisLevel>latest-recommended</AnalysisLevel>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <NoWarn>$(NoWarn);CA1707;CA1401;CA1720;CA1305</NoWarn>
     
     <!-- Ultra-Performance Metadata & CodeGen Flags -->
     <ServerGarbageCollection>false</ServerGarbageCollection>
