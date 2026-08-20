@@ -1,0 +1,35 @@
+name: Protocol & Pairing Diagnostic
+description: Report an issue with Sunshine/GameStream host discovery, cryptographic pairing, or RTSP handshake.
+title: "[PROTOCOL]: "
+labels: ["type: bug", "area: protocol-rtsp"]
+body:
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Failed Protocol Stage
+      options:
+        - LAN mDNS / SSDP Host Discovery
+        - HTTP / HTTPS ServerInfo Handshake (Port 47989 / 47984)
+        - Cryptographic PIN Exchange / AES-128-GCM Verification
+        - RTSP OPTIONS / DESCRIBE / SETUP Handshake (Port 48010)
+        - Dynamic SDP Video / Audio Stream Parameter Negotiation
+        - Real-Time RTP Packet Reception & FEC Alignment
+    validations:
+      required: true
+
+  - type: input
+    id: host_details
+    attributes:
+      label: Sunshine / GeForce Experience Version & Host OS
+      placeholder: Sunshine v0.23.1 on Windows 11 Pro 24H2
+    validations:
+      required: true
+
+  - type: textarea
+    id: packet_capture
+    attributes:
+      label: Wireshark / RTSP Message Transcript
+      description: Paste relevant RTSP headers, SDP descriptors, or XML serverinfo payloads.
+      render: markdown
+    validations:
+      required: true

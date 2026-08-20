@@ -1,0 +1,79 @@
+name: Bug Report
+description: Report a defect, crash, decode corruption, or unexpected behaviour in Moonshine.
+title: "[BUG]: "
+labels: ["type: bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bug. Please ensure you provide exact environment details, hardware specifications, and reproduction steps.
+
+  - type: input
+    id: version
+    attributes:
+      label: Moonshine Version / Commit SHA
+      description: What version or Git commit hash of Moonshine are you running?
+      placeholder: e.g. main / commit 06c17e0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - Windows 11 (x64)
+        - Windows 10 (x64)
+        - Linux (x64 / Ubuntu)
+        - Linux (Arch / Other)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected Subsystem
+      options:
+        - Native SIMD / FEC Decoder
+        - Direct3D 11/12 Hardware Video Pipeline
+        - WASAPI Low-Latency Audio Subsystem
+        - RTSP Session Negotiation
+        - RTP / UDP Socket Network Pipeline
+        - Crypto / Pairing Handshake
+        - 1000Hz Input Polling
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: hardware
+    attributes:
+      label: Client & Host Hardware Specifications
+      description: List client CPU, client GPU, display resolution/refresh rate, and host server details (Sunshine version, GPU).
+      placeholder: |
+        - Client CPU: AMD Ryzen 7 7800X3D
+        - Client GPU: NVIDIA GeForce RTX 4080 (Driver 560.xx)
+        - Display: 4K 144Hz HDR
+        - Host: Sunshine v0.23.1 on Windows 11 (RTX 4090)
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description & Reproduction Steps
+      description: Describe what happened and provide step-by-step instructions to reproduce the issue.
+      placeholder: |
+        1. Start Moonshine and initiate RTSP stream session with Sunshine host.
+        2. Set stream resolution to 3840x2160 @ 120 FPS HEVC HDR10.
+        3. Trigger packet loss by disconnecting network cable momentarily.
+        4. Observe video corruption rather than FEC recovery.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Console and Diagnostic Logs
+      description: Paste relevant terminal logs, crash dumps, or ETW / ETW-trace outputs.
+      render: shell

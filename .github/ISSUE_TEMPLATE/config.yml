@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Moonshine Engineering Wiki
+    url: https://github.com/CodeGrogu/Moonshine/wiki
+    about: Read deep architectural overviews, mathematical models, and SIMD execution guides.
+  - name: Sunshine Host Documentation
+    url: https://docs.lizardbyte.dev/projects/sunshine/en/latest/
+    about: Documentation for configuring Sunshine GameStream host servers.

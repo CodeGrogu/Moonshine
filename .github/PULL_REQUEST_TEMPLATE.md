@@ -1,19 +1,25 @@
-## ⚡ Moonshine Pull Request
+## Description
 
-### Summary of Changes
-Provide a concise overview of what this PR introduces, fixes, or optimizes.
+Provide a clear and concise summary of the changes introduced in this Pull Request.
 
-### Performance Verification
-- [ ] **Zero Heap Allocation**: Verified using BenchmarkDotNet / dotMemory that no allocations occur in the hot path.
-- [ ] **Lock-Free Discipline**: No mutexes, locks, or blocking waits introduced in real-time threads.
-- [ ] **SIMD Optimization**: Vectorized hot loops (AVX2/AVX-512/NEON) where applicable.
-- [ ] **Benchmark Results**:
-  ```text
-  // Paste BenchmarkDotNet summary table here if modifying hot paths
-  ```
+Fixes #(issue number)
 
-### Checklist
-- [ ] Code builds cleanly across all configurations (`Release`, `Debug`).
-- [ ] Unit tests pass in both managed (.NET) and native (C++) test suites.
-- [ ] Conforms to [.editorconfig](../.editorconfig) and Clang-Format rules.
-- [ ] Documentation updated in `docs/`, `README.md`, or `ARCHITECTURE.md` where appropriate.
+---
+
+## Architectural and Performance Rationale
+
+- **Performance Impact**: Explain how this change preserves or improves latency and throughput.
+- **Memory Discipline**: Confirm whether managed GC allocations in streaming hot paths remain 0 bytes (`GC.GetAllocatedBytesForCurrentThread() == 0`).
+- **SIMD / Concurrency**: Detail any AVX2/AVX-512 vectorization or lock-free memory ordering used.
+
+---
+
+## Quality & Compliance Checklist
+
+- [ ] All native C++23 CTest suites pass without errors or warnings.
+- [ ] All managed .NET 9 xUnit test suites pass without errors or warnings.
+- [ ] Code adheres strictly to British English spelling conventions across code comments and commit messages.
+- [ ] No em dashes are used (replaced with colons, hyphens, parentheses, or commas).
+- [ ] No emojis are used.
+- [ ] All custom implementations, mathematical models, and protocol extensions are documented in `wiki/`.
+- [ ] BenchmarkDotNet micro-benchmarks have been executed or updated if touching hot paths.

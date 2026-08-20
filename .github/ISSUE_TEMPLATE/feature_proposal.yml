@@ -1,0 +1,35 @@
+name: Feature Proposal
+description: Propose an architectural enhancement, new video/audio codec, or custom SIMD acceleration kernel.
+title: "[FEAT]: "
+labels: ["type: feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please outline the proposed feature, its architectural alignment, performance benefits, and zero-allocation strategy.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Feature Summary
+      description: What is the proposed capability or optimisation?
+      placeholder: Describe the feature clearly and concisely.
+    validations:
+      required: true
+
+  - type: textarea
+    id: performance_justification
+    attributes:
+      label: Performance and Latency Justification
+      description: Explain why this implementation is faster or more optimal than existing alternatives.
+      placeholder: Provide SIMD vectorization details, lock-free concurrency design, or memory budget calculations.
+    validations:
+      required: true
+
+  - type: textarea
+    id: documentation_plan
+    attributes:
+      label: Documentation and Wiki Plan
+      description: How will this feature and its mathematical/architectural model be documented in the GitHub wiki (`wiki/`)?
+    validations:
+      required: true

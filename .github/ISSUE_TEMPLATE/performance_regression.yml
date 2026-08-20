@@ -1,0 +1,43 @@
+name: Performance / Latency Regression
+description: Report a measured increase in decode latency, frame time jitter, memory allocations, or buffer underruns.
+title: "[PERF]: "
+labels: ["type: performance-regression", "status: benchmark-required"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Moonshine strictly prioritises ultra-low latency and zero-allocation performance. Please provide quantitative benchmark numbers, microsecond latency timings, or profiler traces.
+
+  - type: dropdown
+    id: metric_type
+    attributes:
+      label: Regression Category
+      options:
+        - Total End-to-End Latency Spike (> 2ms increase)
+        - Hardware Video Decode Time Spike (> 1ms on D3D11/D3D12)
+        - GC Garbage Collection Allocation Detected in Streaming Loop
+        - SIMD FEC Reconstruction Throughput Degradation
+        - Presentation / Swapchain VSync Stutter
+        - Audio Buffer Underrun / Glitch (> 5ms WASAPI latency)
+    validations:
+      required: true
+
+  - type: textarea
+    id: baseline_vs_regression
+    attributes:
+      label: Quantitative Latency / Allocation Metrics
+      description: Compare the previous baseline metrics against the regressed metrics.
+      placeholder: |
+        - Baseline Commit [sha]: 0.85ms average decode time, 0B GC allocation.
+        - Current Commit [sha]: 2.40ms average decode time, 128KB GC allocation per second.
+    validations:
+      required: true
+
+  - type: textarea
+    id: profiling_trace
+    attributes:
+      label: BenchmarkDotNet / Windows Performance Analyzer (WPA) Profiler Trace
+      description: Attach or paste BenchmarkDotNet markdown results or ETW profiling summaries.
+      render: markdown
+    validations:
+      required: true
