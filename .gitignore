@@ -83,6 +83,7 @@ compile_commands.json
 # =========================
 # .NET / C# / Native AOT
 # =========================
+tools/dotnet_sdk/
 *.publish.xml
 publish/
 *.aot.log
