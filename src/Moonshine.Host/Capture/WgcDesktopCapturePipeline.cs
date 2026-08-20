@@ -97,7 +97,18 @@ public sealed class WgcDesktopCapturePipeline : IDesktopCapturePipeline
         }
     }
 
+    ~WgcDesktopCapturePipeline()
+    {
+        Dispose(false);
+    }
+
     public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    private void Dispose(bool disposing)
     {
         lock (_lock)
         {

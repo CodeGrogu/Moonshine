@@ -7,6 +7,8 @@ add_library(Moonshine.Native SHARED
     src/audio/wasapi_renderer.cpp
     src/capture/dxgi_desktop_duplicator.cpp
     src/capture/wgc_desktop_capture.cpp
+    src/color/hdr_metadata_extractor.cpp
+    src/color/d3d_color_converter.cpp
 )
 
 target_include_directories(Moonshine.Native

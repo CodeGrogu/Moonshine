@@ -116,7 +116,18 @@ public sealed class DxgiDesktopCapturePipeline : IDesktopCapturePipeline
         }
     }
 
+    ~DxgiDesktopCapturePipeline()
+    {
+        Dispose(false);
+    }
+
     public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    private void Dispose(bool disposing)
     {
         lock (_lock)
         {
