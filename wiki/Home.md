@@ -16,7 +16,8 @@ Moonshine is a next-generation, ultra-low-latency game streaming client engineer
 - [[Audio WASAPI Exclusive|Audio-WASAPI-Exclusive]]: Sub-5ms low-latency audio rendering and Opus packet processing.
 
 ### Protocols and Networking
-- [[GameStream and Sunshine Protocol|GameStream-Sunshine-Protocol]]: mDNS discovery, X.509 certificate exchange, AES-128-GCM pairing handshake, RTSP session control, and RTP data streaming.
+- **[GameStream and Sunshine Protocol](GameStream-Sunshine-Protocol)**: Network port matrix, cryptographic pairing, and RTSP stream orchestration.
+- **[Real-Time LAN Host Discovery](Real-Time-Host-Discovery)**: Zero-allocation Multicast DNS (mDNS) and SSDP UPnP host discovery engine.
 
 ### Workflows, Testing and Performance
 - [[CI and GitHub Workflows|Continuous-Integration-and-Workflows]]: Multi-OS CI matrix, ASan/TSan sanitizers, AOT trimming verification, and security audits.

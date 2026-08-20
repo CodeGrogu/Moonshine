@@ -11,6 +11,7 @@
 
 **Protocols**
 - [GameStream Protocol](GameStream-Sunshine-Protocol)
+- [Real-Time Host Discovery](Real-Time-Host-Discovery)
 
 **Workflows and Quality Assurance**
 - [CI and GitHub Workflows](Continuous-Integration-and-Workflows)
