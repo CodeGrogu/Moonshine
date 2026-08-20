@@ -19,6 +19,7 @@ Moonshine is a next-generation, ultra-low-latency game streaming client engineer
 - **[GameStream and Sunshine Protocol](GameStream-Sunshine-Protocol)**: Network port matrix, cryptographic pairing, and RTSP stream orchestration.
 - **[Real-Time LAN Host Discovery](Real-Time-Host-Discovery)**: Zero-allocation Multicast DNS (mDNS) and SSDP UPnP host discovery engine.
 - **[Cryptographic Pairing Pipeline](Cryptographic-Pairing-Pipeline)**: RSA 2048-bit X.509 certificate generation, PBKDF2/SHA-256 key derivation, and AES-128 challenge-response authentication.
+- **[RTSP Stream Control and Dynamic SDP](RTSP-Stream-Control-and-SDP)**: Stateful RTSP client state machine, RFC 4566 SDP offer/answer negotiation, HDR10 static metadata, and dynamic bitrate adaptation announcements.
 
 ### Workflows, Testing and Performance
 - [[CI and GitHub Workflows|Continuous-Integration-and-Workflows]]: Multi-OS CI matrix, ASan/TSan sanitizers, AOT trimming verification, and security audits.
