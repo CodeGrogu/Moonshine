@@ -25,6 +25,7 @@ public static unsafe partial class MoonshineNativeMethods
             string[] searchDirs = [
                 AppContext.BaseDirectory,
                 Path.Combine(AppContext.BaseDirectory, "runtimes", OperatingSystem.IsWindows() ? "win-x64" : "linux-x64", "native"),
+                Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "build", "bin"),
                 Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "build", "src", "Moonshine.Native")
             ];
 
@@ -61,6 +62,10 @@ public static unsafe partial class MoonshineNativeMethods
         byte* src,
         nuint length
     );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_fec_get_simd_architecture")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial uint FecGetSimdArchitecture();
 
     // ========================================================================
     // Lock-Free SPSC Ring Buffer APIs

@@ -32,6 +32,16 @@ static bool tables_initialized = []() {
     return true;
 }();
 
+#if defined(_MSC_VER)
+static bool CheckCpuFeature(int leaf, int subleaf, int regIndex, int bitIndex) noexcept {
+    int cpu_info[4];
+    __cpuid(cpu_info, 0);
+    if (cpu_info[0] < leaf) return false;
+    __cpuidex(cpu_info, leaf, subleaf);
+    return (cpu_info[regIndex] & (1 << bitIndex)) != 0;
+}
+#endif
+
 } // anonymous namespace
 
 ReedSolomonSimd::ReedSolomonSimd() {
@@ -40,19 +50,39 @@ ReedSolomonSimd::ReedSolomonSimd() {
 
 bool ReedSolomonSimd::HasAvx2Support() noexcept {
 #if defined(_MSC_VER)
-    int cpu_info[4];
-    __cpuid(cpu_info, 0);
-    int n_ids = cpu_info[0];
-    if (n_ids >= 7) {
-        __cpuidex(cpu_info, 7, 0);
-        return (cpu_info[1] & (1 << 5)) != 0; // AVX2 bit
-    }
-    return false;
+    return CheckCpuFeature(7, 0, 1, 5); // EBX bit 5: AVX2
 #elif defined(__GNUC__) || defined(__clang__)
     return __builtin_cpu_supports("avx2");
 #else
     return false;
 #endif
+}
+
+bool ReedSolomonSimd::HasAvx512Support() noexcept {
+#if defined(_MSC_VER)
+    return CheckCpuFeature(7, 0, 1, 16) && CheckCpuFeature(7, 0, 1, 30); // EBX bit 16: AVX512F, bit 30: AVX512BW
+#elif defined(__GNUC__) || defined(__clang__)
+    return __builtin_cpu_supports("avx512f") && __builtin_cpu_supports("avx512bw");
+#else
+    return false;
+#endif
+}
+
+bool ReedSolomonSimd::HasGfniSupport() noexcept {
+#if defined(_MSC_VER)
+    return CheckCpuFeature(7, 0, 2, 8); // ECX bit 8: GFNI
+#elif defined(__GNUC__) || defined(__clang__)
+    return __builtin_cpu_supports("gfni");
+#else
+    return false;
+#endif
+}
+
+SimdArchitecture ReedSolomonSimd::GetDetectedArchitecture() noexcept {
+    if (HasGfniSupport() && HasAvx512Support()) return SimdArchitecture::GfniAvx512;
+    if (HasAvx512Support()) return SimdArchitecture::Avx512;
+    if (HasAvx2Support()) return SimdArchitecture::Avx2;
+    return SimdArchitecture::Scalar;
 }
 
 uint8_t ReedSolomonSimd::GfMultiplyScalar(uint8_t a, uint8_t b) noexcept {
@@ -70,16 +100,30 @@ void ReedSolomonSimd::VectorXor(uint8_t* dest, const uint8_t* src, size_t length
     if (!dest || !src || length == 0) return;
 
     size_t i = 0;
-#if defined(__AVX2__) || defined(MOONSHINE_HAS_AVX2)
-    // 32-byte chunks using 256-bit AVX2 registers
-    for (; i + 32 <= length; i += 32) {
-        __m256i vd = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(dest + i));
-        __m256i vs = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(src + i));
-        _mm256_storeu_si256(reinterpret_cast<__m256i*>(dest + i), _mm256_xor_si256(vd, vs));
+
+#if (defined(_MSC_VER) && (defined(_M_AMD64) || defined(_M_X64))) || defined(__AVX512F__) || defined(MOONSHINE_HAS_AVX512)
+    static const bool s_has_avx512 = HasAvx512Support();
+    if (s_has_avx512) {
+        for (; i + 64 <= length; i += 64) {
+            __m512i vd = _mm512_loadu_si512(reinterpret_cast<const void*>(dest + i));
+            __m512i vs = _mm512_loadu_si512(reinterpret_cast<const void*>(src + i));
+            _mm512_storeu_si512(reinterpret_cast<void*>(dest + i), _mm512_xor_si512(vd, vs));
+        }
     }
 #endif
 
-    // Process remainder 8-byte chunks
+#if defined(__AVX2__) || defined(MOONSHINE_HAS_AVX2)
+    static const bool s_has_avx2 = HasAvx2Support();
+    if (s_has_avx2) {
+        for (; i + 32 <= length; i += 32) {
+            __m256i vd = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(dest + i));
+            __m256i vs = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(src + i));
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(dest + i), _mm256_xor_si256(vd, vs));
+        }
+    }
+#endif
+
+    // Remainder 8-byte chunks
     for (; i + 8 <= length; i += 8) {
         *reinterpret_cast<uint64_t*>(dest + i) ^= *reinterpret_cast<const uint64_t*>(src + i);
     }
@@ -97,50 +141,63 @@ void ReedSolomonSimd::VectorGfMulAdd(uint8_t* dest, const uint8_t* src, uint8_t 
         return;
     }
 
-#if defined(__AVX2__) || defined(MOONSHINE_HAS_AVX2)
-    // AVX2 4-bit nibble decomposition lookup tables
-    alignas(32) uint8_t low_table[32];
-    alignas(32) uint8_t high_table[32];
-
-    for (uint8_t nibble = 0; nibble < 16; ++nibble) {
-        uint8_t low_val = GfMultiplyScalar(nibble, coeff);
-        uint8_t high_val = GfMultiplyScalar(static_cast<uint8_t>(nibble << 4), coeff);
-        low_table[nibble] = low_val;
-        low_table[nibble + 16] = low_val;
-        high_table[nibble] = high_val;
-        high_table[nibble + 16] = high_val;
-    }
-
-    __m256i v_low_table = _mm256_load_si256(reinterpret_cast<const __m256i*>(low_table));
-    __m256i v_high_table = _mm256_load_si256(reinterpret_cast<const __m256i*>(high_table));
-    __m256i v_mask_low = _mm256_set1_epi8(0x0F);
-
     size_t i = 0;
-    for (; i + 32 <= length; i += 32) {
-        __m256i v_src = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(src + i));
-        __m256i v_dest = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(dest + i));
 
-        __m256i v_src_low = _mm256_and_si256(v_src, v_mask_low);
-        __m256i v_src_high = _mm256_and_si256(_mm256_srli_epi16(v_src, 4), v_mask_low);
-
-        __m256i v_res_low = _mm256_shuffle_epi8(v_low_table, v_src_low);
-        __m256i v_res_high = _mm256_shuffle_epi8(v_high_table, v_src_high);
-
-        __m256i v_product = _mm256_xor_si256(v_res_low, v_res_high);
-        __m256i v_out = _mm256_xor_si256(v_dest, v_product);
-
-        _mm256_storeu_si256(reinterpret_cast<__m256i*>(dest + i), v_out);
+#if (defined(_MSC_VER) && (defined(_M_AMD64) || defined(_M_X64))) || defined(__GFNI__) || defined(MOONSHINE_HAS_AVX512)
+    static const bool s_has_gfni = HasGfniSupport() && HasAvx512Support();
+    if (s_has_gfni) {
+        __m512i v_coeff = _mm512_set1_epi8(static_cast<char>(coeff));
+        for (; i + 64 <= length; i += 64) {
+            __m512i v_src = _mm512_loadu_si512(reinterpret_cast<const void*>(src + i));
+            __m512i v_dest = _mm512_loadu_si512(reinterpret_cast<const void*>(dest + i));
+            __m512i v_prod = _mm512_gf2p8mul_epi8(v_src, v_coeff);
+            _mm512_storeu_si512(reinterpret_cast<void*>(dest + i), _mm512_xor_si512(v_dest, v_prod));
+        }
     }
+#endif
+
+#if defined(__AVX2__) || defined(MOONSHINE_HAS_AVX2)
+    static const bool s_has_avx2 = HasAvx2Support();
+    if (s_has_avx2 && (i + 32 <= length)) {
+        // AVX2 4-bit nibble decomposition lookup tables
+        alignas(32) uint8_t low_table[32];
+        alignas(32) uint8_t high_table[32];
+
+        for (uint8_t nibble = 0; nibble < 16; ++nibble) {
+            uint8_t low_val = GfMultiplyScalar(nibble, coeff);
+            uint8_t high_val = GfMultiplyScalar(static_cast<uint8_t>(nibble << 4), coeff);
+            low_table[nibble] = low_val;
+            low_table[nibble + 16] = low_val;
+            high_table[nibble] = high_val;
+            high_table[nibble + 16] = high_val;
+        }
+
+        __m256i v_low_table = _mm256_load_si256(reinterpret_cast<const __m256i*>(low_table));
+        __m256i v_high_table = _mm256_load_si256(reinterpret_cast<const __m256i*>(high_table));
+        __m256i v_mask_low = _mm256_set1_epi8(0x0F);
+
+        for (; i + 32 <= length; i += 32) {
+            __m256i v_src = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(src + i));
+            __m256i v_dest = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(dest + i));
+
+            __m256i v_src_low = _mm256_and_si256(v_src, v_mask_low);
+            __m256i v_src_high = _mm256_and_si256(_mm256_srli_epi16(v_src, 4), v_mask_low);
+
+            __m256i v_res_low = _mm256_shuffle_epi8(v_low_table, v_src_low);
+            __m256i v_res_high = _mm256_shuffle_epi8(v_high_table, v_src_high);
+
+            __m256i v_product = _mm256_xor_si256(v_res_low, v_res_high);
+            __m256i v_out = _mm256_xor_si256(v_dest, v_product);
+
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(dest + i), v_out);
+        }
+    }
+#endif
 
     // Scalar fallback for remainder
     for (; i < length; ++i) {
         dest[i] ^= GfMultiplyScalar(src[i], coeff);
     }
-#else
-    for (size_t i = 0; i < length; ++i) {
-        dest[i] ^= GfMultiplyScalar(src[i], coeff);
-    }
-#endif
 }
 
 int ReedSolomonSimd::Reconstruct(

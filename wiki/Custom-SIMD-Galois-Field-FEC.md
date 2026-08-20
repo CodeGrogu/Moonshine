@@ -1,124 +1,67 @@
-# Custom SIMD Galois Field FEC Engine
+# Custom SIMD Galois Field GF(2^8) Reed-Solomon Forward Error Correction
 
-## 1. Problem Statement: Why Legacy FEC is a Latency Bottleneck
-
-Forward Error Correction (FEC) in real-time game streaming allows the client to recover dropped UDP packets without requesting retransmissions (which would incur at least one full round-trip time RTT penalty).
-
-Legacy Moonlight implementations rely on scalar Galois Field $GF(2^8)$ multiplication using exponential and logarithmic lookup tables:
-$$\text{mul}(a, b) = \text{exp}[\text{log}[a] + \text{log}[b]]$$
-
-While mathematically simple, this scalar approach suffers from severe architectural drawbacks:
-1. Cache Bottleneck: Table lookups for each individual byte thrash the CPU L1 data cache.
-2. Branch Divergence: Special handling for zero elements ($a = 0$ or $b = 0$) causes branch mispredictions.
-3. Lack of Vectorisation: Traditional table lookups cannot be efficiently vectorised across wide SIMD registers (such as 256-bit AVX2 or 512-bit AVX-512).
+Moonshine implements a custom-engineered, multi-tiered SIMD Galois Field $GF(2^8)$ Reed-Solomon Forward Error Correction (FEC) engine supporting Intel GFNI (Galois Field New Instructions), AVX-512BW, AVX2, and 64-bit scalar execution paths.
 
 ---
 
-## 2. Custom Solution: Tableless SIMD Nibble Decomposition
+## 1. Mathematical Formulation
 
-Moonshine implements a custom, vectorised Galois Field $GF(2^8)$ matrix engine using 4-bit nibble decomposition and the byte shuffle instruction (`_mm256_shuffle_epi8` / `_mm512_shuffle_epi8` / ARM NEON `vtbl1_u8`).
+### A. Generator Polynomial
+The Galois Field $GF(2^8)$ arithmetic in Moonshine uses the primitive generator polynomial:
+$$P(x) = x^8 + x^4 + x^3 + x^2 + 1 \quad (\text{0x11D} \text{ / } \text{0x1D})$$
 
-### Mathematical Formulation
-Every 8-bit byte $x \in GF(2^8)$ can be split into a low 4-bit nibble $x_L$ and a high 4-bit nibble $x_H$:
-$$x = x_L \oplus (x_H \ll 4)$$
+Multiplication of two elements $\alpha, \beta \in GF(2^8)$ corresponds to polynomial multiplication modulo $P(x)$ over $GF(2)$:
+$$\alpha \cdot \beta = (\alpha(x) \times \beta(x)) \pmod{P(x)}$$
 
-Galois Field multiplication is distributive over addition (XOR):
-$$c \otimes x = (c \otimes x_L) \oplus (c \otimes (x_H \ll 4))$$
+Logarithmic and exponential exponent tables are precomputed for $O(1)$ scalar multiplication:
+$$\alpha \cdot \beta = \exp\Big((\log(\alpha) + \log(\beta)) \pmod{255}\Big)$$
 
-Since $x_L$ and $x_H$ have only 16 possible values ($0 \le x_L, x_H \le 15$), we can pre-compute two 16-byte look-up vectors for any constant coefficient $c$:
-1. $T_L[i] = c \otimes i$ (for $i \in [0, 15]$)
-2. $T_H[i] = c \otimes (i \ll 4)$ (for $i \in [0, 15]$)
+---
 
-These 16-byte tables fit entirely into a single 128-bit SIMD register (broadcasted across 256-bit or 512-bit registers).
-
-### SIMD Vectorised Execution Path
+## 2. Multi-Tiered SIMD Execution Hierarchy
 
 ```
-Input Vector (32 Bytes / 256-bit AVX2)
-   │
-   ├─► Low Nibbles  (x & 0x0F) ──► _mm256_shuffle_epi8(TL, low)  ──┐
-   │                                                                ├──► _mm256_xor_si256 ──► Output
-   └─► High Nibbles (x >> 4)   ──► _mm256_shuffle_epi8(TH, high) ──┘
+┌────────────────────────────────────────────────────────┐
+│               ReedSolomonSimd Dispatcher               │
+└───────────────────────────┬────────────────────────────┘
+                            │
+       ┌────────────────────┼────────────────────┐
+       ▼                    ▼                    ▼
+┌───────────────┐    ┌───────────────┐    ┌───────────────┐
+│ Intel GFNI +  │    │  AVX-512BW /  │    │  Scalar /     │
+│ AVX-512 (ZMM) │    │  AVX2 (YMM)   │    │  64-bit Tail  │
+│ 64 Bytes/inst │    │ Nibble Table  │    │ Word Fallback │
+└───────────────┘    └───────────────┘    └───────────────┘
 ```
+
+### Tier 1: Intel GFNI + AVX-512 (64 Bytes Per Clock)
+On Intel Ice Lake, Alder Lake / Raptor Lake, Sapphire Rapids, and AMD Zen 4 / Zen 5 CPUs with `GFNI` and `AVX512F`:
+- Utilizes `_mm512_gf2p8mul_epi8` for tableless single-cycle parallel multiplication of 64 bytes in 512-bit ZMM registers.
+- Accumulates parity shards with `_mm512_xor_si512`.
 
 ```cpp
-void ReedSolomonSimd::MultiplyRegionAvx2(uint8_t* dest, const uint8_t* src, uint8_t coeff, size_t length)
-{
-    // Generate low and high 16-byte tables for coefficient
-    alignas(32) uint8_t table_l[32];
-    alignas(32) uint8_t table_h[32];
-    for (int i = 0; i < 16; i++)
-    {
-        uint8_t val_l = GfMulScalar(static_cast<uint8_t>(i), coeff);
-        uint8_t val_h = GfMulScalar(static_cast<uint8_t>(i << 4), coeff);
-        table_l[i] = table_l[i + 16] = val_l;
-        table_h[i] = table_h[i + 16] = val_h;
-    }
-
-    __m256i tl = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(table_l));
-    __m256i th = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(table_h));
-    __m256i mask_low = _mm256_set1_epi8(0x0F);
-
-    size_t i = 0;
-    for (; i + 32 <= length; i += 32)
-    {
-        __m256i s = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(src + i));
-        __m256i d = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(dest + i));
-
-        __m256i low = _mm256_and_si256(s, mask_low);
-        __m256i high = _mm256_and_si256(_mm256_srli_epi16(s, 4), mask_low);
-
-        __m256i res_low = _mm256_shuffle_epi8(tl, low);
-        __m256i res_high = _mm256_shuffle_epi8(th, high);
-        __m256i prod = _mm256_xor_si256(res_low, res_high);
-
-        _mm256_storeu_si256(reinterpret_cast<__m256i*>(dest + i), _mm256_xor_si256(d, prod));
-    }
-
-    // Scalar fallback for remaining unaligned bytes
-    for (; i < length; i++)
-    {
-        dest[i] ^= GfMulScalar(src[i], coeff);
-    }
-}
+__m512i v_coeff = _mm512_set1_epi8(coeff);
+__m512i v_src   = _mm512_loadu_si512(src + i);
+__m512i v_dest  = _mm512_loadu_si512(dest + i);
+__m512i v_prod  = _mm512_gf2p8mul_epi8(v_src, v_coeff);
+_mm512_storeu_si512(dest + i, _mm512_xor_si512(v_dest, v_prod));
 ```
+
+### Tier 2: AVX2 4-Bit Nibble Decomposition (32 Bytes Per Clock)
+On AVX2 hardware without GFNI, each byte $b$ is decomposed into low nibble $b_L = b \ \& \ \text{0x0F}$ and high nibble $b_H = (b \gg 4) \ \& \ \text{0x0F}$:
+$$b \cdot c = (b_L \cdot c) \oplus (b_H \cdot c)$$
+
+- Lookups are executed simultaneously across 32 bytes using `_mm256_shuffle_epi8` (`vpshufb`).
+- Results are recombined using `_mm256_xor_si256`.
 
 ---
 
-## 3. Fast Parity XOR Acceleration
+## 3. Dynamic CPU Feature Detection
 
-When single parity recovery is performed (the most frequent case where 1 packet is lost out of $N$), all coefficients in the generator matrix are equal to 1 ($c = 1$).
+At runtime, the engine queries CPUID leaf 7:
+- **AVX2**: `EBX` bit 5
+- **AVX-512F**: `EBX` bit 16
+- **AVX-512BW**: `EBX` bit 30
+- **GFNI**: `ECX` bit 8
 
-In this scenario, Moonshine bypasses polynomial multiplication entirely and runs 256-bit SIMD vectorised XOR instructions:
-
-```cpp
-void ReedSolomonSimd::VectorXorAvx2(uint8_t* dest, const uint8_t* src, size_t length)
-{
-    size_t i = 0;
-    for (; i + 32 <= length; i += 32)
-    {
-        __m256i d = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(dest + i));
-        __m256i s = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(src + i));
-        _mm256_storeu_si256(reinterpret_cast<__m256i*>(dest + i), _mm256_xor_si256(d, s));
-    }
-
-    for (; i < length; i++)
-    {
-        dest[i] ^= src[i];
-    }
-}
-```
-
----
-
-## 4. Benchmark Comparison
-
-Benchmark executed across 10 shards of 1,400 bytes each (standard MTU payload size):
-
-| Algorithm | Execution Time per Packet | Throughput | L1 Cache Footprint |
-| :--- | :--- | :--- | :--- |
-| **Scalar Exp/Log Table Lookups** | $14.2\,\mu\text{s}$ | $98.6\,\text{MB/s}$ | $2 \times 256$ B tables |
-| **Custom AVX2 Nibble SIMD** | **$1.1\,\mu\text{s}$** | **$1,272.7\,\text{MB/s}$** | **0 B (Registers only)** |
-| **Custom Vector XOR (Single Parity)** | **$0.08\,\mu\text{s}$** | **$17,500.0\,\text{MB/s}$** | **0 B (Registers only)** |
-
-This custom implementation delivers over **12.9 times higher throughput** for general multi-parity recovery and **170 times higher throughput** for single parity reconstruction.
+The active instruction set can be queried via `moonshine_fec_get_simd_architecture()`.

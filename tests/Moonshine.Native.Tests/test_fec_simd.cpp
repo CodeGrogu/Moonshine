@@ -13,11 +13,19 @@
 
 using namespace moonshine::fec;
 
+void TestSimdArchitectureDetection()
+{
+    std::cout << "[Test] Querying detected SIMD architecture..." << std::endl;
+    SimdArchitecture arch = ReedSolomonSimd::GetDetectedArchitecture();
+    std::cout << "Detected SIMD Architecture: " << static_cast<uint32_t>(arch) << std::endl;
+    TEST_ASSERT(static_cast<uint32_t>(arch) >= 0);
+}
+
 void TestVectorXorBasic()
 {
-    std::cout << "[Test] VectorXor basic 32-byte alignment..." << std::endl;
-    alignas(32) uint8_t dest[64];
-    alignas(32) uint8_t src[64];
+    std::cout << "[Test] VectorXor basic 64-byte alignment (AVX-512 / AVX2)..." << std::endl;
+    alignas(64) uint8_t dest[128];
+    alignas(64) uint8_t src[128];
 
     std::memset(dest, 0xAA, sizeof(dest));
     std::memset(src, 0x55, sizeof(src));
@@ -80,6 +88,16 @@ void TestGaloisFieldMultiplication()
 
     ReedSolomonSimd::VectorGfMulAdd(dest.data(), src.data(), 1, 1);
     TEST_ASSERT(dest[0] == (0xAA ^ 0x55));
+
+    // Vector multiplication of 64 bytes
+    std::vector<uint8_t> v_dest(64, 0x00);
+    std::vector<uint8_t> v_src(64, 0x02);
+    ReedSolomonSimd::VectorGfMulAdd(v_dest.data(), v_src.data(), 0x02, 64);
+    uint8_t scalar_expected = ReedSolomonSimd::GfMultiplyScalar(0x02, 0x02);
+    for (size_t i = 0; i < 64; i++)
+    {
+        TEST_ASSERT(v_dest[i] == scalar_expected);
+    }
 }
 
 void TestSingleParityRecovery()
@@ -119,6 +137,30 @@ void TestSingleParityRecovery()
     TEST_ASSERT(std::memcmp(shards[2].data(), original_shard2.data(), kShardSize) == 0);
 }
 
+void TestMultiShardRecovery()
+{
+    std::cout << "[Test] Reed-Solomon multi-shard reconstruction..." << std::endl;
+    constexpr int kShards = 6;
+    constexpr int kShardSize = 1400;
+
+    std::vector<std::vector<uint8_t>> shards(kShards, std::vector<uint8_t>(kShardSize));
+    std::vector<uint8_t*> shard_ptrs(kShards);
+
+    for (int s = 0; s < kShards; s++)
+    {
+        for (int i = 0; i < kShardSize; i++)
+        {
+            shards[s][i] = static_cast<uint8_t>((s + 1) * 17 + i);
+        }
+        shard_ptrs[s] = shards[s].data();
+    }
+
+    int erased_indices[] = {1, 3};
+    ReedSolomonSimd codec;
+    int res = codec.Reconstruct(shard_ptrs.data(), kShards, kShardSize, erased_indices, 2);
+    TEST_ASSERT(res == 0);
+}
+
 void TestInvalidInputs()
 {
     std::cout << "[Test] FEC error handling and invalid input rejection..." << std::endl;
@@ -136,11 +178,13 @@ void TestInvalidInputs()
 int main()
 {
     std::cout << "=== Running Comprehensive FEC SIMD Test Suite ===" << std::endl;
+    TestSimdArchitectureDetection();
     TestVectorXorBasic();
     TestVectorXorEdgeLengths();
     TestVectorXorSelfInverse();
     TestGaloisFieldMultiplication();
     TestSingleParityRecovery();
+    TestMultiShardRecovery();
     TestInvalidInputs();
     std::cout << "All FEC SIMD tests passed successfully." << std::endl;
     return 0;

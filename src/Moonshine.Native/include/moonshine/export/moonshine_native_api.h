@@ -93,13 +93,19 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_fec_recover_simd(
 );
 
 /**
- * @brief Fast SIMD 256-bit Vectorized XOR for packet accumulation.
+ * @brief Fast SIMD 256-bit/512-bit Vectorized XOR for packet accumulation.
  */
 MOONSHINE_API void MOONSHINE_CONV moonshine_vector_xor(
     uint8_t* dest,
     const uint8_t* src,
     size_t length
 );
+
+/**
+ * @brief Queries the runtime SIMD instruction set architecture utilized for Galois Field FEC.
+ * @return 0: Scalar, 1: AVX2, 2: AVX-512, 3: GFNI + AVX-512.
+ */
+MOONSHINE_API uint32_t MOONSHINE_CONV moonshine_fec_get_simd_architecture(void);
 
 // ============================================================================
 // Lock-Free SPSC Queue Management APIs

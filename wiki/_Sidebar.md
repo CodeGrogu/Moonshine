@@ -1,8 +1,9 @@
 ### Moonshine Wiki
 
-**Architecture**
+**Architecture and Design**
 - [Architecture Overview](Architecture-Overview)
-- [Zero-Alloc Data Plane](Zero-Allocation-Data-Plane)
+- [Zero Allocation Pipeline](Zero-Allocation-Pipeline)
+- [Lock Free Ring Buffers](Lock-Free-Ring-Buffers)
 - [Custom SIMD Galois Field FEC](Custom-SIMD-Galois-Field-FEC)
 - [Custom Lock-Free SPSC Queues](Custom-Lock-Free-SPSC-Concurrency)
 - [Predictive Jitter Buffer](Predictive-Jitter-Buffer)
