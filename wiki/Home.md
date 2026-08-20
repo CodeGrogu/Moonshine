@@ -21,6 +21,16 @@ Moonshine is a next-generation, ultra-low-latency game streaming client engineer
 - **[Cryptographic Pairing Pipeline](Cryptographic-Pairing-Pipeline)**: RSA 2048-bit X.509 certificate generation, PBKDF2/SHA-256 key derivation, and AES-128 challenge-response authentication.
 - **[RTSP Stream Control and Dynamic SDP](RTSP-Stream-Control-and-SDP)**: Stateful RTSP client state machine, RFC 4566 SDP offer/answer negotiation, HDR10 static metadata, and dynamic bitrate adaptation announcements.
 - **[Zero-Copy UDP Ingestion Pipeline](Zero-Copy-UDP-Ingestion)**: High-throughput UDP datagram receiver, cacheline-aligned PinnedBufferPool, and lock-free C++23 SPSC queue dispatching.
+- **[1000Hz Input Subsystem](Input-Subsystem-1000Hz)**: Sub-millisecond raw input polling, atomic delta staging, and binary serialization.
+- **[Dynamic RTCP Congestion Control](Dynamic-RTCP-Congestion-Control)**: Real-time RTCP receiver feedback, EMA loss smoothing, and predictive AIMD bandwidth adaptation.
+
+### Moonshine Host Subsystem
+- **[Direct3D Desktop Capture Engine](Direct3D-Desktop-Capture)**: IDXGIOutputDuplication & Windows.Graphics.Capture VRAM frame ingestion.
+- **[GPU Hardware Video Encoding](GPU-Hardware-Video-Encoding)**: Native NVENC, AMF, and QuickSync low-latency GPU encoders for HEVC/AV1.
+- **[WASAPI Loopback Audio Engine](WASAPI-Loopback-Audio)**: Low-latency master audio mix capture and Opus multi-channel streaming.
+- **[Virtual Input & Driver Injection](Virtual-Input-Driver-Injection)**: ViGEmBus controller emulation and kernel-level mouse/keyboard injection.
+- **[GameStream HTTPS & RTSP Host Server](GameStream-HTTPS-RTSP-Host-Server)**: Embedded pairing, discovery, and RTSP stream orchestration.
+- **[Authenticated Remote Control Plane](Authenticated-Remote-Control-Plane)**: Secure client-to-host RPC, dynamic display mode adaptation, and zero-overhead coordinator.
 
 ### Workflows, Testing and Performance
 - [[CI and GitHub Workflows|Continuous-Integration-and-Workflows]]: Multi-OS CI matrix, ASan/TSan sanitizers, AOT trimming verification, and security audits.

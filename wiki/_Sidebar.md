@@ -16,6 +16,16 @@
 - [Cryptographic Pairing Pipeline](Cryptographic-Pairing-Pipeline)
 - [RTSP Stream Control and SDP](RTSP-Stream-Control-and-SDP)
 - [Zero-Copy UDP Ingestion](Zero-Copy-UDP-Ingestion)
+- [1000Hz Input Subsystem](Input-Subsystem-1000Hz)
+- [Dynamic RTCP Congestion Control](Dynamic-RTCP-Congestion-Control)
+
+**Moonshine Host Subsystem**
+- [Direct3D Desktop Capture](Direct3D-Desktop-Capture)
+- [GPU Hardware Video Encoding](GPU-Hardware-Video-Encoding)
+- [WASAPI Loopback Audio](WASAPI-Loopback-Audio)
+- [Virtual Input & Injection](Virtual-Input-Driver-Injection)
+- [GameStream HTTPS & RTSP Host Server](GameStream-HTTPS-RTSP-Host-Server)
+- [Authenticated Remote Control Plane](Authenticated-Remote-Control-Plane)
 
 **Workflows and Quality Assurance**
 - [CI and GitHub Workflows](Continuous-Integration-and-Workflows)
