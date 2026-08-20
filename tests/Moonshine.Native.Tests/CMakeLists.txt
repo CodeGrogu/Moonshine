@@ -48,6 +48,12 @@ add_executable(test_hardware_encoders
 target_link_libraries(test_hardware_encoders PRIVATE Moonshine.Native)
 add_test(NAME test_hardware_encoders COMMAND test_hardware_encoders)
 
+add_executable(test_nvenc_pipeline 
+    test_nvenc_pipeline.cpp
+)
+target_link_libraries(test_nvenc_pipeline PRIVATE Moonshine.Native)
+add_test(NAME test_nvenc_pipeline COMMAND test_nvenc_pipeline)
+
 if(WIN32)
     add_custom_command(TARGET test_c_abi_export POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different

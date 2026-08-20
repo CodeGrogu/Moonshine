@@ -310,4 +310,32 @@ public static unsafe partial class MoonshineNativeMethods
     [LibraryImport(LibraryName, EntryPoint = "moonshine_encoder_destroy")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial void EncoderDestroy(IntPtr handle);
+
+    // ========================================================================
+    // NVIDIA NVENC Dedicated Custom APIs
+    // ========================================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_nvenc_query_codec_support")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int NvencQueryCodecSupport(
+        uint codec,
+        out uint outSupported
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_nvenc_set_tuning")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int NvencSetTuning(
+        IntPtr handle,
+        uint preset,
+        uint tuning
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_nvenc_set_intra_refresh")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int NvencSetIntraRefresh(
+        IntPtr handle,
+        int enable,
+        uint period,
+        uint count
+    );
 }
