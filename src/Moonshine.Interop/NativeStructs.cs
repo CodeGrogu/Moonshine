@@ -86,3 +86,55 @@ public unsafe struct MoonshineHdr10Metadata
     public fixed byte Reserved[2];                  // Padding for strict 32-byte alignment
 }
 
+/// <summary>
+/// Exact binary match for MoonshineEncoderCaps (C-ABI, 32 bytes).
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct MoonshineEncoderCaps
+{
+    public uint SupportedCodecsMask;
+    public uint MaxWidth;
+    public uint MaxHeight;
+    public uint MaxFps;
+    public byte Supports10Bit;
+    public byte SupportsLossless;
+    public byte SupportsSmartIdr;
+    public byte VendorId;
+    public uint MinBitrateKbps;
+    public uint MaxBitrateKbps;
+    public uint Reserved;
+}
+
+/// <summary>
+/// Exact binary match for MoonshineEncoderConfig (C-ABI, 32 bytes).
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct MoonshineEncoderConfig
+{
+    public uint Width;
+    public uint Height;
+    public uint Fps;
+    public uint BitrateKbps;
+    public uint PeakBitrateKbps;
+    public uint Codec;
+    public uint RcMode;
+    public ushort GopLength;
+    public byte EnableIntraRefresh;
+    public byte EnableFillerData;
+}
+
+/// <summary>
+/// Exact binary match for MoonshineEncodedPacketDesc (C-ABI, 24 bytes).
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct MoonshineEncodedPacketDesc
+{
+    public ulong FrameIndex;
+    public long TimestampQpc;
+    public uint PayloadSize;
+    public byte IsKeyframe;
+    public byte IsHeaderPacket;
+    public byte TemporalId;
+    public byte Reserved;
+}
+

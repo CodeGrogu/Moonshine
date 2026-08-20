@@ -11,6 +11,7 @@
 #include "moonshine/capture/wgc_desktop_capture.hpp"
 #include "moonshine/color/hdr_metadata_extractor.hpp"
 #include "moonshine/color/d3d_color_converter.hpp"
+#include "moonshine/encoder/unified_video_encoder.hpp"
 
 using namespace moonshine;
 
@@ -379,6 +380,143 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_color_converter_destroy(
     if (!handle) return;
     auto* conv = static_cast<color::D3DColorConverter*>(handle);
     delete conv;
+}
+
+// ============================================================================
+// Multi-Vendor Hardware Video Encoder APIs
+// ============================================================================
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_encoder_query_caps(
+    uint32_t vendor,
+    void* d3d_device,
+    MoonshineEncoderCaps* out_caps
+) {
+    if (!out_caps) return 0;
+    encoder::EncoderCaps caps{};
+    bool res = encoder::UnifiedVideoEncoder::query_capabilities(
+        static_cast<encoder::EncoderVendor>(vendor),
+        d3d_device,
+        caps
+    );
+    if (!res) return 0;
+
+    out_caps->supported_codecs_mask = caps.supported_codecs_mask;
+    out_caps->max_width = caps.max_width;
+    out_caps->max_height = caps.max_height;
+    out_caps->max_fps = caps.max_fps;
+    out_caps->supports_10bit = caps.supports_10bit;
+    out_caps->supports_lossless = caps.supports_lossless;
+    out_caps->supports_smart_idr = caps.supports_smart_idr;
+    out_caps->vendor_id = caps.vendor_id;
+    out_caps->min_bitrate_kbps = caps.min_bitrate_kbps;
+    out_caps->max_bitrate_kbps = caps.max_bitrate_kbps;
+    out_caps->reserved = 0;
+    return 1;
+}
+
+MOONSHINE_API MoonshineEncoderHandle MOONSHINE_CONV moonshine_encoder_create(
+    uint32_t vendor,
+    void* d3d_device,
+    const MoonshineEncoderConfig* config
+) {
+    if (!config) return nullptr;
+
+    auto encoder = std::make_unique<encoder::UnifiedVideoEncoder>(
+        static_cast<encoder::EncoderVendor>(vendor)
+    );
+
+    encoder::EncoderConfig cfg{};
+    cfg.width = config->width;
+    cfg.height = config->height;
+    cfg.fps = config->fps;
+    cfg.bitrate_kbps = config->bitrate_kbps;
+    cfg.peak_bitrate_kbps = config->peak_bitrate_kbps;
+    cfg.codec = config->codec;
+    cfg.rc_mode = config->rc_mode;
+    cfg.gop_length = config->gop_length;
+    cfg.enable_intra_refresh = config->enable_intra_refresh;
+    cfg.enable_filler_data = config->enable_filler_data;
+
+    if (!encoder->initialize(d3d_device, cfg)) {
+        return nullptr;
+    }
+
+    return static_cast<MoonshineEncoderHandle>(encoder.release());
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_encoder_encode_frame(
+    MoonshineEncoderHandle handle,
+    void* d3d_texture,
+    int force_idr,
+    MoonshineEncodedPacketDesc* out_desc,
+    uint8_t* out_buffer,
+    uint32_t max_buffer_size,
+    uint32_t* out_size
+) {
+    if (!handle || !out_desc || !out_buffer || !out_size) return 0;
+    auto* encoder = static_cast<encoder::UnifiedVideoEncoder*>(handle);
+
+    encoder::EncodedPacketDesc desc{};
+    uint32_t written = 0;
+    bool res = encoder->encode_frame(
+        d3d_texture,
+        force_idr != 0,
+        desc,
+        out_buffer,
+        max_buffer_size,
+        written
+    );
+
+    if (!res) return 0;
+
+    out_desc->frame_index = desc.frame_index;
+    out_desc->timestamp_qpc = desc.timestamp_qpc;
+    out_desc->payload_size = desc.payload_size;
+    out_desc->is_keyframe = desc.is_keyframe;
+    out_desc->is_header_packet = desc.is_header_packet;
+    out_desc->temporal_id = desc.temporal_id;
+    out_desc->reserved = 0;
+    *out_size = written;
+
+    return 1;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_encoder_reconfigure(
+    MoonshineEncoderHandle handle,
+    const MoonshineEncoderConfig* new_config
+) {
+    if (!handle || !new_config) return 0;
+    auto* encoder = static_cast<encoder::UnifiedVideoEncoder*>(handle);
+
+    encoder::EncoderConfig cfg{};
+    cfg.width = new_config->width;
+    cfg.height = new_config->height;
+    cfg.fps = new_config->fps;
+    cfg.bitrate_kbps = new_config->bitrate_kbps;
+    cfg.peak_bitrate_kbps = new_config->peak_bitrate_kbps;
+    cfg.codec = new_config->codec;
+    cfg.rc_mode = new_config->rc_mode;
+    cfg.gop_length = new_config->gop_length;
+    cfg.enable_intra_refresh = new_config->enable_intra_refresh;
+    cfg.enable_filler_data = new_config->enable_filler_data;
+
+    return encoder->reconfigure(cfg) ? 1 : 0;
+}
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_encoder_request_keyframe(
+    MoonshineEncoderHandle handle
+) {
+    if (!handle) return;
+    auto* encoder = static_cast<encoder::UnifiedVideoEncoder*>(handle);
+    encoder->request_keyframe();
+}
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_encoder_destroy(
+    MoonshineEncoderHandle handle
+) {
+    if (!handle) return;
+    auto* encoder = static_cast<encoder::UnifiedVideoEncoder*>(handle);
+    delete encoder;
 }
 
 } // extern "C"

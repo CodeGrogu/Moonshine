@@ -260,6 +260,84 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_color_converter_destroy(
     MoonshineColorConverterHandle handle
 );
 
+// ============================================================================
+// Multi-Vendor Hardware Video Encoder APIs (NVENC, AMF, QuickSync, D3D11)
+// ============================================================================
+
+typedef struct MoonshineEncoderCaps {
+    uint32_t supported_codecs_mask; // Bit 0: H264, Bit 1: HEVC, Bit 2: HEVC Main10, Bit 3: AV1
+    uint32_t max_width;             // e.g. 4096 / 8192
+    uint32_t max_height;            // e.g. 4096 / 8192
+    uint32_t max_fps;               // e.g. 240
+    uint8_t  supports_10bit;        // 1 if 10-bit HDR encoding supported
+    uint8_t  supports_lossless;     // 1 if lossless encoding supported
+    uint8_t  supports_smart_idr;    // 1 if dynamic IDR injection without full reset supported
+    uint8_t  vendor_id;             // 1: NVENC, 2: AMF, 3: QSV, 4: D3D11
+    uint32_t min_bitrate_kbps;      // Minimum bitrate (e.g. 500 kbps)
+    uint32_t max_bitrate_kbps;      // Maximum bitrate (e.g. 200000 kbps)
+    uint32_t reserved;              // Padding for strict 32-byte alignment
+} MoonshineEncoderCaps;
+
+typedef struct MoonshineEncoderConfig {
+    uint32_t width;                 // Frame width in pixels
+    uint32_t height;                // Frame height in pixels
+    uint32_t fps;                   // Target framerate
+    uint32_t bitrate_kbps;          // Target bitrate in kbps
+    uint32_t peak_bitrate_kbps;     // Peak bitrate for VBR / bursts
+    uint32_t codec;                 // 0: H264, 1: HEVC, 2: HEVC Main10, 3: AV1
+    uint32_t rc_mode;               // 0: CBR, 1: VBR, 2: CQP
+    uint16_t gop_length;            // GOP size
+    uint8_t  enable_intra_refresh;  // 1 to enable progressive intra-refresh
+    uint8_t  enable_filler_data;    // 1 to emit filler for strict CBR
+} MoonshineEncoderConfig;
+
+typedef struct MoonshineEncodedPacketDesc {
+    uint64_t frame_index;           // Monotonically increasing frame index
+    int64_t  timestamp_qpc;         // High-precision QPC timestamp
+    uint32_t payload_size;          // Total size of encoded NAL / OBU bytes
+    uint8_t  is_keyframe;           // 1 if IDR / SPS / PPS keyframe
+    uint8_t  is_header_packet;      // 1 if packet contains VPS/SPS/PPS parameter sets
+    uint8_t  temporal_id;           // Temporal layer ID
+    uint8_t  reserved;              // Padding for strict 24-byte alignment
+} MoonshineEncodedPacketDesc;
+
+typedef void* MoonshineEncoderHandle;
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_encoder_query_caps(
+    uint32_t vendor,
+    void* d3d_device,
+    MoonshineEncoderCaps* out_caps
+);
+
+MOONSHINE_API MoonshineEncoderHandle MOONSHINE_CONV moonshine_encoder_create(
+    uint32_t vendor,
+    void* d3d_device,
+    const MoonshineEncoderConfig* config
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_encoder_encode_frame(
+    MoonshineEncoderHandle handle,
+    void* d3d_texture,
+    int force_idr,
+    MoonshineEncodedPacketDesc* out_desc,
+    uint8_t* out_buffer,
+    uint32_t max_buffer_size,
+    uint32_t* out_size
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_encoder_reconfigure(
+    MoonshineEncoderHandle handle,
+    const MoonshineEncoderConfig* new_config
+);
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_encoder_request_keyframe(
+    MoonshineEncoderHandle handle
+);
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_encoder_destroy(
+    MoonshineEncoderHandle handle
+);
+
 #ifdef __cplusplus
 }
 #endif

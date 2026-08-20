@@ -42,6 +42,12 @@ add_executable(test_hdr_colorimetry
 target_link_libraries(test_hdr_colorimetry PRIVATE Moonshine.Native)
 add_test(NAME test_hdr_colorimetry COMMAND test_hdr_colorimetry)
 
+add_executable(test_hardware_encoders 
+    test_hardware_encoders.cpp
+)
+target_link_libraries(test_hardware_encoders PRIVATE Moonshine.Native)
+add_test(NAME test_hardware_encoders COMMAND test_hardware_encoders)
+
 if(WIN32)
     add_custom_command(TARGET test_c_abi_export POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
