@@ -121,15 +121,24 @@ MOONSHINE_API MoonshineDecoderHandle MOONSHINE_CONV moonshine_video_create_d3d11
     return static_cast<MoonshineDecoderHandle>(dec);
 }
 
+MOONSHINE_API MoonshineDecoderHandle MOONSHINE_CONV moonshine_video_create_d3d12(void* hwnd, uint32_t width, uint32_t height, uint32_t codec) {
+    auto* dec = new video::D3D12VideoDecoder();
+    if (dec->Initialize(hwnd, width, height, static_cast<video::VideoCodec>(codec)) != 0) {
+        delete dec;
+        return nullptr;
+    }
+    return static_cast<MoonshineDecoderHandle>(dec);
+}
+
 MOONSHINE_API void MOONSHINE_CONV moonshine_video_destroy(MoonshineDecoderHandle handle) {
     if (!handle) return;
-    auto* dec = static_cast<video::D3D11VideoDecoder*>(handle);
+    auto* dec = static_cast<video::IVideoDecoder*>(handle);
     delete dec;
 }
 
 MOONSHINE_API int MOONSHINE_CONV moonshine_video_submit_frame(MoonshineDecoderHandle handle, const MoonshineFrameDesc* frame) {
     if (!handle || !frame) return -1;
-    auto* dec = static_cast<video::D3D11VideoDecoder*>(handle);
+    auto* dec = static_cast<video::IVideoDecoder*>(handle);
     return dec->SubmitFrame(*frame);
 }
 

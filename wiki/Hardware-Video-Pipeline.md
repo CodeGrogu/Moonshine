@@ -1,43 +1,68 @@
-# Hardware Video Decode and Presentation Pipeline
+# Hardware Video Decoding Pipeline (Direct3D 11 & Direct3D 12)
 
-## 1. Zero-Copy Video Pipeline Architecture
+Moonshine implements an ultra-low-latency, zero-copy hardware video decoding pipeline built natively in C++23 utilizing Direct3D 11 Video Acceleration (D3D11VA) and Direct3D 12 Video Decode APIs.
 
-Moonshine bypasses intermediate CPU frame copying by feeding decoded video bitstreams directly into GPU hardware decoders via native Direct3D 11/12 and Vulkan Video pipelines.
+---
+
+## 1. Zero-Copy Hardware Video Architecture
 
 ```
-Reassembled Frame Bitstream (AV1 / HEVC / H.264)
-       │
-       ▼
-Hardware Video Decoder Device (D3D11VA / D3D12 Video / Vulkan)
-       │
-       ▼  (Direct GPU Texture Surface - NV12 / P010)
-DXGI Swap Chain Presentation (DXGI_SWAP_EFFECT_FLIP_DISCARD)
-       │
-       ▼  (Sub-Frame Presentation Waitable Object)
-Display Output (HDR10 Rec.2020 / 240Hz+ VRR)
+UDP Socket / Jitter Buffer (Native Arena)
+                    │
+                    │ Direct frame bitstream pointer (byte*)
+                    ▼
+MoonshineVideoPipeline (.NET 9 Managed Layer)
+                    │
+                    │ Blittable MoonshineFrameDesc
+                    ▼
+C-ABI Interop Bridge (moonshine_video_submit_frame)
+                    │
+                    ├─► D3D11VideoDecoder (ID3D11VideoContext / ID3D11VideoDecoder)
+                    └─► D3D12VideoDecoder (ID3D12VideoDevice / ID3D12VideoDecoder)
+                    │
+                    ▼
+Direct Surface Decode (Zero Host-to-Device Copies)
+                    │
+                    ├─► DXGI_FORMAT_NV12 (8-bit SDR H.264 / HEVC)
+                    └─► DXGI_FORMAT_P010 (10-bit HDR10 HEVC Main10 / AV1)
+                    │
+                    ▼
+DXGI Flip Model Swapchain (Direct Screen Presentation < 1ms)
 ```
 
 ---
 
-## 2. Direct3D 11 and Direct3D 12 Hardware Decoding
+## 2. Multi-Codec Video Decoder Matrix
 
-### Direct3D 11 Video Acceleration (D3D11VA)
-- Uses `ID3D11VideoDevice` and `ID3D11VideoDecoder` for hardware-accelerated slice decoding.
-- Decodes directly into DXGI texture arrays without unmanaged-to-managed copies.
-- Supports 8-bit NV12 and 10-bit P010 surface formats for HDR10 and Wide Colour Gamut (WCG).
+Moonshine negotiates hardware decoder profiles dynamically based on GPU capabilities:
 
-### Direct3D 12 Low-Overhead Pipeline
-- Utilises `ID3D12VideoDecoder` and independent video command queues.
-- Asynchronous GPU command list submission parallelised with CPU socket ingestion.
-- Explicit fence synchronisation between video decode completion and the Direct3D 12 direct render queue.
+| Codec | Profile / Pixel Format | D3D11 Decoder Profile GUID | Output Format |
+| :--- | :--- | :--- | :--- |
+| **H.264** | High Profile / 8-bit | `D3D11_DECODER_PROFILE_H264_VLD_NOFGT` | `DXGI_FORMAT_NV12` |
+| **HEVC (H.265)** | Main Profile / 8-bit SDR | `D3D11_DECODER_PROFILE_HEVC_VLD_MAIN` | `DXGI_FORMAT_NV12` |
+| **HEVC Main10** | Main 10 Profile / 10-bit HDR10 | `D3D11_DECODER_PROFILE_HEVC_VLD_MAIN10` | `DXGI_FORMAT_P010` |
+| **AV1** | Profile 0 / 8-bit & 10-bit | `D3D11_DECODER_PROFILE_AV1_VLD_PROFILE0` | `DXGI_FORMAT_NV12` / `P010` |
 
 ---
 
-## 3. Sub-Frame Presentation (DXGI Flip Model)
+## 3. Direct Surface Decoding and Zero-Copy Discipline
 
-Traditional presentation models (`DXGI_SWAP_EFFECT_DISCARD` or windowed blit) buffer frames in the Desktop Window Manager (DWM) composition queue, introducing between 8ms and 16ms of presentation delay.
+To achieve sub-millisecond decode latency at 4K 120 FPS:
 
-Moonshine implements modern DXGI Flip Model (`DXGI_SWAP_EFFECT_FLIP_DISCARD`):
-1. Independent Flip (`DirectComposition` / Borderless Fullscreen): Bypasses DWM compositing entirely and hands the decoded frame texture directly to the display scanout engine.
-2. Presentation Waitable Object (`CreateSwapChainForHwnd` with `DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT`): Moonshine sets maximum frame latency to 1 (`SetMaximumFrameLatency(1)`), eliminating render queue buffering and presenting within sub-frame timing ($< 1.0\,\text{ms}$).
-3. Variable Refresh Rate (VRR / G-Sync / FreeSync): Automatically disables V-Sync tearing blocks and matches presentation cadence to incoming host frame delivery timestamps.
+1. **Host-to-Device Bypass**:
+   - Bitstream buffers reconstructed by the predictive jitter buffer reside in pinned native memory slabs.
+   - Pointers are passed directly into `ID3D11VideoContext::SubmitDecoderBuffers` / `ID3D12VideoDecodeCommandList::DecodeFrame`.
+2. **Direct GPU Texture Output**:
+   - Decoded macroblocks write directly into GPU VRAM video surfaces (`ID3D11Texture2D` or `ID3D12Resource`).
+   - Surfaces are bound directly as shader resource views (`ID3D11ShaderResourceView`) or presented via DXGI Flip Model swapchains with zero CPU readbacks or host buffer blits.
+
+---
+
+## 4. Hardware Capability Telemetry (`QueryCaps`)
+
+The native bridge queries the active GPU adapter capabilities:
+- **`MaxWidth` / `MaxHeight`**: Maximum hardware resolution (up to 7680x4320 8K).
+- **`MaxFps`**: Maximum hardware refresh capability (up to 240 FPS).
+- **`SupportsAv1` / `SupportsHevc` / `SupportsH264`**: Codec decoder presence.
+- **`SupportsHdr10` / `Supports10Bit`**: 10-bit Rec.2020 wide color gamut capability.
+- **`SupportsD3D12` / `SupportsVulkan`**: Modern low-overhead graphics API decode availability.
