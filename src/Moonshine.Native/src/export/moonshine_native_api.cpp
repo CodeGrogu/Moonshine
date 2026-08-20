@@ -7,6 +7,7 @@
 #include "moonshine/video/dxgi_swapchain.hpp"
 #include "moonshine/audio/wasapi_renderer.hpp"
 #include "moonshine/capture/dxgi_desktop_duplicator.hpp"
+#include "moonshine/capture/wgc_desktop_capture.hpp"
 
 using namespace moonshine;
 
@@ -243,9 +244,25 @@ MOONSHINE_API MoonshineCaptureHandle MOONSHINE_CONV moonshine_capture_create_dxg
     return static_cast<MoonshineCaptureHandle>(cap);
 }
 
+MOONSHINE_API MoonshineCaptureHandle MOONSHINE_CONV moonshine_capture_create_wgc(
+    void* hmonitor,
+    uint32_t target_fps,
+    uint32_t* out_width,
+    uint32_t* out_height
+) {
+    auto* cap = new capture::WgcDesktopCapture(hmonitor, target_fps);
+    if (!cap->initialize()) {
+        delete cap;
+        return nullptr;
+    }
+    if (out_width) *out_width = cap->width();
+    if (out_height) *out_height = cap->height();
+    return static_cast<MoonshineCaptureHandle>(cap);
+}
+
 MOONSHINE_API void MOONSHINE_CONV moonshine_capture_destroy(MoonshineCaptureHandle handle) {
     if (!handle) return;
-    auto* cap = static_cast<capture::DxgiDesktopDuplicator*>(handle);
+    auto* cap = static_cast<capture::IDesktopCapture*>(handle);
     delete cap;
 }
 
@@ -255,7 +272,7 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_capture_acquire_frame(
     MoonshineCaptureFrameDesc* out_frame
 ) {
     if (!handle || !out_frame) return -1;
-    auto* cap = static_cast<capture::DxgiDesktopDuplicator*>(handle);
+    auto* cap = static_cast<capture::IDesktopCapture*>(handle);
     capture::CaptureFrame frame = {};
     if (!cap->acquire_frame(timeout_ms, frame)) {
         return 0; // Timeout or no new frame
@@ -272,7 +289,7 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_capture_acquire_frame(
 
 MOONSHINE_API void MOONSHINE_CONV moonshine_capture_release_frame(MoonshineCaptureHandle handle) {
     if (!handle) return;
-    auto* cap = static_cast<capture::DxgiDesktopDuplicator*>(handle);
+    auto* cap = static_cast<capture::IDesktopCapture*>(handle);
     cap->release_frame();
 }
 

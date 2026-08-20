@@ -31,6 +31,13 @@ add_executable(test_desktop_capture
 target_link_libraries(test_desktop_capture PRIVATE Moonshine.Native)
 add_test(NAME test_desktop_capture COMMAND test_desktop_capture)
 
+add_executable(test_wgc_capture 
+    test_wgc_capture.cpp
+    ${CMAKE_SOURCE_DIR}/src/Moonshine.Native/src/capture/wgc_desktop_capture.cpp
+)
+target_link_libraries(test_wgc_capture PRIVATE Moonshine.Native)
+add_test(NAME test_wgc_capture COMMAND test_wgc_capture)
+
 if(WIN32)
     add_custom_command(TARGET test_c_abi_export POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
