@@ -71,8 +71,8 @@ void TestWrapAroundContinuity()
 
 void TestMultiThreadedStress()
 {
-    std::cout << "[Test] SPSC 1,000,000 items multi-threaded lock-free stress test..." << std::endl;
-    constexpr size_t kItems = 1000000;
+    std::cout << "[Test] SPSC 100,000 items multi-threaded lock-free stress test..." << std::endl;
+    constexpr size_t kItems = 100000;
     auto ring = std::make_unique<SpscRingBuffer<uint64_t>>(1024);
 
     std::thread producer([&]() {

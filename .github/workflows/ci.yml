@@ -59,7 +59,7 @@ jobs:
         run: cmake --build build --config ${{ matrix.configuration }} --parallel
 
       - name: Run Native CTest Suite
-        run: ctest --test-dir build --output-on-failure -C ${{ matrix.configuration }}
+        run: ctest --test-dir build --output-on-failure -C ${{ matrix.configuration }} --timeout 60
 
       - name: Restore Managed .NET Solution
         run: dotnet restore Moonshine.sln
@@ -67,7 +67,37 @@ jobs:
       - name: Build Managed Solution (${{ matrix.configuration }})
         run: dotnet build Moonshine.sln -c ${{ matrix.configuration }} --no-restore
 
+      - name: Copy Native Library to Test Directories (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $candidates = @(
+            "build/bin/Moonshine.Native.dll",
+            "build/src/Moonshine.Native/Moonshine.Native.dll"
+          )
+          foreach ($cand in $candidates) {
+            if (Test-Path $cand) {
+              Get-ChildItem -Path "tests/*/bin/${{ matrix.configuration }}/net9.0" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+                Copy-Item $cand $_.FullName -Force -ErrorAction SilentlyContinue
+              }
+            }
+          }
+
+      - name: Copy Native Library to Test Directories (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          for dir in tests/*/bin/${{ matrix.configuration }}/net9.0; do
+            if [ -d "$dir" ]; then
+              cp -f build/bin/libMoonshine.Native.so "$dir/" 2>/dev/null || true
+              cp -f build/bin/Moonshine.Native.so "$dir/" 2>/dev/null || true
+              cp -f build/src/Moonshine.Native/libMoonshine.Native.so "$dir/" 2>/dev/null || true
+              cp -f build/src/Moonshine.Native/Moonshine.Native.so "$dir/" 2>/dev/null || true
+            fi
+          done
+
       - name: Execute Managed xUnit Test Suites
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/build/bin:${{ github.workspace }}/build/src/Moonshine.Native:${{ env.LD_LIBRARY_PATH }}
         run: >
           dotnet test Moonshine.sln
           -c ${{ matrix.configuration }}
