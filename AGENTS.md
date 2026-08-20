@@ -1,7 +1,11 @@
 # Moonshine Agent Instructions
 
-- Prioritize performance optimization across all decisions.
-- Maintain zero-allocation discipline in C# streaming hot paths (`Span<T>`, `ValueTask`, `NativeMemoryOwner`).
+- Use British English exclusively across all documentation, commit messages, and agent outputs.
+- Never use em dashes. Use colons, hyphens, parentheses, or commas instead.
+- Never use emojis.
+- Prioritise performance optimisation across all decisions.
+- If a faster, custom-built implementation can be designed for any component or algorithm, implement the custom solution.
+- Heavily document all custom implementations, mathematical algorithms, and architecture in the GitHub wiki (`wiki/`).
+- Maintain zero-allocation discipline in C# streaming hot paths (Span, ValueTask, NativeMemoryOwner).
 - Maintain cache-aligned lock-free concurrency in C++23.
-- Use CMake and MSVC/Ninja for C++ native builds, and `dotnet` / `MSBuild` for .NET.
 - Keep the test suites and micro-benchmarks updated when modifying protocols, algorithms, or native bridges.

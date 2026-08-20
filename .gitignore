@@ -1,16 +1,21 @@
 ## ----------------------------------------------------------------------
-## Moonshine - Comprehensive .gitignore
+## Moonshine - Ultra-Low-Latency GameStream Client
+## Comprehensive .gitignore
 ## ----------------------------------------------------------------------
 
-# =========================
-# Visual Studio / MSBuild
-# =========================
+# ======================================================================
+# 1. Visual Studio / MSBuild / Roslyn
+# ======================================================================
 .vs/
 *.suo
 *.user
 *.userosscache
 *.sln.docstates
 *.userprefs
+*.dbmdl
+*.aps
+*.vspscc
+*.vssscc
 [Bb]in/
 [Oo]bj/
 [Dd]ebug/
@@ -19,26 +24,34 @@ x64/
 x86/
 ARM/
 ARM64/
-*.apk
-*.aab
+ipch/
+*.opendb
+*.VC.db
 
 # MSBuild Binary Log & Structured Log
 *.binlog
+*.rsp
 
-# Visual Studio Code & JetBrains
+# ======================================================================
+# 2. JetBrains (Rider / CLion / ReSharper) & VS Code
+# ======================================================================
+.idea/
+*.DotSettings.user
+*.sln.iml
 .vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
-.idea/
-*.DotSettings.user
 
-# =========================
-# C++ / CMake / Ninja / Compilers
-# =========================
+# ======================================================================
+# 3. C++ / CMake / Ninja / Compilers
+# ======================================================================
 build/
 build-*/
+build_x64/
+build_arm64/
+cmake-build-*/
 out/
 CMakeCache.txt
 CMakeFiles/
@@ -80,14 +93,15 @@ compile_commands.json
 .cache/
 *.plist
 
-# =========================
-# .NET / C# / Native AOT
-# =========================
+# ======================================================================
+# 4. .NET 9 / C# 13 / Native AOT
+# ======================================================================
 tools/dotnet_sdk/
 *.publish.xml
 publish/
 *.aot.log
 *.aot.json
+Generated/
 
 # NuGet
 *.nupkg
@@ -110,9 +124,25 @@ TestResults/
 coverage/
 *.lcov
 
-# =========================
-# Operating System & Temporary Files
-# =========================
+# ======================================================================
+# 5. Performance Profiling & Diagnostic Artifacts
+# ======================================================================
+*.etl
+*.diagsession
+*.vsp
+*.vspx
+*.perf
+*.perfetto
+*.trace
+*.dmp
+*.dump
+*.mdmp
+*.pcap
+*.pcapng
+
+# ======================================================================
+# 6. Operating System & Editor Temporary Files
+# ======================================================================
 Thumbs.db
 ehthumbs.db
 Desktop.ini
@@ -129,14 +159,12 @@ $RECYCLE.BIN/
 *.bak
 *.log
 
-# =========================
-# Moonshine Runtime & Local Configs
-# =========================
-*.dump
-*.dmp
-*.pcap
-*.pcapng
+# ======================================================================
+# 7. Local Dev Secrets & Machine Settings
+# ======================================================================
 local_settings.json
+*.local.json
 moonshine_dev.pfx
 moonshine_dev.crt
 moonshine_dev.key
+moonshine_dev.p12

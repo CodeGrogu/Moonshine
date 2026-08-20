@@ -1,0 +1,34 @@
+# Welcome to the Moonshine Wiki
+
+Moonshine is a next-generation, ultra-low-latency game streaming client engineered from the ground up to replace Moonlight. Designed for maximum throughput and minimum frame latency, Moonshine combines C# 13 (.NET 9 Native AOT) for high-level protocol orchestration with a modern C++23 AVX2 and AVX-512 SIMD engine for the low-level data plane.
+
+---
+
+## Wiki Navigation
+
+### Architecture and Design
+- [[Architecture Overview|Architecture-Overview]]: High-level hybrid C# and C++ architecture, data flow, and separation of concerns.
+- [[Zero-Allocation Data Plane|Zero-Allocation-Data-Plane]]: Zero-copy ingestion, Span, ReadOnlySequence, and unmanaged memory slabs.
+- [[Custom SIMD Galois Field FEC|Custom-SIMD-Galois-Field-FEC]]: Vectorised Reed-Solomon GF(2^8) arithmetic via AVX2, AVX-512, and ARM NEON.
+- [[Custom Lock-Free SPSC Concurrency|Custom-Lock-Free-SPSC-Concurrency]]: Cacheline-padded atomic ring buffers with acquire-release memory ordering.
+- [[Predictive Jitter Buffer|Predictive-Jitter-Buffer]]: Custom predictive frame reassembly algorithms and zero-allocation indexing.
+- [[Hardware Video Pipeline|Hardware-Video-Pipeline]]: Direct3D 11/12 and Vulkan Video decoders, DXGI Flip Model, and HDR10 tone mapping.
+- [[Audio WASAPI Exclusive|Audio-WASAPI-Exclusive]]: Sub-5ms low-latency audio rendering and Opus packet processing.
+
+### Protocols and Networking
+- [[GameStream and Sunshine Protocol|GameStream-Sunshine-Protocol]]: mDNS discovery, X.509 certificate exchange, AES-128-GCM pairing handshake, RTSP session control, and RTP data streaming.
+
+### Engineering and Performance
+- [[Benchmarking and Performance Audit|Benchmarking-and-Performance-Audit]]: Micro-benchmarks, BenchmarkDotNet methodology, allocation verification, and profiling workflows.
+- [[Developer Setup and Build|Developer-Setup-and-Build]]: Toolchain prerequisites (MSVC, CMake, Ninja, .NET 9 SDK) and automated verification commands.
+
+---
+
+## Performance Manifesto
+
+Moonshine adheres to strict latency and memory rules:
+1. Zero Bytes Managed GC Allocations in Streaming Hot Paths: Frame ingestion, packet parsing, and FEC processing must never trigger garbage collection.
+2. Lock-Free Cross-Thread Data Flow: Video and audio frames are passed across threads using lock-free single-producer single-consumer (SPSC) ring buffers padded to 64-byte cache lines (alignas(64)).
+3. Hardware-Direct Presentation: Frame surfaces are presented directly via DXGI Flip Model (DXGI_SWAP_EFFECT_FLIP_DISCARD) with sub-frame presentation waitables.
+4. SIMD-Accelerated Parity Recovery: Reed-Solomon FEC matrix multiplications execute in vectorised 256-bit registers, yielding over twelve times speedup over scalar lookups.
+5. Custom High-Performance Implementations: Generic third-party libraries are superseded by custom implementations whenever measurable performance gains can be achieved.
