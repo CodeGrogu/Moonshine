@@ -212,6 +212,54 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_capture_acquire_frame(
 );
 MOONSHINE_API void MOONSHINE_CONV moonshine_capture_release_frame(MoonshineCaptureHandle handle);
 
+// ============================================================================
+// HDR10 Metadata Extraction & Real-Time Color Space Conversion APIs
+// ============================================================================
+
+typedef struct MoonshineHdr10Metadata {
+    uint16_t red_primary[2];                // BT.2020 Red coordinates (scaled by 50000)
+    uint16_t green_primary[2];              // BT.2020 Green coordinates (scaled by 50000)
+    uint16_t blue_primary[2];               // BT.2020 Blue coordinates (scaled by 50000)
+    uint16_t white_point[2];                // D65 White Point coordinates (scaled by 50000)
+    uint32_t max_mastering_luminance;       // Max mastering luminance in 0.0001 cd/m^2 (nits * 10000)
+    uint32_t min_mastering_luminance;       // Min mastering luminance in 0.0001 cd/m^2 (nits * 10000)
+    uint16_t max_content_light_level;       // MaxCLL in nits
+    uint16_t max_frame_average_light_level; // MaxFALL in nits
+    uint8_t  hdr_enabled;                   // 1 if HDR10 active, 0 for SDR
+    uint8_t  color_space;                   // 0 for BT.709, 1 for BT.2020
+    uint8_t  reserved[2];                   // Padding for strict 32-byte alignment
+} MoonshineHdr10Metadata;
+
+typedef void* MoonshineColorConverterHandle;
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_hdr_extract_metadata(
+    void* hmonitor,
+    MoonshineHdr10Metadata* out_metadata
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_hdr_parse_capabilities(
+    uint32_t color_space_dxgi,
+    MoonshineHdr10Metadata* out_metadata
+);
+
+MOONSHINE_API MoonshineColorConverterHandle MOONSHINE_CONV moonshine_color_converter_create(
+    void* d3d11_device,
+    uint32_t width,
+    uint32_t height,
+    uint32_t in_format,
+    uint32_t out_format
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_color_converter_convert(
+    MoonshineColorConverterHandle handle,
+    void* in_texture,
+    void* out_texture
+);
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_color_converter_destroy(
+    MoonshineColorConverterHandle handle
+);
+
 #ifdef __cplusplus
 }
 #endif

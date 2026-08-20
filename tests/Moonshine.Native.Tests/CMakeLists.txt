@@ -36,6 +36,12 @@ add_executable(test_wgc_capture
 target_link_libraries(test_wgc_capture PRIVATE Moonshine.Native)
 add_test(NAME test_wgc_capture COMMAND test_wgc_capture)
 
+add_executable(test_hdr_colorimetry 
+    test_hdr_colorimetry.cpp
+)
+target_link_libraries(test_hdr_colorimetry PRIVATE Moonshine.Native)
+add_test(NAME test_hdr_colorimetry COMMAND test_hdr_colorimetry)
+
 if(WIN32)
     add_custom_command(TARGET test_c_abi_export POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different

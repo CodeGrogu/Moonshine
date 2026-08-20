@@ -8,6 +8,8 @@
 #include "moonshine/audio/wasapi_renderer.hpp"
 #include "moonshine/capture/dxgi_desktop_duplicator.hpp"
 #include "moonshine/capture/wgc_desktop_capture.hpp"
+#include "moonshine/color/hdr_metadata_extractor.hpp"
+#include "moonshine/color/d3d_color_converter.hpp"
 
 using namespace moonshine;
 
@@ -291,6 +293,91 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_capture_release_frame(MoonshineCaptu
     if (!handle) return;
     auto* cap = static_cast<capture::IDesktopCapture*>(handle);
     cap->release_frame();
+}
+
+// ============================================================================
+// HDR10 Metadata Extraction & Real-Time Color Space Conversion APIs
+// ============================================================================
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_hdr_extract_metadata(
+    void* hmonitor,
+    MoonshineHdr10Metadata* out_metadata
+) {
+    if (!out_metadata) return -1;
+    color::Hdr10Metadata meta = {};
+    if (!color::HdrMetadataExtractor::extract_display_metadata(hmonitor, meta)) {
+        return 0;
+    }
+    std::memcpy(out_metadata->red_primary, meta.red_primary, sizeof(meta.red_primary));
+    std::memcpy(out_metadata->green_primary, meta.green_primary, sizeof(meta.green_primary));
+    std::memcpy(out_metadata->blue_primary, meta.blue_primary, sizeof(meta.blue_primary));
+    std::memcpy(out_metadata->white_point, meta.white_point, sizeof(meta.white_point));
+    out_metadata->max_mastering_luminance = meta.max_mastering_luminance;
+    out_metadata->min_mastering_luminance = meta.min_mastering_luminance;
+    out_metadata->max_content_light_level = meta.max_content_light_level;
+    out_metadata->max_frame_average_light_level = meta.max_frame_average_light_level;
+    out_metadata->hdr_enabled = meta.hdr_enabled;
+    out_metadata->color_space = meta.color_space;
+    out_metadata->reserved[0] = 0;
+    out_metadata->reserved[1] = 0;
+    return 1;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_hdr_parse_capabilities(
+    uint32_t color_space_dxgi,
+    MoonshineHdr10Metadata* out_metadata
+) {
+    if (!out_metadata) return -1;
+    color::Hdr10Metadata meta = {};
+    if (!color::HdrMetadataExtractor::parse_hdr_capabilities(color_space_dxgi, meta)) {
+        return 0;
+    }
+    std::memcpy(out_metadata->red_primary, meta.red_primary, sizeof(meta.red_primary));
+    std::memcpy(out_metadata->green_primary, meta.green_primary, sizeof(meta.green_primary));
+    std::memcpy(out_metadata->blue_primary, meta.blue_primary, sizeof(meta.blue_primary));
+    std::memcpy(out_metadata->white_point, meta.white_point, sizeof(meta.white_point));
+    out_metadata->max_mastering_luminance = meta.max_mastering_luminance;
+    out_metadata->min_mastering_luminance = meta.min_mastering_luminance;
+    out_metadata->max_content_light_level = meta.max_content_light_level;
+    out_metadata->max_frame_average_light_level = meta.max_frame_average_light_level;
+    out_metadata->hdr_enabled = meta.hdr_enabled;
+    out_metadata->color_space = meta.color_space;
+    out_metadata->reserved[0] = 0;
+    out_metadata->reserved[1] = 0;
+    return 1;
+}
+
+MOONSHINE_API MoonshineColorConverterHandle MOONSHINE_CONV moonshine_color_converter_create(
+    void* d3d11_device,
+    uint32_t width,
+    uint32_t height,
+    uint32_t in_format,
+    uint32_t out_format
+) {
+    auto* conv = new color::D3DColorConverter(width, height, in_format, out_format);
+    if (!conv->initialize(d3d11_device)) {
+        delete conv;
+        return nullptr;
+    }
+    return static_cast<MoonshineColorConverterHandle>(conv);
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_color_converter_convert(
+    MoonshineColorConverterHandle handle,
+    void* in_texture,
+    void* out_texture
+) {
+    if (!handle || !in_texture || !out_texture) return -1;
+    auto* conv = static_cast<color::D3DColorConverter*>(handle);
+    return conv->convert(in_texture, out_texture) ? 1 : 0;
+}
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_color_converter_destroy(
+    MoonshineColorConverterHandle handle
+) {
+    if (!handle) return;
+    auto* conv = static_cast<color::D3DColorConverter*>(handle);
+    delete conv;
 }
 
 } // extern "C"

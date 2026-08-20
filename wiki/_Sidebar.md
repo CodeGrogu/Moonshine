@@ -21,6 +21,7 @@
 
 **Moonshine Host Subsystem**
 - [Direct3D Desktop Capture](Direct3D-Desktop-Capture)
+- [HDR10 & Dynamic Color Space](HDR10-Color-Pipeline)
 - [GPU Hardware Video Encoding](GPU-Hardware-Video-Encoding)
 - [WASAPI Loopback Audio](WASAPI-Loopback-Audio)
 - [Virtual Input & Injection](Virtual-Input-Driver-Injection)

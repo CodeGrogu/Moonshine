@@ -223,4 +223,44 @@ public static unsafe partial class MoonshineNativeMethods
     [LibraryImport(LibraryName, EntryPoint = "moonshine_capture_release_frame")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial void CaptureReleaseFrame(IntPtr handle);
+
+    // ========================================================================
+    // HDR10 Metadata Extraction & Real-Time Color Space Conversion APIs
+    // ========================================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_hdr_extract_metadata")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int HdrExtractMetadata(
+        IntPtr hmonitor,
+        out MoonshineHdr10Metadata outMetadata
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_hdr_parse_capabilities")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int HdrParseCapabilities(
+        uint colorSpaceDxgi,
+        out MoonshineHdr10Metadata outMetadata
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_color_converter_create")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial IntPtr ColorConverterCreate(
+        IntPtr d3d11Device,
+        uint width,
+        uint height,
+        uint inFormat,
+        uint outFormat
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_color_converter_convert")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int ColorConverterConvert(
+        IntPtr handle,
+        IntPtr inTexture,
+        IntPtr outTexture
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_color_converter_destroy")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void ColorConverterDestroy(IntPtr handle);
 }
