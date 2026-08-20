@@ -1,14 +1,20 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Moonshine.Core.Pairing;
 
+[JsonSourceGenerationOptions(WriteIndented = true)]
+[JsonSerializable(typeof(Dictionary<string, string>))]
+internal sealed partial class KeyStoreJsonContext : JsonSerializerContext
+{
+}
+
 /// <summary>
 /// Persistent file-based keystore storing certificates and keys in the user application data directory.
+/// Uses source-generated JSON serialization for 100% Native AOT trimming safety.
 /// </summary>
 public sealed class FilePairingKeyStore : IPairingKeyStore, IDisposable
 {
-    private static readonly JsonSerializerOptions s_jsonOptions = new() { WriteIndented = true };
-
     private readonly string _storageDirectory;
     private readonly string _clientCertPath;
     private readonly string _clientKeyPath;
@@ -142,7 +148,7 @@ public sealed class FilePairingKeyStore : IPairingKeyStore, IDisposable
         try
         {
             string json = await File.ReadAllTextAsync(_serversJsonPath, ct).ConfigureAwait(false);
-            return JsonSerializer.Deserialize<Dictionary<string, string>>(json, s_jsonOptions) ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            return JsonSerializer.Deserialize(json, KeyStoreJsonContext.Default.DictionaryStringString) ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         }
         catch
         {
@@ -152,7 +158,7 @@ public sealed class FilePairingKeyStore : IPairingKeyStore, IDisposable
 
     private async Task WriteServersMapAsync(Dictionary<string, string> map, CancellationToken ct)
     {
-        string json = JsonSerializer.Serialize(map, s_jsonOptions);
+        string json = JsonSerializer.Serialize(map, KeyStoreJsonContext.Default.DictionaryStringString);
         string tempPath = _serversJsonPath + ".tmp";
         await File.WriteAllTextAsync(tempPath, json, ct).ConfigureAwait(false);
         File.Move(tempPath, _serversJsonPath, overwrite: true);
