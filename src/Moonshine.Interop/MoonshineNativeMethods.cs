@@ -185,4 +185,33 @@ public static unsafe partial class MoonshineNativeMethods
     [LibraryImport(LibraryName, EntryPoint = "moonshine_audio_get_metrics")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial void AudioGetMetrics(IntPtr handle, out ulong outFramesRendered, out uint outUnderruns);
+
+    // ========================================================================
+    // Zero-Copy Direct3D Desktop Capture APIs
+    // ========================================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_capture_create_dxgi")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial IntPtr CaptureCreateDxgi(
+        uint adapterIndex,
+        uint outputIndex,
+        out uint outWidth,
+        out uint outHeight
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_capture_destroy")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void CaptureDestroy(IntPtr handle);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_capture_acquire_frame")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int CaptureAcquireFrame(
+        IntPtr handle,
+        uint timeoutMs,
+        out MoonshineCaptureFrameDesc outFrame
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_capture_release_frame")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void CaptureReleaseFrame(IntPtr handle);
 }

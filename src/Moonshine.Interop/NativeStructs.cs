@@ -50,3 +50,19 @@ public unsafe struct MoonshineDecoderCaps
     public byte SupportsVulkan;
     public fixed byte Reserved[1];
 }
+
+/// <summary>
+/// Exact binary match for MoonshineCaptureFrameDesc (C-ABI).
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public unsafe struct MoonshineCaptureFrameDesc
+{
+    public void* TextureHandle;
+    public uint Width;
+    public uint Height;
+    public uint Format;
+    public ulong TimestampQpc;
+    public uint AccumulatedFrames;
+    public byte CursorVisible;
+    public fixed byte Reserved[3];
+}
