@@ -88,6 +88,8 @@ jobs:
         run: |
           for dir in tests/*/bin/${{ matrix.configuration }}/net9.0; do
             if [ -d "$dir" ]; then
+              cp -f build/bin/libMoonshine.Native.so "$dir/" 2>/dev/null || true
+              cp -f build/bin/Moonshine.Native.so "$dir/" 2>/dev/null || true
               cp -f build/src/Moonshine.Native/libMoonshine.Native.so "$dir/" 2>/dev/null || true
               cp -f build/src/Moonshine.Native/Moonshine.Native.so "$dir/" 2>/dev/null || true
             fi
@@ -95,8 +97,7 @@ jobs:
 
       - name: Execute Managed xUnit Test Suites
         env:
-          LD_LIBRARY_PATH: ${{ github.workspace }}/build/src/Moonshine.Native:${{ env.LD_LIBRARY_PATH }}
-          PATH: ${{ github.workspace }}/build/src/Moonshine.Native:${{ env.PATH }}
+          LD_LIBRARY_PATH: ${{ github.workspace }}/build/bin:${{ github.workspace }}/build/src/Moonshine.Native:${{ env.LD_LIBRARY_PATH }}
         run: >
           dotnet test Moonshine.sln
           -c ${{ matrix.configuration }}
