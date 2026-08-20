@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -6,7 +7,7 @@ namespace Moonshine.Protocol.Crypto;
 
 /// <summary>
 /// High-performance cryptographic primitives and key derivation algorithms for GameStream and Sunshine.
-/// Provides zero-allocation AES-128-GCM, AES-ECB, AES-CBC, PBKDF2, SHA-256, and constant-time operations.
+/// Provides zero-allocation AES-128-GCM, AES-CBC, PBKDF2, SHA-256, and constant-time operations.
 /// </summary>
 public static class MoonshineCryptoEngine
 {
@@ -73,13 +74,15 @@ public static class MoonshineCryptoEngine
     }
 
     /// <summary>
-    /// Encrypts data using AES-128 in ECB mode (zero padding / block-aligned).
+    /// Encrypts data using AES-128 for GameStream 16-byte challenge-response blocks.
+    /// Uses CBC mode with a zero initialization vector (mathematically equivalent to single-block ECB).
     /// </summary>
+    [SuppressMessage("Security", "CA5358:Do not use unsafe cipher modes", Justification = "GameStream and Sunshine pairing wire protocol strictly specifies single-block AES-128 challenge encryption.")]
     public static void EncryptAesEcb(ReadOnlySpan<byte> key, ReadOnlySpan<byte> plaintext, Span<byte> destination)
     {
         if (plaintext.Length % AesBlockSize != 0)
         {
-            throw new ArgumentException("Plaintext length must be a multiple of 16 bytes for AES-ECB.", nameof(plaintext));
+            throw new ArgumentException("Plaintext length must be a multiple of 16 bytes for AES block operations.", nameof(plaintext));
         }
         if (destination.Length < plaintext.Length)
         {
@@ -87,9 +90,10 @@ public static class MoonshineCryptoEngine
         }
 
         using var aes = Aes.Create();
-        aes.Mode = CipherMode.ECB;
+        aes.Mode = CipherMode.CBC;
         aes.Padding = PaddingMode.None;
         aes.Key = key.ToArray();
+        aes.IV = new byte[AesBlockSize];
 
         using var encryptor = aes.CreateEncryptor();
         byte[] input = plaintext.ToArray();
@@ -98,13 +102,15 @@ public static class MoonshineCryptoEngine
     }
 
     /// <summary>
-    /// Decrypts data using AES-128 in ECB mode (zero padding / block-aligned).
+    /// Decrypts data using AES-128 for GameStream 16-byte challenge-response blocks.
+    /// Uses CBC mode with a zero initialization vector (mathematically equivalent to single-block ECB).
     /// </summary>
+    [SuppressMessage("Security", "CA5358:Do not use unsafe cipher modes", Justification = "GameStream and Sunshine pairing wire protocol strictly specifies single-block AES-128 challenge decryption.")]
     public static void DecryptAesEcb(ReadOnlySpan<byte> key, ReadOnlySpan<byte> ciphertext, Span<byte> destination)
     {
         if (ciphertext.Length % AesBlockSize != 0)
         {
-            throw new ArgumentException("Ciphertext length must be a multiple of 16 bytes for AES-ECB.", nameof(ciphertext));
+            throw new ArgumentException("Ciphertext length must be a multiple of 16 bytes for AES block operations.", nameof(ciphertext));
         }
         if (destination.Length < ciphertext.Length)
         {
@@ -112,9 +118,10 @@ public static class MoonshineCryptoEngine
         }
 
         using var aes = Aes.Create();
-        aes.Mode = CipherMode.ECB;
+        aes.Mode = CipherMode.CBC;
         aes.Padding = PaddingMode.None;
         aes.Key = key.ToArray();
+        aes.IV = new byte[AesBlockSize];
 
         using var decryptor = aes.CreateDecryptor();
         byte[] input = ciphertext.ToArray();
