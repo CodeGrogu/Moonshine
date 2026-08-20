@@ -338,6 +338,28 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_encoder_destroy(
     MoonshineEncoderHandle handle
 );
 
+// ============================================================================
+// NVIDIA NVENC Dedicated Custom APIs
+// ============================================================================
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_nvenc_query_codec_support(
+    uint32_t codec,
+    uint32_t* out_supported
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_nvenc_set_tuning(
+    MoonshineEncoderHandle handle,
+    uint32_t preset,
+    uint32_t tuning
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_nvenc_set_intra_refresh(
+    MoonshineEncoderHandle handle,
+    int enable,
+    uint32_t period,
+    uint32_t count
+);
+
 #ifdef __cplusplus
 }
 #endif

@@ -23,6 +23,7 @@
 - [Direct3D Desktop Capture](Direct3D-Desktop-Capture)
 - [HDR10 & Dynamic Color Space](HDR10-Color-Pipeline)
 - [GPU Hardware Video Encoding](GPU-Hardware-Video-Encoding)
+- [NVIDIA NVENC Hardware Pipeline](NVENC-Hardware-Pipeline)
 - [WASAPI Loopback Audio](WASAPI-Loopback-Audio)
 - [Virtual Input & Injection](Virtual-Input-Driver-Injection)
 - [GameStream HTTPS & RTSP Host Server](GameStream-HTTPS-RTSP-Host-Server)

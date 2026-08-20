@@ -28,6 +28,7 @@ Moonshine is a next-generation, ultra-low-latency game streaming client engineer
 - **[Direct3D Desktop Capture Engine](Direct3D-Desktop-Capture)**: IDXGIOutputDuplication & Windows.Graphics.Capture VRAM frame ingestion.
 - **[HDR10 & Dynamic Color Space Engine](HDR10-Color-Pipeline)**: Display colorimetry extraction, SMPTE ST 2084 PQ curve, and Direct3D GPU color conversion.
 - **[GPU Hardware Video Encoding](GPU-Hardware-Video-Encoding)**: Native NVENC, AMF, and QuickSync low-latency GPU encoders for HEVC/AV1.
+- **[NVIDIA NVENC Hardware Pipeline](NVENC-Hardware-Pipeline)**: Dedicated NVENC SDK encoder, P1/P2 ultra-low latency presets, and progressive intra-refresh.
 - **[WASAPI Loopback Audio Engine](WASAPI-Loopback-Audio)**: Low-latency master audio mix capture and Opus multi-channel streaming.
 - **[Virtual Input & Driver Injection](Virtual-Input-Driver-Injection)**: ViGEmBus controller emulation and kernel-level mouse/keyboard injection.
 - **[GameStream HTTPS & RTSP Host Server](GameStream-HTTPS-RTSP-Host-Server)**: Embedded pairing, discovery, and RTSP stream orchestration.

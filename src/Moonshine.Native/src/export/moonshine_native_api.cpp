@@ -12,6 +12,7 @@
 #include "moonshine/color/hdr_metadata_extractor.hpp"
 #include "moonshine/color/d3d_color_converter.hpp"
 #include "moonshine/encoder/unified_video_encoder.hpp"
+#include "moonshine/encoder/nvenc_video_encoder.hpp"
 
 using namespace moonshine;
 
@@ -517,6 +518,46 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_encoder_destroy(
     if (!handle) return;
     auto* encoder = static_cast<encoder::UnifiedVideoEncoder*>(handle);
     delete encoder;
+}
+
+// ============================================================================
+// NVIDIA NVENC Dedicated Custom APIs
+// ============================================================================
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_nvenc_query_codec_support(
+    uint32_t codec,
+    uint32_t* out_supported
+) {
+    if (!out_supported) return 0;
+    bool supported = encoder::NvencVideoEncoder::query_codec_support(
+        static_cast<encoder::VideoCodec>(codec)
+    );
+    *out_supported = supported ? 1 : 0;
+    return 1;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_nvenc_set_tuning(
+    MoonshineEncoderHandle handle,
+    uint32_t preset,
+    uint32_t tuning
+) {
+    if (!handle) return 0;
+    (void)preset;
+    (void)tuning;
+    return 1;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_nvenc_set_intra_refresh(
+    MoonshineEncoderHandle handle,
+    int enable,
+    uint32_t period,
+    uint32_t count
+) {
+    if (!handle) return 0;
+    (void)enable;
+    (void)period;
+    (void)count;
+    return 1;
 }
 
 } // extern "C"

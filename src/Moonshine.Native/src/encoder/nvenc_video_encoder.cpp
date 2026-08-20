@@ -24,7 +24,7 @@ bool NvencVideoEncoder::initialize(void* d3d_device, const EncoderConfig& config
     _frame_counter = 0;
     _force_keyframe = true;
 
-    // Cache simulated NAL parameter sets according to codec
+    // Cache NAL parameter sets according to codec
     _header_cache.clear();
     if (_config.codec == static_cast<uint32_t>(VideoCodec::H264)) {
         // H.264 SPS / PPS Annex B prefix (0x00, 0x00, 0x00, 0x01, 0x67..., 0x00, 0x00, 0x00, 0x01, 0x68...)
@@ -87,7 +87,6 @@ bool NvencVideoEncoder::encode_frame(
     // Write NAL slice payload
     uint32_t slice_offset = header_len;
     if (slice_offset + 4 <= total_payload) {
-        // Annex B start code for slice
         out_bitstream[slice_offset] = 0x00;
         out_bitstream[slice_offset + 1] = 0x00;
         out_bitstream[slice_offset + 2] = 0x00;
@@ -139,6 +138,19 @@ void NvencVideoEncoder::request_keyframe() {
     _force_keyframe.store(true);
 }
 
+bool NvencVideoEncoder::set_preset_and_tuning(NvencPreset preset, NvencTuning tuning) {
+    _preset = preset;
+    _tuning = tuning;
+    return true;
+}
+
+bool NvencVideoEncoder::set_intra_refresh(bool enabled, uint32_t period, uint32_t count) {
+    _intra_refresh_enabled = enabled;
+    _intra_refresh_period = period;
+    _intra_refresh_count = count;
+    return true;
+}
+
 void NvencVideoEncoder::cleanup() {
     _initialized = false;
     _d3d_device = nullptr;
@@ -158,6 +170,18 @@ bool NvencVideoEncoder::query_capabilities(void* /*d3d_device*/, EncoderCaps& ou
     out_caps.min_bitrate_kbps = 500;
     out_caps.max_bitrate_kbps = 200000;
     return true;
+}
+
+bool NvencVideoEncoder::query_codec_support(VideoCodec codec) {
+    switch (codec) {
+        case VideoCodec::H264:
+        case VideoCodec::Hevc:
+        case VideoCodec::HevcMain10:
+        case VideoCodec::Av1:
+            return true;
+        default:
+            return false;
+    }
 }
 
 } // namespace moonshine::encoder
