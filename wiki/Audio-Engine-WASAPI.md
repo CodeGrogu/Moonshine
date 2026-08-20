@@ -1,33 +1,53 @@
-# Low-Latency Audio Pipeline (WASAPI Exclusive)
+# WASAPI Low-Latency Audio Rendering Engine
 
-## 1. Problem Statement: Audio Latency in Shared Sound Mixers
-
-Standard Windows audio engines use the shared Windows Audio Session API (WASAPI Shared Mode), which routes all application audio through the Windows system mixer (AudioDG engine). This shared pipeline introduces:
-1. Resampling and format conversion delays (10ms to 25ms).
-2. Buffer underrun protections requiring large ring buffer sizes (typically 480 to 960 samples per buffer).
-3. Audio jitter that disrupts lip-sync synchronisation with high-frame-rate video (120Hz/240Hz).
+Moonshine features an ultra-low-latency audio playback pipeline built with the Windows Audio Session API (WASAPI) operating in Exclusive Mode to achieve sub-5ms render latencies without audio glitching or buffer underruns.
 
 ---
 
-## 2. Custom Solution: WASAPI Exclusive Mode Sub-5ms Pipeline
-
-Moonshine implements a custom WASAPI Exclusive Mode audio renderer (`WasapiRenderer` in C++23) that acquires direct hardware control of the audio endpoint:
+## 1. Architectural Overview
 
 ```
-Opus RTP Audio Packets (48kHz, 2.0 Stereo / 5.1 / 7.1 Surround)
-         │
-         ▼
-Opus Low-Latency Decoder (Float32 / Int16 PCM)
-         │
-         ▼  (Zero-Copy Direct Buffer Write)
-WASAPI Exclusive Mode Ring Buffer (IAudioRenderClient::GetBuffer)
-         │
-         ▼  (Direct Hardware Endpoint - Sub-5ms Periodicity)
-DAC / Audio Output Device
+RTP Audio Packets (Opus 48kHz)
+                │
+                │ Real-time Opus decoding
+                ▼
+MoonshineAudioPipeline (.NET 9 Managed Layer)
+                │
+                │ Zero-allocation ReadOnlySpan<float> (IEEE 32-bit Float PCM)
+                ▼
+C-ABI Interop Bridge (moonshine_audio_submit_pcm)
+                │
+                ▼
+WasapiRenderer (C++23 Native Layer)
+                │
+                ├─► AUDCLNT_SHAREMODE_EXCLUSIVE (Bypasses Windows Audio Mixer)
+                ├─► AvSetMmThreadCharacteristicsW (L"Pro Audio" Real-Time Priority)
+                ├─► IAudioRenderClient (Direct hardware DMA buffer transfer)
+                │
+                ▼
+Audio Hardware DAC (Buffer Period: 2.6ms - 4.0ms @ 48kHz)
 ```
 
-### Key Technical Details:
-- Exclusive Endpoint Lock (`AUDCLNT_SHAREMODE_EXCLUSIVE`): Bypasses the Windows system mixer entirely.
-- Event-Driven Buffer Refill (`AUDCLNT_STREAMFLAGS_EVENTCALLBACK`): The audio thread sleeps on a native Win32 event object signaled directly by the audio hardware clock interrupt, eliminating CPU polling loops.
-- Minimal Buffer Periodicity: Configured for 2.5ms to 5.0ms buffer durations (typically 120 to 240 samples at 48kHz), reducing total audio path latency to under 3ms.
-- 5.1 and 7.1 Surround Sound Mapping: Direct multi-channel matrix routing matching Sunshine surround sound stream formats.
+---
+
+## 2. Multi-Channel Surround Sound Configurations
+
+Moonshine supports high-fidelity audio streams across three spatial topologies:
+
+| Configuration | Channels | Channel Layout Mask | Sample Format |
+| :--- | :--- | :--- | :--- |
+| **Stereo (2.0)** | 2 | `SPEAKER_FRONT_LEFT \| SPEAKER_FRONT_RIGHT` | 32-bit IEEE Float @ 48kHz |
+| **Surround 5.1** | 6 | `FL \| FR \| FC \| LFE \| BL \| BR` | 32-bit IEEE Float @ 48kHz |
+| **Surround 7.1** | 8 | `FL \| FR \| FC \| LFE \| BL \| BR \| SL \| SR` | 32-bit IEEE Float @ 48kHz |
+
+---
+
+## 3. Latency Optimization & MMCSS Scheduling
+
+1. **Exclusive Mode Hardware Bypass**:
+   - `AUDCLNT_SHAREMODE_EXCLUSIVE` opens direct access to the audio hardware ring buffer, eliminating Windows Audio Engine (audiodg.exe) sample rate conversion, limiter DSP, and mixer buffering overhead.
+   - Fallback to `AUDCLNT_SHAREMODE_SHARED` is automatically handled if another application requests exclusive lock.
+2. **Pro Audio MMCSS Real-Time Scheduling**:
+   - The audio rendering thread registers with the Multimedia Class Scheduler Service via `AvSetMmThreadCharacteristicsW(L"Pro Audio", &taskIndex)`, ensuring preemption-free thread scheduling with real-time priority.
+3. **Telemetry & Underrun Diagnostics**:
+   - Real-time tracking of `FramesSubmitted`, `FramesRendered`, and `BufferUnderruns` via `AudioGetMetrics`.

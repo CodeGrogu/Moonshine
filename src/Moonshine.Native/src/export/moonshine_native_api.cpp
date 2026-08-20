@@ -212,4 +212,14 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_audio_submit_pcm(MoonshineAudioHandle
     return audio->SubmitPcm(pcm_data, sample_count);
 }
 
+MOONSHINE_API void MOONSHINE_CONV moonshine_audio_get_metrics(MoonshineAudioHandle handle, uint64_t* out_frames_rendered, uint32_t* out_underruns) {
+    if (!handle) return;
+    auto* audio = static_cast<audio::WasapiRenderer*>(handle);
+    uint64_t frames = 0;
+    uint32_t underruns = 0;
+    audio->GetMetrics(frames, underruns);
+    if (out_frames_rendered) *out_frames_rendered = frames;
+    if (out_underruns) *out_underruns = underruns;
+}
+
 } // extern "C"
