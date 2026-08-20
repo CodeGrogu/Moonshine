@@ -6,6 +6,7 @@
 #include "moonshine/video/video_decoder_interface.hpp"
 #include "moonshine/video/dxgi_swapchain.hpp"
 #include "moonshine/audio/wasapi_renderer.hpp"
+#include "moonshine/capture/dxgi_desktop_duplicator.hpp"
 
 using namespace moonshine;
 
@@ -220,6 +221,59 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_audio_get_metrics(MoonshineAudioHand
     audio->GetMetrics(frames, underruns);
     if (out_frames_rendered) *out_frames_rendered = frames;
     if (out_underruns) *out_underruns = underruns;
+}
+
+// ============================================================================
+// Zero-Copy Direct3D Desktop Capture APIs
+// ============================================================================
+
+MOONSHINE_API MoonshineCaptureHandle MOONSHINE_CONV moonshine_capture_create_dxgi(
+    uint32_t adapter_index,
+    uint32_t output_index,
+    uint32_t* out_width,
+    uint32_t* out_height
+) {
+    auto* cap = new capture::DxgiDesktopDuplicator(adapter_index, output_index);
+    if (!cap->initialize()) {
+        delete cap;
+        return nullptr;
+    }
+    if (out_width) *out_width = cap->width();
+    if (out_height) *out_height = cap->height();
+    return static_cast<MoonshineCaptureHandle>(cap);
+}
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_capture_destroy(MoonshineCaptureHandle handle) {
+    if (!handle) return;
+    auto* cap = static_cast<capture::DxgiDesktopDuplicator*>(handle);
+    delete cap;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_capture_acquire_frame(
+    MoonshineCaptureHandle handle,
+    uint32_t timeout_ms,
+    MoonshineCaptureFrameDesc* out_frame
+) {
+    if (!handle || !out_frame) return -1;
+    auto* cap = static_cast<capture::DxgiDesktopDuplicator*>(handle);
+    capture::CaptureFrame frame = {};
+    if (!cap->acquire_frame(timeout_ms, frame)) {
+        return 0; // Timeout or no new frame
+    }
+    out_frame->texture_handle = frame.texture_handle;
+    out_frame->width = frame.width;
+    out_frame->height = frame.height;
+    out_frame->format = frame.format;
+    out_frame->timestamp_qpc = frame.timestamp_qpc;
+    out_frame->accumulated_frames = frame.accumulated_frames;
+    out_frame->cursor_visible = frame.cursor_visible ? 1 : 0;
+    return 1; // Success
+}
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_capture_release_frame(MoonshineCaptureHandle handle) {
+    if (!handle) return;
+    auto* cap = static_cast<capture::DxgiDesktopDuplicator*>(handle);
+    cap->release_frame();
 }
 
 } // extern "C"

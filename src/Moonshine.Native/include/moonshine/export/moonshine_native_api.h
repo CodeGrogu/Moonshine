@@ -69,6 +69,20 @@ typedef struct MoonshineDecoderCaps {
     uint8_t  reserved[1];
 } MoonshineDecoderCaps;
 
+/**
+ * @brief Blittable descriptor representing a captured desktop frame.
+ */
+typedef struct MoonshineCaptureFrameDesc {
+    void*    texture_handle;
+    uint32_t width;
+    uint32_t height;
+    uint32_t format;
+    uint64_t timestamp_qpc;
+    uint32_t accumulated_frames;
+    uint8_t  cursor_visible;
+    uint8_t  reserved[3];
+} MoonshineCaptureFrameDesc;
+
 #pragma pack(pop)
 
 // ============================================================================
@@ -171,6 +185,26 @@ MOONSHINE_API MoonshineAudioHandle MOONSHINE_CONV moonshine_audio_create_wasapi(
 MOONSHINE_API void MOONSHINE_CONV moonshine_audio_destroy(MoonshineAudioHandle handle);
 MOONSHINE_API int MOONSHINE_CONV moonshine_audio_submit_pcm(MoonshineAudioHandle handle, const float* pcm_data, uint32_t sample_count);
 MOONSHINE_API void MOONSHINE_CONV moonshine_audio_get_metrics(MoonshineAudioHandle handle, uint64_t* out_frames_rendered, uint32_t* out_underruns);
+
+// ============================================================================
+// Zero-Copy Direct3D Desktop Capture APIs
+// ============================================================================
+
+typedef void* MoonshineCaptureHandle;
+
+MOONSHINE_API MoonshineCaptureHandle MOONSHINE_CONV moonshine_capture_create_dxgi(
+    uint32_t adapter_index,
+    uint32_t output_index,
+    uint32_t* out_width,
+    uint32_t* out_height
+);
+MOONSHINE_API void MOONSHINE_CONV moonshine_capture_destroy(MoonshineCaptureHandle handle);
+MOONSHINE_API int MOONSHINE_CONV moonshine_capture_acquire_frame(
+    MoonshineCaptureHandle handle,
+    uint32_t timeout_ms,
+    MoonshineCaptureFrameDesc* out_frame
+);
+MOONSHINE_API void MOONSHINE_CONV moonshine_capture_release_frame(MoonshineCaptureHandle handle);
 
 #ifdef __cplusplus
 }
