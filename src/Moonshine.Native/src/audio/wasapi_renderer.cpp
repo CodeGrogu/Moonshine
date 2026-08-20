@@ -19,7 +19,7 @@ WasapiRenderer::WasapiRenderer(uint32_t sample_rate, uint16_t channels, bool exc
     : sample_rate_(sample_rate),
       channels_(channels == 0 ? 2 : channels),
       exclusive_(exclusive),
-      staging_buffer_(sample_rate_ * channels_) {
+      staging_buffer_(static_cast<size_t>(sample_rate_) * static_cast<size_t>(channels_)) {
 }
 
 WasapiRenderer::~WasapiRenderer() {
