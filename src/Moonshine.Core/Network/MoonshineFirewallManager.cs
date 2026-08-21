@@ -19,10 +19,16 @@ public static class MoonshineFirewallManager
 
     /// <summary>
     /// Obtains the structured definitions of all required Windows Firewall rules for the host endpoints.
+    /// Throws <see cref="InvalidOperationException"/> if invoked with an ephemeral testing configuration.
     /// </summary>
     public static IReadOnlyList<FirewallRuleDefinition> GetRequiredRules(HostEndpointConfig? config = null)
     {
         config ??= HostEndpointConfig.ProductionDefault;
+
+        if (config.IsEphemeral)
+        {
+            throw new InvalidOperationException("Firewall rules cannot be generated for an ephemeral test endpoint configuration. Specify an explicit production or custom configuration with non-zero ports.");
+        }
 
         return
         [

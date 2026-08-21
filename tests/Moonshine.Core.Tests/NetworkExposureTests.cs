@@ -67,6 +67,58 @@ public class NetworkExposureTests
     }
 
     [Fact]
+    public async Task HostAndClientRole_ExposesHostListenersAndAllowsClientSimultaneously()
+    {
+        using var coordinator = new MoonshineRuntimeCoordinator(
+            hostEndpointConfig: HostEndpointConfig.Ephemeral);
+
+        RoleTransitionResult startResult = await coordinator.StartAsync(ApplicationRole.HostAndClient);
+        startResult.Success.Should().BeTrue();
+
+        RuntimeStatus status = coordinator.GetStatus();
+        status.ActiveRole.Should().Be(ApplicationRole.HostAndClient);
+        status.Host.ActiveListenerCount.Should().Be(6);
+        status.Client.State.Should().Be(RuntimeState.Unsupported); // Fail-closed active baseline
+
+        RoleTransitionResult stopResult = await coordinator.StopAsync();
+        stopResult.Success.Should().BeTrue();
+
+        RuntimeStatus stoppedStatus = coordinator.GetStatus();
+        stoppedStatus.Host.ActiveListenerCount.Should().Be(0);
+    }
+
+    [Fact]
+    public void HostEndpointConfig_Profiles_ReflectIntentAccurately()
+    {
+        var ephemeral = HostEndpointConfig.Ephemeral;
+        ephemeral.Profile.Should().Be(HostNetworkProfile.EphemeralTesting);
+        ephemeral.IsEphemeral.Should().BeTrue();
+
+        var prod = HostEndpointConfig.ProductionDefault;
+        prod.Profile.Should().Be(HostNetworkProfile.Production);
+        prod.IsEphemeral.Should().BeFalse();
+        prod.ControlTcpPort.Should().Be(48010);
+        prod.DiscoveryUdpPort.Should().Be(48010);
+        prod.VideoUdpPort.Should().Be(47998);
+        prod.ControlFeedbackUdpPort.Should().Be(47999);
+        prod.AudioUdpPort.Should().Be(48000);
+        prod.MicUdpPort.Should().Be(48002);
+
+        var custom = HostEndpointConfig.Custom(IPAddress.Loopback, 50000, 50001, 50002, 50003, 50004, 50005);
+        custom.Profile.Should().Be(HostNetworkProfile.Custom);
+        custom.IsEphemeral.Should().BeFalse();
+        custom.ControlTcpPort.Should().Be(50000);
+    }
+
+    [Fact]
+    public void FirewallManager_RejectsEphemeralTestingConfiguration()
+    {
+        Action act = () => MoonshineFirewallManager.GetRequiredRules(HostEndpointConfig.Ephemeral);
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*ephemeral*");
+    }
+
+    [Fact]
     public async Task PortConflict_ProducesExplicitFaultAndRollsBackPartiallyOpenedListeners()
     {
         // 1. Occupy an ephemeral TCP port
@@ -81,6 +133,7 @@ public class NetworkExposureTests
             using var networkManager = new MoonshineHostNetworkManager();
             var conflictConfig = new HostEndpointConfig
             {
+                Profile = HostNetworkProfile.Custom,
                 BindAddress = IPAddress.Loopback,
                 ControlTcpPort = conflictPort,
                 DiscoveryUdpPort = 0,
@@ -138,15 +191,7 @@ public class NetworkExposureTests
     [Fact]
     public void FirewallManager_GeneratesExplicitMinimalAndReversibleScripts()
     {
-        var config = new HostEndpointConfig
-        {
-            ControlTcpPort = 48010,
-            DiscoveryUdpPort = 48010,
-            VideoUdpPort = 47998,
-            ControlFeedbackUdpPort = 47999,
-            AudioUdpPort = 48000,
-            MicUdpPort = 48002
-        };
+        var config = HostEndpointConfig.ProductionDefault;
 
         var rules = MoonshineFirewallManager.GetRequiredRules(config);
         rules.Should().HaveCount(6);
