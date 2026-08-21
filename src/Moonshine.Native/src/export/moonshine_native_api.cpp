@@ -9,6 +9,7 @@
 #include "moonshine/audio/wasapi_renderer.hpp"
 #include "moonshine/audio/wasapi_loopback_capture.hpp"
 #include "moonshine/audio/opus_audio_encoder.hpp"
+#include "moonshine/audio/mic_audio_sink.hpp"
 #include "moonshine/capture/dxgi_desktop_duplicator.hpp"
 #include "moonshine/capture/wgc_desktop_capture.hpp"
 #include "moonshine/color/hdr_metadata_extractor.hpp"
@@ -421,6 +422,106 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_opus_encoder_get_metrics(
     if (out_avg_encode_time_us) *out_avg_encode_time_us = metrics.avg_encode_time_us;
     if (out_bitrate) *out_bitrate = metrics.current_bitrate;
     if (out_streams_count) *out_streams_count = metrics.streams_count;
+}
+
+// ============================================================================
+// Low-Latency Client-to-Host Microphone Virtual Audio Sink APIs
+// ============================================================================
+
+MOONSHINE_API MoonshineMicSinkHandle MOONSHINE_CONV moonshine_mic_sink_create(
+    uint32_t sample_rate,
+    uint32_t channels,
+    uint32_t target_latency_ms,
+    float gain_multiplier,
+    float noise_gate_threshold_db,
+    uint8_t is_muted
+) {
+    audio::MicSinkConfig config{};
+    config.sample_rate = sample_rate;
+    config.channels = channels;
+    config.target_latency_ms = target_latency_ms;
+    config.gain_multiplier = gain_multiplier;
+    config.noise_gate_threshold_db = noise_gate_threshold_db;
+    config.is_muted = (is_muted != 0);
+
+    auto* sink = new audio::MicAudioSink();
+    if (!sink->initialize(config)) {
+        delete sink;
+        return nullptr;
+    }
+    return static_cast<MoonshineMicSinkHandle>(sink);
+}
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_mic_sink_destroy(
+    MoonshineMicSinkHandle handle
+) {
+    if (handle) {
+        auto* sink = static_cast<audio::MicAudioSink*>(handle);
+        delete sink;
+    }
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_mic_sink_push_opus_packet(
+    MoonshineMicSinkHandle handle,
+    const uint8_t* opus_payload,
+    uint32_t payload_len,
+    uint32_t timestamp,
+    uint16_t sequence_number
+) {
+    if (!handle) return 0;
+    auto* sink = static_cast<audio::MicAudioSink*>(handle);
+    return sink->push_opus_packet(opus_payload, payload_len, timestamp, sequence_number) ? 1 : 0;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_mic_sink_pull_pcm(
+    MoonshineMicSinkHandle handle,
+    float* out_pcm,
+    uint32_t max_samples,
+    uint32_t* out_samples_read
+) {
+    if (!handle) return 0;
+    auto* sink = static_cast<audio::MicAudioSink*>(handle);
+    uint32_t samples_read = 0;
+    bool ok = sink->pull_pcm(out_pcm, max_samples, samples_read);
+    if (out_samples_read) *out_samples_read = samples_read;
+    return ok ? 1 : 0;
+}
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_mic_sink_set_gain(
+    MoonshineMicSinkHandle handle,
+    float gain
+) {
+    if (!handle) return;
+    auto* sink = static_cast<audio::MicAudioSink*>(handle);
+    sink->set_gain(gain);
+}
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_mic_sink_set_mute(
+    MoonshineMicSinkHandle handle,
+    uint8_t is_muted
+) {
+    if (!handle) return;
+    auto* sink = static_cast<audio::MicAudioSink*>(handle);
+    sink->set_mute(is_muted != 0);
+}
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_mic_sink_get_metrics(
+    MoonshineMicSinkHandle handle,
+    uint64_t* out_packets_received,
+    uint64_t* out_samples_rendered,
+    uint32_t* out_loss_count,
+    uint32_t* out_drift_corrections,
+    double* out_jitter_ms
+) {
+    if (!handle) return;
+    auto* sink = static_cast<audio::MicAudioSink*>(handle);
+    audio::MicSinkMetrics metrics{};
+    sink->get_metrics(metrics);
+    if (out_packets_received) *out_packets_received = metrics.total_packets_received;
+    if (out_samples_rendered) *out_samples_rendered = metrics.total_samples_rendered;
+    if (out_loss_count) *out_loss_count = metrics.loss_count;
+    if (out_drift_corrections) *out_drift_corrections = metrics.drift_corrections;
+    if (out_jitter_ms) *out_jitter_ms = metrics.current_jitter_ms;
 }
 
 // ============================================================================

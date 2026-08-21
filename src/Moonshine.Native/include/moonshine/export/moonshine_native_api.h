@@ -283,6 +283,59 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_opus_encoder_get_metrics(
 );
 
 // ============================================================================
+// Low-Latency Client-to-Host Microphone Virtual Audio Sink APIs
+// ============================================================================
+
+typedef void* MoonshineMicSinkHandle;
+
+MOONSHINE_API MoonshineMicSinkHandle MOONSHINE_CONV moonshine_mic_sink_create(
+    uint32_t sample_rate,
+    uint32_t channels,
+    uint32_t target_latency_ms,
+    float gain_multiplier,
+    float noise_gate_threshold_db,
+    uint8_t is_muted
+);
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_mic_sink_destroy(
+    MoonshineMicSinkHandle handle
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_mic_sink_push_opus_packet(
+    MoonshineMicSinkHandle handle,
+    const uint8_t* opus_payload,
+    uint32_t payload_len,
+    uint32_t timestamp,
+    uint16_t sequence_number
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_mic_sink_pull_pcm(
+    MoonshineMicSinkHandle handle,
+    float* out_pcm,
+    uint32_t max_samples,
+    uint32_t* out_samples_read
+);
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_mic_sink_set_gain(
+    MoonshineMicSinkHandle handle,
+    float gain
+);
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_mic_sink_set_mute(
+    MoonshineMicSinkHandle handle,
+    uint8_t is_muted
+);
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_mic_sink_get_metrics(
+    MoonshineMicSinkHandle handle,
+    uint64_t* out_packets_received,
+    uint64_t* out_samples_rendered,
+    uint32_t* out_loss_count,
+    uint32_t* out_drift_corrections,
+    double* out_jitter_ms
+);
+
+// ============================================================================
 // Zero-Copy Direct3D Desktop Capture APIs
 // ============================================================================
 
