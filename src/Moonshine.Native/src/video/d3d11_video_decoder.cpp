@@ -343,6 +343,7 @@ void D3D11VideoDecoder::Shutdown() {
 #endif
 }
 
+// QueryCaps is an out-of-band initialization and discovery operation executed before stream setup.
 void D3D11VideoDecoder::QueryCaps(MoonshineDecoderCaps& out_caps) noexcept {
     std::memset(&out_caps, 0, sizeof(MoonshineDecoderCaps));
 
@@ -395,8 +396,13 @@ void D3D11VideoDecoder::QueryCaps(MoonshineDecoderCaps& out_caps) noexcept {
     ComPtr<ID3D11VideoDevice> video_device;
     if (FAILED(device.As(&video_device))) return;
 
-    // 1. Probe profile and format support from live ID3D11VideoDevice
-    std::vector<GUID> supported_profiles;
+    // 1. Probe profile and format pairings from live ID3D11VideoDevice
+    struct SupportedProfileFormat {
+        GUID profile;
+        DXGI_FORMAT format;
+    };
+    std::vector<SupportedProfileFormat> supported_pairs;
+
     UINT profile_count = video_device->GetVideoDecoderProfileCount();
     for (UINT i = 0; i < profile_count; ++i) {
         GUID profile{};
@@ -406,8 +412,11 @@ void D3D11VideoDecoder::QueryCaps(MoonshineDecoderCaps& out_caps) noexcept {
             video_device->CheckVideoDecoderFormat(&profile, DXGI_FORMAT_NV12, &nv12_supported);
             video_device->CheckVideoDecoderFormat(&profile, DXGI_FORMAT_P010, &p010_supported);
 
-            if (nv12_supported || p010_supported) {
-                supported_profiles.push_back(profile);
+            if (nv12_supported) {
+                supported_pairs.push_back({profile, DXGI_FORMAT_NV12});
+            }
+            if (p010_supported) {
+                supported_pairs.push_back({profile, DXGI_FORMAT_P010});
             }
 
             if (InlineIsEqualGUID(profile, GUID_D3D11_DECODER_PROFILE_H264_NOFGT) ||
@@ -434,14 +443,16 @@ void D3D11VideoDecoder::QueryCaps(MoonshineDecoderCaps& out_caps) noexcept {
         }
     }
 
-    // 2. Discover maximum supported decode dimensions by probing decoder configs against supported profiles
+    // 2. Discover maximum supported decode dimensions by probing decoder configs with accurate (profile, format) pairs
     struct ResolutionCandidate {
         uint32_t width;
         uint32_t height;
     };
     const ResolutionCandidate candidate_resolutions[] = {
         {7680, 4320}, // 8K UHD
+        {5120, 2880}, // 5K
         {3840, 2160}, // 4K UHD
+        {3440, 1440}, // UWQHD
         {2560, 1440}, // 1440p QHD
         {1920, 1080}, // 1080p FHD
         {1280, 720}   // 720p HD
@@ -452,12 +463,12 @@ void D3D11VideoDecoder::QueryCaps(MoonshineDecoderCaps& out_caps) noexcept {
 
     for (const auto& res : candidate_resolutions) {
         bool res_supported = false;
-        for (const auto& prof : supported_profiles) {
+        for (const auto& pair : supported_pairs) {
             D3D11_VIDEO_DECODER_DESC dec_desc{};
-            dec_desc.Guid = prof;
+            dec_desc.Guid = pair.profile;
             dec_desc.SampleWidth = res.width;
             dec_desc.SampleHeight = res.height;
-            dec_desc.OutputFormat = DXGI_FORMAT_NV12;
+            dec_desc.OutputFormat = pair.format;
 
             UINT config_count = 0;
             if (SUCCEEDED(video_device->GetVideoDecoderConfigCount(&dec_desc, &config_count)) && config_count > 0) {
@@ -475,24 +486,31 @@ void D3D11VideoDecoder::QueryCaps(MoonshineDecoderCaps& out_caps) noexcept {
     out_caps.max_width = max_w;
     out_caps.max_height = max_h;
 
-    // 3. Discover maximum refresh rate from primary attached physical display output
+    // 3. Discover maximum refresh rate across active attached physical displays with fractional rounding
     uint32_t max_fps = 0;
+    UINT out_idx = 0;
     ComPtr<IDXGIOutput> output;
-    if (SUCCEEDED(adapter->EnumOutputs(0, &output)) && output) {
-        UINT num_modes = 0;
-        if (SUCCEEDED(output->GetDisplayModeList(DXGI_FORMAT_B8G8R8A8_UNORM, 0, &num_modes, nullptr)) && num_modes > 0) {
-            std::vector<DXGI_MODE_DESC> modes(num_modes);
-            if (SUCCEEDED(output->GetDisplayModeList(DXGI_FORMAT_B8G8R8A8_UNORM, 0, &num_modes, modes.data()))) {
-                for (const auto& mode : modes) {
-                    if (mode.RefreshRate.Denominator > 0) {
-                        uint32_t fps = mode.RefreshRate.Numerator / mode.RefreshRate.Denominator;
-                        if (fps > max_fps) {
-                            max_fps = fps;
+    while (adapter->EnumOutputs(out_idx++, &output) != DXGI_ERROR_NOT_FOUND) {
+        if (!output) continue;
+        DXGI_OUTPUT_DESC out_desc{};
+        if (SUCCEEDED(output->GetDesc(&out_desc)) && out_desc.AttachedToDesktop) {
+            UINT num_modes = 0;
+            if (SUCCEEDED(output->GetDisplayModeList(DXGI_FORMAT_B8G8R8A8_UNORM, 0, &num_modes, nullptr)) && num_modes > 0) {
+                std::vector<DXGI_MODE_DESC> modes(num_modes);
+                if (SUCCEEDED(output->GetDisplayModeList(DXGI_FORMAT_B8G8R8A8_UNORM, 0, &num_modes, modes.data()))) {
+                    for (const auto& mode : modes) {
+                        if (mode.RefreshRate.Denominator > 0) {
+                            // Standard rounding for fractional refresh rates (e.g. 59.94Hz -> 60, 119.88Hz -> 120, 143.98Hz -> 144)
+                            uint32_t fps = (mode.RefreshRate.Numerator + (mode.RefreshRate.Denominator / 2)) / mode.RefreshRate.Denominator;
+                            if (fps > max_fps) {
+                                max_fps = fps;
+                            }
                         }
                     }
                 }
             }
         }
+        output.Reset();
     }
 
     out_caps.max_fps = (max_fps > 0) ? max_fps : 60;
