@@ -13,6 +13,8 @@
 #include "moonshine/color/d3d_color_converter.hpp"
 #include "moonshine/encoder/unified_video_encoder.hpp"
 #include "moonshine/encoder/nvenc_video_encoder.hpp"
+#include "moonshine/encoder/amf_video_encoder.hpp"
+#include "moonshine/encoder/qsv_video_encoder.hpp"
 
 using namespace moonshine;
 
@@ -557,6 +559,84 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_nvenc_set_intra_refresh(
     (void)enable;
     (void)period;
     (void)count;
+    return 1;
+}
+
+// ============================================================================
+// AMD AMF Dedicated Custom APIs
+// ============================================================================
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_amf_query_codec_support(
+    uint32_t codec,
+    uint32_t* out_supported
+) {
+    if (!out_supported) return 0;
+    bool supported = encoder::AmfVideoEncoder::query_codec_support(
+        static_cast<encoder::VideoCodec>(codec)
+    );
+    *out_supported = supported ? 1 : 0;
+    return 1;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_amf_set_tuning(
+    MoonshineEncoderHandle handle,
+    uint32_t preset,
+    uint32_t usage
+) {
+    if (!handle) return 0;
+    (void)preset;
+    (void)usage;
+    return 1;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_amf_set_intra_refresh(
+    MoonshineEncoderHandle handle,
+    int enable,
+    uint32_t mbs_per_slot
+) {
+    if (!handle) return 0;
+    (void)enable;
+    (void)mbs_per_slot;
+    return 1;
+}
+
+// ============================================================================
+// Intel QuickSync / oneVPL Dedicated Custom APIs
+// ============================================================================
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_qsv_query_codec_support(
+    uint32_t codec,
+    uint32_t* out_supported
+) {
+    if (!out_supported) return 0;
+    bool supported = encoder::QsvVideoEncoder::query_codec_support(
+        static_cast<encoder::VideoCodec>(codec)
+    );
+    *out_supported = supported ? 1 : 0;
+    return 1;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_qsv_set_tuning(
+    MoonshineEncoderHandle handle,
+    uint32_t target_usage,
+    int low_power_vdenc
+) {
+    if (!handle) return 0;
+    (void)target_usage;
+    (void)low_power_vdenc;
+    return 1;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_qsv_set_intra_refresh(
+    MoonshineEncoderHandle handle,
+    int enable,
+    uint32_t cycle_size,
+    int32_t qp_delta
+) {
+    if (!handle) return 0;
+    (void)enable;
+    (void)cycle_size;
+    (void)qp_delta;
     return 1;
 }
 

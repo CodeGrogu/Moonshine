@@ -54,6 +54,18 @@ add_executable(test_nvenc_pipeline
 target_link_libraries(test_nvenc_pipeline PRIVATE Moonshine.Native)
 add_test(NAME test_nvenc_pipeline COMMAND test_nvenc_pipeline)
 
+add_executable(test_amf_pipeline 
+    test_amf_pipeline.cpp
+)
+target_link_libraries(test_amf_pipeline PRIVATE Moonshine.Native)
+add_test(NAME test_amf_pipeline COMMAND test_amf_pipeline)
+
+add_executable(test_qsv_pipeline 
+    test_qsv_pipeline.cpp
+)
+target_link_libraries(test_qsv_pipeline PRIVATE Moonshine.Native)
+add_test(NAME test_qsv_pipeline COMMAND test_qsv_pipeline)
+
 if(WIN32)
     add_custom_command(TARGET test_c_abi_export POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different

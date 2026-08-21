@@ -1,0 +1,105 @@
+using FluentAssertions;
+using Moonshine.Host.Encoding;
+using Xunit;
+
+namespace Moonshine.Host.Tests;
+
+public class AmfHardwareEncoderPipelineTests
+{
+    [Fact]
+    public void AmfHardwareEncoderPipeline_Initialize_PresetPropertiesMatch()
+    {
+        using var pipeline = new AmfHardwareEncoderPipeline(
+            width: 3840,
+            height: 2160,
+            fps: 120,
+            bitrateKbps: 45000,
+            codec: VideoCodec.HevcMain10,
+            preset: AmfQualityPreset.Speed,
+            usage: AmfUsage.UltraLowLatency
+        );
+
+        pipeline.Width.Should().Be(3840);
+        pipeline.Height.Should().Be(2160);
+        pipeline.Fps.Should().Be(120);
+        pipeline.BitrateKbps.Should().Be(45000);
+        pipeline.Codec.Should().Be(VideoCodec.HevcMain10);
+        pipeline.Vendor.Should().Be(EncoderVendor.AmdAmf);
+        pipeline.Preset.Should().Be(AmfQualityPreset.Speed);
+        pipeline.Usage.Should().Be(AmfUsage.UltraLowLatency);
+        pipeline.IsActive.Should().BeTrue();
+    }
+
+    [Fact]
+    public void AmfHardwareEncoderPipeline_ConfigureTuningAndIntraRefresh_UpdatesState()
+    {
+        using var pipeline = new AmfHardwareEncoderPipeline(1920, 1080);
+
+        bool tuningOk = pipeline.ConfigureTuning(AmfQualityPreset.Balanced, AmfUsage.LowLatency);
+        tuningOk.Should().BeTrue();
+        pipeline.Preset.Should().Be(AmfQualityPreset.Balanced);
+        pipeline.Usage.Should().Be(AmfUsage.LowLatency);
+
+        bool intraOk = pipeline.ConfigureIntraRefresh(true, 16);
+        intraOk.Should().BeTrue();
+    }
+
+    [Fact]
+    public void AmfHardwareEncoderPipeline_TryEncodeFrame_GeneratesKeyframeAndInterframes()
+    {
+        using var pipeline = new AmfHardwareEncoderPipeline(
+            width: 2560,
+            height: 1440,
+            fps: 240,
+            bitrateKbps: 35000,
+            codec: VideoCodec.Av1
+        );
+
+        Span<byte> buffer = stackalloc byte[1024 * 512];
+
+        // Frame 0: Keyframe
+        bool ok1 = pipeline.TryEncodeFrame(IntPtr.Zero, false, out var desc1, buffer, out int written1);
+        ok1.Should().BeTrue();
+        desc1.FrameIndex.Should().Be(0);
+        desc1.IsKeyframe.Should().Be(1);
+        desc1.IsHeaderPacket.Should().Be(1);
+        written1.Should().BeGreaterThan(0);
+
+        // Frame 1: Inter-frame
+        bool ok2 = pipeline.TryEncodeFrame(IntPtr.Zero, false, out var desc2, buffer, out int written2);
+        ok2.Should().BeTrue();
+        desc2.FrameIndex.Should().Be(1);
+        desc2.IsKeyframe.Should().Be(0);
+        written2.Should().BeGreaterThan(0);
+
+        // Request Keyframe
+        pipeline.RequestKeyframe();
+        bool ok3 = pipeline.TryEncodeFrame(IntPtr.Zero, false, out var desc3, buffer, out int written3);
+        ok3.Should().BeTrue();
+        desc3.FrameIndex.Should().Be(2);
+        desc3.IsKeyframe.Should().Be(1);
+        written3.Should().BeGreaterThan(0);
+    }
+
+    [Theory]
+    [InlineData(VideoCodec.H264)]
+    [InlineData(VideoCodec.Hevc)]
+    [InlineData(VideoCodec.HevcMain10)]
+    [InlineData(VideoCodec.Av1)]
+    public void AmfHardwareEncoderPipeline_IsCodecSupported_ReturnsTrueForAll(VideoCodec codec)
+    {
+        AmfHardwareEncoderPipeline.IsCodecSupported(codec).Should().BeTrue();
+    }
+
+    [Fact]
+    public void AmfHardwareEncoderPipeline_DoubleDispose_IsSafe()
+    {
+        var pipeline = new AmfHardwareEncoderPipeline(1920, 1080);
+        pipeline.Dispose();
+        pipeline.Dispose();
+
+        Span<byte> buffer = stackalloc byte[128];
+        pipeline.TryEncodeFrame(IntPtr.Zero, false, out _, buffer, out _).Should().BeFalse();
+        pipeline.IsActive.Should().BeFalse();
+    }
+}
