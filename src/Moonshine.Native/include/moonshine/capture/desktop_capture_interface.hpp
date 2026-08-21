@@ -22,8 +22,11 @@ public:
     virtual void cleanup() = 0;
     virtual bool acquire_frame(uint32_t timeout_ms, CaptureFrame& out_frame) = 0;
     virtual void release_frame() = 0;
+    virtual bool recover() = 0;
     [[nodiscard]] virtual uint32_t width() const noexcept = 0;
     [[nodiscard]] virtual uint32_t height() const noexcept = 0;
+    [[nodiscard]] virtual uint32_t format() const noexcept { return 87; }
+    [[nodiscard]] virtual bool is_hdr() const noexcept { return false; }
     [[nodiscard]] virtual bool is_initialized() const noexcept = 0;
 };
 

@@ -31,7 +31,7 @@ bool WgcDesktopCapture::initialize() {
     cleanup();
 
 #if defined(_WIN32)
-    // 1. Resolve screen dimensions
+    // 1. Resolve target monitor dimensions
     if (m_hmonitor) {
         MONITORINFO mi = { sizeof(MONITORINFO) };
         if (GetMonitorInfoA(static_cast<HMONITOR>(m_hmonitor), &mi)) {
@@ -45,8 +45,10 @@ bool WgcDesktopCapture::initialize() {
 
     if (m_width == 0) m_width = 1920;
     if (m_height == 0) m_height = 1080;
+    m_format = 87; // DXGI_FORMAT_B8G8R8A8_UNORM
+    m_is_hdr = false;
 
-    // 2. Create Direct3D 11 Device for WGC Interop
+    // 2. Create Direct3D 11 Hardware Device for WGC Interop
     D3D_FEATURE_LEVEL featureLevels[] = {
         D3D_FEATURE_LEVEL_11_1,
         D3D_FEATURE_LEVEL_11_0
@@ -68,31 +70,19 @@ bool WgcDesktopCapture::initialize() {
     );
 
     if (FAILED(hr)) {
-        hr = D3D11CreateDevice(
-            nullptr,
-            D3D_DRIVER_TYPE_WARP,
-            nullptr,
-            creationFlags,
-            featureLevels,
-            static_cast<UINT>(std::size(featureLevels)),
-            D3D11_SDK_VERSION,
-            &m_d3d11_device,
-            &featureLevel,
-            &m_d3d11_context
-        );
-        if (FAILED(hr)) return false;
+        return false;
     }
 
     // 3. Optional Direct3D 12 Device for Cross-Adapter Surface Sharing
     D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&m_d3d12_device));
 
-    // 4. Create Shared Texture Handle for zero-copy encoder handoff
+    // 4. Create Shared GPU Texture for zero-copy encoder handoff
     D3D11_TEXTURE2D_DESC texDesc = {};
     texDesc.Width = m_width;
     texDesc.Height = m_height;
     texDesc.MipLevels = 1;
     texDesc.ArraySize = 1;
-    texDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    texDesc.Format = static_cast<DXGI_FORMAT>(m_format);
     texDesc.SampleDesc.Count = 1;
     texDesc.SampleDesc.Quality = 0;
     texDesc.Usage = D3D11_USAGE_DEFAULT;
@@ -117,6 +107,8 @@ bool WgcDesktopCapture::initialize() {
 #else
     m_width = 1920;
     m_height = 1080;
+    m_format = 87;
+    m_is_hdr = false;
     m_initialized = true;
     return true;
 #endif
@@ -132,6 +124,11 @@ void WgcDesktopCapture::cleanup() {
     m_d3d11_device.Reset();
 #endif
     m_initialized = false;
+}
+
+bool WgcDesktopCapture::recover() {
+    cleanup();
+    return initialize();
 }
 
 bool WgcDesktopCapture::acquire_frame(uint32_t timeout_ms, CaptureFrame& out_frame) {
@@ -163,7 +160,7 @@ bool WgcDesktopCapture::acquire_frame(uint32_t timeout_ms, CaptureFrame& out_fra
     out_frame.texture_handle = m_shared_texture ? m_shared_texture.Get() : nullptr;
     out_frame.width = m_width;
     out_frame.height = m_height;
-    out_frame.format = 87; // DXGI_FORMAT_B8G8R8A8_UNORM
+    out_frame.format = m_format;
     out_frame.timestamp_qpc = nowTicks;
     out_frame.accumulated_frames = 1;
     out_frame.cursor_visible = true;
@@ -179,7 +176,7 @@ bool WgcDesktopCapture::acquire_frame(uint32_t timeout_ms, CaptureFrame& out_fra
     out_frame.texture_handle = reinterpret_cast<void*>(0xDEADBEEF);
     out_frame.width = m_width;
     out_frame.height = m_height;
-    out_frame.format = 87;
+    out_frame.format = m_format;
     out_frame.timestamp_qpc = micros;
     out_frame.accumulated_frames = 1;
     out_frame.cursor_visible = true;

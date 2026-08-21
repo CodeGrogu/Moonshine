@@ -14,12 +14,20 @@ public enum CaptureBackend
 /// </summary>
 public sealed class UnifiedDesktopCaptureEngine : IDesktopCapturePipeline
 {
-    private readonly IDesktopCapturePipeline _activePipeline;
-    private readonly CaptureBackend _backendType;
+    private IDesktopCapturePipeline _activePipeline;
+    private CaptureBackend _backendType;
+    private readonly uint _targetFps;
+    private readonly uint _adapterIndex;
+    private readonly uint _outputIndex;
+    private readonly IntPtr _hmonitor;
 
     public CaptureBackend ActiveBackend => _backendType;
     public uint Width => _activePipeline.Width;
     public uint Height => _activePipeline.Height;
+    public uint Format => _activePipeline.Format;
+    public bool IsHdr => _activePipeline.IsHdr;
+    public uint AdapterIndex => _activePipeline.AdapterIndex;
+    public uint OutputIndex => _activePipeline.OutputIndex;
     public bool IsAvailable => _activePipeline.IsAvailable;
     public CaptureMetrics Metrics => _activePipeline.Metrics;
 
@@ -31,6 +39,11 @@ public sealed class UnifiedDesktopCaptureEngine : IDesktopCapturePipeline
         IntPtr hmonitor = 0
     )
     {
+        _targetFps = targetFps;
+        _adapterIndex = adapterIndex;
+        _outputIndex = outputIndex;
+        _hmonitor = hmonitor;
+
         if (preferredBackend == CaptureBackend.WindowsGraphicsCapture)
         {
             _activePipeline = new WgcDesktopCapturePipeline(hmonitor, targetFps);
@@ -66,6 +79,30 @@ public sealed class UnifiedDesktopCaptureEngine : IDesktopCapturePipeline
     public void ReleaseFrame()
     {
         _activePipeline.ReleaseFrame();
+    }
+
+    public bool TryRecover()
+    {
+        if (_activePipeline.TryRecover())
+        {
+            return true;
+        }
+
+        // Automatic failover between backends if recovery on current pipeline fails
+        if (_backendType == CaptureBackend.DxgiDesktopDuplication)
+        {
+            _activePipeline.Dispose();
+            _activePipeline = new WgcDesktopCapturePipeline(_hmonitor, _targetFps);
+            _backendType = CaptureBackend.WindowsGraphicsCapture;
+            return _activePipeline.IsAvailable;
+        }
+        else
+        {
+            _activePipeline.Dispose();
+            _activePipeline = new DxgiDesktopCapturePipeline(_adapterIndex, _outputIndex);
+            _backendType = CaptureBackend.DxgiDesktopDuplication;
+            return _activePipeline.IsAvailable;
+        }
     }
 
     public void Dispose()

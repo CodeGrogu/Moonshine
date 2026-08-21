@@ -10,7 +10,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <d3d11.h>
-#include <dxgi1_2.h>
+#include <dxgi1_4.h>
 #include <wrl/client.h>
 using Microsoft::WRL::ComPtr;
 #endif
@@ -30,9 +30,12 @@ public:
 
     bool acquire_frame(uint32_t timeout_ms, CaptureFrame& out_frame) override;
     void release_frame() override;
+    bool recover() override;
 
     [[nodiscard]] uint32_t width() const noexcept override { return m_width; }
     [[nodiscard]] uint32_t height() const noexcept override { return m_height; }
+    [[nodiscard]] uint32_t format() const noexcept override { return m_format; }
+    [[nodiscard]] bool is_hdr() const noexcept override { return m_is_hdr; }
     [[nodiscard]] bool is_initialized() const noexcept override { return m_initialized; }
 
 private:
@@ -40,6 +43,8 @@ private:
     uint32_t m_output_index;
     uint32_t m_width = 1920;
     uint32_t m_height = 1080;
+    uint32_t m_format = 87; // DXGI_FORMAT_B8G8R8A8_UNORM
+    bool m_is_hdr = false;
     bool m_initialized = false;
     bool m_frame_acquired = false;
 

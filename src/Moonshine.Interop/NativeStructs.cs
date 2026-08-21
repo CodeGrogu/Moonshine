@@ -73,6 +73,39 @@ public unsafe struct MoonshineCaptureFrameDesc
 }
 
 /// <summary>
+/// Exact binary match for MoonshineAdapterInfo (C-ABI, 160 bytes).
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public unsafe struct MoonshineAdapterInfo
+{
+    public uint AdapterIndex;
+    public long AdapterLuid;
+    public fixed byte Description[128];
+    public ulong DedicatedVideoMemory;
+    public byte IsHardware;
+    public fixed byte Reserved[11];
+}
+
+/// <summary>
+/// Exact binary match for MoonshineDisplayInfo (C-ABI, 36 bytes).
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public unsafe struct MoonshineDisplayInfo
+{
+    public uint DisplayIndex;
+    public uint AdapterIndex;
+    public uint Width;
+    public uint Height;
+    public uint RefreshRateNumerator;
+    public uint RefreshRateDenominator;
+    public uint Rotation;
+    public byte IsAttachedToDesktop;
+    public byte IsHdr;
+    public byte BitsPerColor;
+    public fixed byte Reserved[5];
+}
+
+/// <summary>
 /// Exact binary match for MoonshineHdr10Metadata (C-ABI, 32 bytes).
 /// </summary>
 [StructLayout(LayoutKind.Sequential, Pack = 1)]

@@ -1,7 +1,7 @@
 #include "moonshine/capture/dxgi_desktop_duplicator.hpp"
 
 #if defined(_WIN32)
-#include <dxgi1_3.h>
+#include <dxgi1_4.h>
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "dxgi.lib")
 #endif
@@ -27,12 +27,19 @@ bool DxgiDesktopDuplicator::initialize() {
     HRESULT hr = CreateDXGIFactory1(IID_PPV_ARGS(&factory));
     if (FAILED(hr)) return false;
 
-    // 2. Enumerate target adapter
+    // 2. Enumerate target hardware adapter
     ComPtr<IDXGIAdapter1> adapter;
     hr = factory->EnumAdapters1(m_adapter_index, &adapter);
     if (FAILED(hr)) return false;
 
-    // 3. Create Direct3D 11 Device
+    DXGI_ADAPTER_DESC1 adapterDesc = {};
+    adapter->GetDesc1(&adapterDesc);
+    if (adapterDesc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) {
+        // Reject software WARP adapters in production
+        return false;
+    }
+
+    // 3. Create Direct3D 11 Hardware Device on selected physical adapter
     D3D_FEATURE_LEVEL featureLevels[] = {
         D3D_FEATURE_LEVEL_11_1,
         D3D_FEATURE_LEVEL_11_0
@@ -54,23 +61,10 @@ bool DxgiDesktopDuplicator::initialize() {
     );
 
     if (FAILED(hr)) {
-        // Fallback to default hardware driver
-        hr = D3D11CreateDevice(
-            nullptr,
-            D3D_DRIVER_TYPE_HARDWARE,
-            nullptr,
-            creationFlags,
-            featureLevels,
-            static_cast<UINT>(std::size(featureLevels)),
-            D3D11_SDK_VERSION,
-            &m_device,
-            &featureLevel,
-            &m_context
-        );
-        if (FAILED(hr)) return false;
+        return false;
     }
 
-    // 4. Enumerate target display output
+    // 4. Enumerate target display output on adapter
     ComPtr<IDXGIOutput> output;
     hr = adapter->EnumOutputs(m_output_index, &output);
     if (FAILED(hr)) {
@@ -86,25 +80,30 @@ bool DxgiDesktopDuplicator::initialize() {
     hr = output.As(&output1);
     if (FAILED(hr)) return false;
 
-    // 5. Initialize Output Duplication session
+    // 5. Initialize Output Duplication session on hardware device
     hr = output1->DuplicateOutput(m_device.Get(), &m_duplication);
     if (FAILED(hr)) return false;
 
-    DXGI_OUTDUPL_DESC duplDesc;
+    DXGI_OUTDUPL_DESC duplDesc = {};
     m_duplication->GetDesc(&duplDesc);
     m_width = duplDesc.ModeDesc.Width;
     m_height = duplDesc.ModeDesc.Height;
+    m_format = (duplDesc.ModeDesc.Format != DXGI_FORMAT_UNKNOWN)
+        ? static_cast<uint32_t>(duplDesc.ModeDesc.Format)
+        : 87; // DXGI_FORMAT_B8G8R8A8_UNORM
+
+    m_is_hdr = (m_format == 24 || m_format == 10); // R10G10B10A2 or R16G16B16A16_FLOAT
 
     if (m_width == 0) m_width = 1920;
     if (m_height == 0) m_height = 1080;
 
-    // 6. Create shared destination texture for zero-copy encoder handoff
+    // 6. Create GPU-resident shared destination texture for zero-copy encoder handoff
     D3D11_TEXTURE2D_DESC texDesc = {};
     texDesc.Width = m_width;
     texDesc.Height = m_height;
     texDesc.MipLevels = 1;
     texDesc.ArraySize = 1;
-    texDesc.Format = duplDesc.ModeDesc.Format != DXGI_FORMAT_UNKNOWN ? duplDesc.ModeDesc.Format : DXGI_FORMAT_B8G8R8A8_UNORM;
+    texDesc.Format = static_cast<DXGI_FORMAT>(m_format);
     texDesc.SampleDesc.Count = 1;
     texDesc.SampleDesc.Quality = 0;
     texDesc.Usage = D3D11_USAGE_DEFAULT;
@@ -125,6 +124,8 @@ bool DxgiDesktopDuplicator::initialize() {
 #else
     m_width = 1920;
     m_height = 1080;
+    m_format = 87;
+    m_is_hdr = false;
     m_initialized = true;
     return true;
 #endif
@@ -141,6 +142,11 @@ void DxgiDesktopDuplicator::cleanup() {
     m_device.Reset();
 #endif
     m_initialized = false;
+}
+
+bool DxgiDesktopDuplicator::recover() {
+    cleanup();
+    return initialize();
 }
 
 bool DxgiDesktopDuplicator::acquire_frame(uint32_t timeout_ms, CaptureFrame& out_frame) {
@@ -162,9 +168,9 @@ bool DxgiDesktopDuplicator::acquire_frame(uint32_t timeout_ms, CaptureFrame& out
     }
 
     if (FAILED(hr)) {
-        if (hr == DXGI_ERROR_ACCESS_LOST || hr == DXGI_ERROR_INVALID_CALL) {
+        if (hr == DXGI_ERROR_ACCESS_LOST || hr == DXGI_ERROR_INVALID_CALL ||
+            hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
             cleanup();
-            initialize();
         }
         return false;
     }
@@ -178,6 +184,7 @@ bool DxgiDesktopDuplicator::acquire_frame(uint32_t timeout_ms, CaptureFrame& out
         return false;
     }
 
+    // Zero CPU copy: Direct GPU VRAM copy to shared texture
     if (m_shared_texture && m_context) {
         m_context->CopyResource(m_shared_texture.Get(), acquiredTexture.Get());
     }
@@ -188,7 +195,7 @@ bool DxgiDesktopDuplicator::acquire_frame(uint32_t timeout_ms, CaptureFrame& out
     out_frame.texture_handle = m_shared_texture ? m_shared_texture.Get() : acquiredTexture.Get();
     out_frame.width = m_width;
     out_frame.height = m_height;
-    out_frame.format = 87; // DXGI_FORMAT_B8G8R8A8_UNORM
+    out_frame.format = m_format;
     out_frame.timestamp_qpc = static_cast<uint64_t>(qpc.QuadPart);
     out_frame.accumulated_frames = frameInfo.AccumulatedFrames;
     out_frame.cursor_visible = frameInfo.PointerPosition.Visible != 0;
@@ -196,8 +203,6 @@ bool DxgiDesktopDuplicator::acquire_frame(uint32_t timeout_ms, CaptureFrame& out
     return true;
 #else
     (void)timeout_ms;
-    (void)m_adapter_index;
-    (void)m_output_index;
     m_mock_frame_counter++;
     auto now = std::chrono::steady_clock::now().time_since_epoch();
     uint64_t micros = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(now).count());
@@ -205,7 +210,7 @@ bool DxgiDesktopDuplicator::acquire_frame(uint32_t timeout_ms, CaptureFrame& out
     out_frame.texture_handle = reinterpret_cast<void*>(0xCAFEBABE);
     out_frame.width = m_width;
     out_frame.height = m_height;
-    out_frame.format = 87;
+    out_frame.format = m_format;
     out_frame.timestamp_qpc = micros;
     out_frame.accumulated_frames = 1;
     out_frame.cursor_visible = true;

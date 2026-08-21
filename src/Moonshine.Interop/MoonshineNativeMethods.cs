@@ -562,6 +562,33 @@ public static unsafe partial class MoonshineNativeMethods
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial void CaptureReleaseFrame(IntPtr handle);
 
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_capture_recover")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int CaptureRecover(IntPtr handle);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_capture_get_adapter_count")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial uint CaptureGetAdapterCount();
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_capture_get_adapter_info")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int CaptureGetAdapterInfo(
+        uint adapterIndex,
+        out MoonshineAdapterInfo outInfo
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_capture_get_display_count")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial uint CaptureGetDisplayCount(uint adapterIndex);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_capture_get_display_info")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int CaptureGetDisplayInfo(
+        uint adapterIndex,
+        uint displayIndex,
+        out MoonshineDisplayInfo outInfo
+    );
+
     // ========================================================================
     // HDR10 Metadata Extraction & Real-Time Color Space Conversion APIs
     // ========================================================================

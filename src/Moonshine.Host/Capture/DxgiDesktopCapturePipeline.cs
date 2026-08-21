@@ -9,7 +9,10 @@ public sealed record CaptureMetrics(
     ulong CaptureErrorsCount,
     ulong LastFrameTimestampQpc,
     uint Width,
-    uint Height
+    uint Height,
+    uint Format,
+    bool IsHdr,
+    double AverageAcquisitionTimeMicroseconds
 );
 
 /// <summary>
@@ -23,6 +26,8 @@ public sealed class DxgiDesktopCapturePipeline : IDesktopCapturePipeline
     private IntPtr _handle;
     private uint _width;
     private uint _height;
+    private uint _format = 87; // DXGI_FORMAT_B8G8R8A8_UNORM
+    private bool _isHdr;
     private bool _disposed;
     private readonly Lock _lock = new();
 
@@ -30,19 +35,37 @@ public sealed class DxgiDesktopCapturePipeline : IDesktopCapturePipeline
     private ulong _timeoutsCount;
     private ulong _captureErrorsCount;
     private ulong _lastFrameTimestampQpc;
+    private ulong _totalAcquisitionTimeQpc;
 
     public uint Width => Volatile.Read(ref _width);
     public uint Height => Volatile.Read(ref _height);
+    public uint Format => Volatile.Read(ref _format);
+    public bool IsHdr => Volatile.Read(ref _isHdr);
+    public uint AdapterIndex => _adapterIndex;
+    public uint OutputIndex => _outputIndex;
     public bool IsAvailable => _handle != IntPtr.Zero;
 
-    public CaptureMetrics Metrics => new(
-        Volatile.Read(ref _framesCaptured),
-        Volatile.Read(ref _timeoutsCount),
-        Volatile.Read(ref _captureErrorsCount),
-        Volatile.Read(ref _lastFrameTimestampQpc),
-        Volatile.Read(ref _width),
-        Volatile.Read(ref _height)
-    );
+    public CaptureMetrics Metrics
+    {
+        get
+        {
+            ulong frames = Volatile.Read(ref _framesCaptured);
+            ulong totalQpc = Volatile.Read(ref _totalAcquisitionTimeQpc);
+            double avgUs = frames > 0 ? (double)totalQpc / frames * (1_000_000.0 / Stopwatch.Frequency) : 0.0;
+
+            return new CaptureMetrics(
+                frames,
+                Volatile.Read(ref _timeoutsCount),
+                Volatile.Read(ref _captureErrorsCount),
+                Volatile.Read(ref _lastFrameTimestampQpc),
+                Volatile.Read(ref _width),
+                Volatile.Read(ref _height),
+                Volatile.Read(ref _format),
+                Volatile.Read(ref _isHdr),
+                avgUs
+            );
+        }
+    }
 
     public DxgiDesktopCapturePipeline(uint adapterIndex = 0, uint outputIndex = 0)
     {
@@ -62,17 +85,28 @@ public sealed class DxgiDesktopCapturePipeline : IDesktopCapturePipeline
             }
 
             _handle = MoonshineNativeMethods.CaptureCreateDxgi(_adapterIndex, _outputIndex, out _width, out _height);
+            if (_handle != IntPtr.Zero)
+            {
+                // Query display info to populate format and HDR metadata
+                if (MoonshineNativeMethods.CaptureGetDisplayInfo(_adapterIndex, _outputIndex, out var dispInfo) == 0)
+                {
+                    _isHdr = dispInfo.IsHdr != 0;
+                    _format = _isHdr ? 24u : 87u; // DXGI_FORMAT_R10G10B10A2_UNORM or DXGI_FORMAT_B8G8R8A8_UNORM
+                }
+            }
         }
     }
 
     /// <summary>
-    /// Acquires the next available desktop frame texture.
+    /// Acquires the next available desktop frame texture. Zero GC allocations on the hot path.
     /// </summary>
     /// <param name="timeoutMs">Timeout in milliseconds to wait for a new presented frame.</param>
     /// <param name="frame">Descriptor populated with shared texture handle and metadata.</param>
     /// <returns>True if a new frame was acquired; false on timeout or error.</returns>
     public bool TryAcquireNextFrame(uint timeoutMs, out MoonshineCaptureFrameDesc frame)
     {
+        long startQpc = Stopwatch.GetTimestamp();
+
         lock (_lock)
         {
             if (_disposed || _handle == IntPtr.Zero)
@@ -84,19 +118,22 @@ public sealed class DxgiDesktopCapturePipeline : IDesktopCapturePipeline
             int result = MoonshineNativeMethods.CaptureAcquireFrame(_handle, timeoutMs, out frame);
             if (result > 0)
             {
+                long elapsed = Stopwatch.GetTimestamp() - startQpc;
                 Interlocked.Increment(ref _framesCaptured);
+                Interlocked.Add(ref _totalAcquisitionTimeQpc, (ulong)elapsed);
                 Volatile.Write(ref _lastFrameTimestampQpc, frame.TimestampQpc);
+                Volatile.Write(ref _format, frame.Format);
                 return true;
             }
 
             if (result == 0)
             {
-                // Timeout (no new frame rendered by desktop)
+                // Timeout (no new frame rendered by desktop compositor)
                 Interlocked.Increment(ref _timeoutsCount);
                 return false;
             }
 
-            // Error occurred (e.g. display mode change or device lost)
+            // Error occurred (e.g. display mode change, UAC secure desktop switch, or device lost)
             Interlocked.Increment(ref _captureErrorsCount);
             return false;
         }
@@ -113,6 +150,28 @@ public sealed class DxgiDesktopCapturePipeline : IDesktopCapturePipeline
             {
                 MoonshineNativeMethods.CaptureReleaseFrame(_handle);
             }
+        }
+    }
+
+    /// <summary>
+    /// Recovers the capture session after display mode change, resolution switch, or device lost event.
+    /// </summary>
+    public bool TryRecover()
+    {
+        lock (_lock)
+        {
+            if (_disposed) return false;
+
+            if (_handle != IntPtr.Zero)
+            {
+                if (MoonshineNativeMethods.CaptureRecover(_handle) > 0)
+                {
+                    return true;
+                }
+            }
+
+            Initialize();
+            return _handle != IntPtr.Zero;
         }
     }
 

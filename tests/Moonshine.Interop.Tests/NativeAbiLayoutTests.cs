@@ -155,4 +155,33 @@ public class NativeAbiLayoutTests
         Marshal.OffsetOf<MoonshineAudioIpcMetrics>(nameof(MoonshineAudioIpcMetrics.Channels)).ToInt32().Should().Be(28);
         Marshal.OffsetOf<MoonshineAudioIpcMetrics>(nameof(MoonshineAudioIpcMetrics.IsConnected)).ToInt32().Should().Be(32);
     }
+
+    [Fact]
+    public void MoonshineAdapterInfo_HasExactLayoutAndSize()
+    {
+        Marshal.SizeOf<MoonshineAdapterInfo>().Should().Be(160);
+        Marshal.OffsetOf<MoonshineAdapterInfo>(nameof(MoonshineAdapterInfo.AdapterIndex)).ToInt32().Should().Be(0);
+        Marshal.OffsetOf<MoonshineAdapterInfo>(nameof(MoonshineAdapterInfo.AdapterLuid)).ToInt32().Should().Be(4);
+        Marshal.OffsetOf<MoonshineAdapterInfo>(nameof(MoonshineAdapterInfo.Description)).ToInt32().Should().Be(12);
+        Marshal.OffsetOf<MoonshineAdapterInfo>(nameof(MoonshineAdapterInfo.DedicatedVideoMemory)).ToInt32().Should().Be(140);
+        Marshal.OffsetOf<MoonshineAdapterInfo>(nameof(MoonshineAdapterInfo.IsHardware)).ToInt32().Should().Be(148);
+        Marshal.OffsetOf<MoonshineAdapterInfo>(nameof(MoonshineAdapterInfo.Reserved)).ToInt32().Should().Be(149);
+    }
+
+    [Fact]
+    public void MoonshineDisplayInfo_HasExactLayoutAndSize()
+    {
+        Marshal.SizeOf<MoonshineDisplayInfo>().Should().Be(36);
+        Marshal.OffsetOf<MoonshineDisplayInfo>(nameof(MoonshineDisplayInfo.DisplayIndex)).ToInt32().Should().Be(0);
+        Marshal.OffsetOf<MoonshineDisplayInfo>(nameof(MoonshineDisplayInfo.AdapterIndex)).ToInt32().Should().Be(4);
+        Marshal.OffsetOf<MoonshineDisplayInfo>(nameof(MoonshineDisplayInfo.Width)).ToInt32().Should().Be(8);
+        Marshal.OffsetOf<MoonshineDisplayInfo>(nameof(MoonshineDisplayInfo.Height)).ToInt32().Should().Be(12);
+        Marshal.OffsetOf<MoonshineDisplayInfo>(nameof(MoonshineDisplayInfo.RefreshRateNumerator)).ToInt32().Should().Be(16);
+        Marshal.OffsetOf<MoonshineDisplayInfo>(nameof(MoonshineDisplayInfo.RefreshRateDenominator)).ToInt32().Should().Be(20);
+        Marshal.OffsetOf<MoonshineDisplayInfo>(nameof(MoonshineDisplayInfo.Rotation)).ToInt32().Should().Be(24);
+        Marshal.OffsetOf<MoonshineDisplayInfo>(nameof(MoonshineDisplayInfo.IsAttachedToDesktop)).ToInt32().Should().Be(28);
+        Marshal.OffsetOf<MoonshineDisplayInfo>(nameof(MoonshineDisplayInfo.IsHdr)).ToInt32().Should().Be(29);
+        Marshal.OffsetOf<MoonshineDisplayInfo>(nameof(MoonshineDisplayInfo.BitsPerColor)).ToInt32().Should().Be(30);
+        Marshal.OffsetOf<MoonshineDisplayInfo>(nameof(MoonshineDisplayInfo.Reserved)).ToInt32().Should().Be(31);
+    }
 }

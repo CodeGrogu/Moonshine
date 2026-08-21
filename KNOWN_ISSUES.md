@@ -21,7 +21,7 @@ This document tracks known platform limitations, environment requirements, and c
 
 <!-- VERIFIED: 2026-08-21, via `scripts/verify_codebase.ps1` on Windows 11 -->
 ### Managed .NET 9 Solution
-- **Status**: Verified (266 unit and integration tests passed across `Moonshine.Protocol.Tests` (71), `Moonshine.Core.Tests` (79), `Moonshine.Interop.Tests` (72), `Moonshine.Host.Tests` (44)).
+- **Status**: Verified (274 unit and integration tests passed across `Moonshine.Protocol.Tests` (71), `Moonshine.Core.Tests` (79), `Moonshine.Interop.Tests` (74), `Moonshine.Host.Tests` (50)).
 
 ### NVIDIA NVENC Hardware Video Encoder
 - **Status**: Prototype / Fail-Closed.

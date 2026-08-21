@@ -1,6 +1,10 @@
 #define MOONSHINE_NATIVE_EXPORTS
 #include "moonshine/export/moonshine_native_api.h"
 #include <cstring>
+#include <vector>
+#if defined(_WIN32)
+#include <dxgi1_6.h>
+#endif
 #include "moonshine/fec/reed_solomon_simd.hpp"
 #include "moonshine/ring_buffer/spsc_ring_buffer.hpp"
 #include "moonshine/jitter_buffer/jitter_buffer.hpp"
@@ -867,6 +871,148 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_capture_release_frame(MoonshineCaptu
     if (!handle) return;
     auto* cap = static_cast<capture::IDesktopCapture*>(handle);
     cap->release_frame();
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_capture_recover(MoonshineCaptureHandle handle) {
+    if (!handle) return -1;
+    auto* cap = static_cast<capture::IDesktopCapture*>(handle);
+    return cap->recover() ? 1 : 0;
+}
+
+MOONSHINE_API uint32_t MOONSHINE_CONV moonshine_capture_get_adapter_count(void) {
+#if defined(_WIN32)
+    Microsoft::WRL::ComPtr<IDXGIFactory1> factory;
+    if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) return 0;
+    UINT count = 0;
+    Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
+    while (factory->EnumAdapters1(count, &adapter) != DXGI_ERROR_NOT_FOUND) {
+        count++;
+        adapter.Reset();
+    }
+    return count;
+#else
+    return 1;
+#endif
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_capture_get_adapter_info(
+    uint32_t adapter_index,
+    MoonshineAdapterInfo* out_info
+) {
+    if (!out_info) return -1;
+    std::memset(out_info, 0, sizeof(MoonshineAdapterInfo));
+    out_info->adapter_index = adapter_index;
+
+#if defined(_WIN32)
+    Microsoft::WRL::ComPtr<IDXGIFactory1> factory;
+    if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) return -1;
+    Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
+    if (FAILED(factory->EnumAdapters1(adapter_index, &adapter))) return -1;
+
+    DXGI_ADAPTER_DESC1 desc = {};
+    if (FAILED(adapter->GetDesc1(&desc))) return -1;
+
+    out_info->adapter_luid = *reinterpret_cast<const int64_t*>(&desc.AdapterLuid);
+    out_info->dedicated_video_memory = static_cast<uint64_t>(desc.DedicatedVideoMemory);
+    out_info->is_hardware = (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) ? 0 : 1;
+
+    WideCharToMultiByte(CP_UTF8, 0, desc.Description, -1, out_info->description, sizeof(out_info->description) - 1, nullptr, nullptr);
+    return 0;
+#else
+    out_info->adapter_luid = 1;
+    out_info->dedicated_video_memory = 8ULL * 1024 * 1024 * 1024;
+    out_info->is_hardware = 1;
+    std::strncpy(out_info->description, "Mock Physical GPU Adapter", sizeof(out_info->description) - 1);
+    return 0;
+#endif
+}
+
+MOONSHINE_API uint32_t MOONSHINE_CONV moonshine_capture_get_display_count(uint32_t adapter_index) {
+#if defined(_WIN32)
+    Microsoft::WRL::ComPtr<IDXGIFactory1> factory;
+    if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) return 0;
+    Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
+    if (FAILED(factory->EnumAdapters1(adapter_index, &adapter))) return 0;
+
+    UINT count = 0;
+    Microsoft::WRL::ComPtr<IDXGIOutput> output;
+    while (adapter->EnumOutputs(count, &output) != DXGI_ERROR_NOT_FOUND) {
+        count++;
+        output.Reset();
+    }
+    return count;
+#else
+    (void)adapter_index;
+    return 1;
+#endif
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_capture_get_display_info(
+    uint32_t adapter_index,
+    uint32_t display_index,
+    MoonshineDisplayInfo* out_info
+) {
+    if (!out_info) return -1;
+    std::memset(out_info, 0, sizeof(MoonshineDisplayInfo));
+    out_info->adapter_index = adapter_index;
+    out_info->display_index = display_index;
+
+#if defined(_WIN32)
+    Microsoft::WRL::ComPtr<IDXGIFactory1> factory;
+    if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) return -1;
+    Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
+    if (FAILED(factory->EnumAdapters1(adapter_index, &adapter))) return -1;
+    Microsoft::WRL::ComPtr<IDXGIOutput> output;
+    if (FAILED(adapter->EnumOutputs(display_index, &output))) return -1;
+
+    DXGI_OUTPUT_DESC desc = {};
+    if (FAILED(output->GetDesc(&desc))) return -1;
+
+    out_info->width = static_cast<uint32_t>(desc.DesktopCoordinates.right - desc.DesktopCoordinates.left);
+    out_info->height = static_cast<uint32_t>(desc.DesktopCoordinates.bottom - desc.DesktopCoordinates.top);
+    out_info->rotation = static_cast<uint32_t>(desc.Rotation);
+    out_info->is_attached_to_desktop = desc.AttachedToDesktop ? 1 : 0;
+    out_info->refresh_rate_num = 60;
+    out_info->refresh_rate_den = 1;
+    out_info->bits_per_color = 8;
+    out_info->is_hdr = 0;
+
+    UINT numModes = 0;
+    if (SUCCEEDED(output->GetDisplayModeList(DXGI_FORMAT_B8G8R8A8_UNORM, 0, &numModes, nullptr)) && numModes > 0) {
+        std::vector<DXGI_MODE_DESC> modes(numModes);
+        if (SUCCEEDED(output->GetDisplayModeList(DXGI_FORMAT_B8G8R8A8_UNORM, 0, &numModes, modes.data()))) {
+            for (const auto& mode : modes) {
+                if (mode.Width == out_info->width && mode.Height == out_info->height) {
+                    out_info->refresh_rate_num = mode.RefreshRate.Numerator;
+                    out_info->refresh_rate_den = mode.RefreshRate.Denominator;
+                    break;
+                }
+            }
+        }
+    }
+
+    Microsoft::WRL::ComPtr<IDXGIOutput6> output6;
+    if (SUCCEEDED(output.As(&output6))) {
+        DXGI_OUTPUT_DESC1 desc1 = {};
+        if (SUCCEEDED(output6->GetDesc1(&desc1))) {
+            out_info->bits_per_color = static_cast<uint8_t>(desc1.BitsPerColor);
+            out_info->is_hdr = (desc1.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020 ||
+                                desc1.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709) ? 1 : 0;
+        }
+    }
+
+    return 0;
+#else
+    out_info->width = 1920;
+    out_info->height = 1080;
+    out_info->refresh_rate_num = 60;
+    out_info->refresh_rate_den = 1;
+    out_info->rotation = 0;
+    out_info->is_attached_to_desktop = 1;
+    out_info->is_hdr = 0;
+    out_info->bits_per_color = 8;
+    return 0;
+#endif
 }
 
 // ============================================================================

@@ -108,6 +108,35 @@ typedef struct MoonshineCaptureFrameDesc {
     uint8_t  reserved[3];
 } MoonshineCaptureFrameDesc;
 
+/**
+ * @brief Blittable descriptor representing a physical GPU display adapter.
+ */
+typedef struct MoonshineAdapterInfo {
+    uint32_t adapter_index;
+    int64_t  adapter_luid;
+    char     description[128];
+    uint64_t dedicated_video_memory;
+    uint8_t  is_hardware;
+    uint8_t  reserved[11];
+} MoonshineAdapterInfo;
+
+/**
+ * @brief Blittable descriptor representing a physical display output.
+ */
+typedef struct MoonshineDisplayInfo {
+    uint32_t display_index;
+    uint32_t adapter_index;
+    uint32_t width;
+    uint32_t height;
+    uint32_t refresh_rate_num;
+    uint32_t refresh_rate_den;
+    uint32_t rotation;
+    uint8_t  is_attached_to_desktop;
+    uint8_t  is_hdr;
+    uint8_t  bits_per_color;
+    uint8_t  reserved[5];
+} MoonshineDisplayInfo;
+
 #pragma pack(pop)
 
 // ============================================================================
@@ -585,6 +614,18 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_capture_acquire_frame(
     MoonshineCaptureFrameDesc* out_frame
 );
 MOONSHINE_API void MOONSHINE_CONV moonshine_capture_release_frame(MoonshineCaptureHandle handle);
+MOONSHINE_API int MOONSHINE_CONV moonshine_capture_recover(MoonshineCaptureHandle handle);
+MOONSHINE_API uint32_t MOONSHINE_CONV moonshine_capture_get_adapter_count(void);
+MOONSHINE_API int MOONSHINE_CONV moonshine_capture_get_adapter_info(
+    uint32_t adapter_index,
+    MoonshineAdapterInfo* out_info
+);
+MOONSHINE_API uint32_t MOONSHINE_CONV moonshine_capture_get_display_count(uint32_t adapter_index);
+MOONSHINE_API int MOONSHINE_CONV moonshine_capture_get_display_info(
+    uint32_t adapter_index,
+    uint32_t display_index,
+    MoonshineDisplayInfo* out_info
+);
 
 // ============================================================================
 // HDR10 Metadata Extraction & Real-Time Color Space Conversion APIs
@@ -893,6 +934,27 @@ static_assert(offsetof(MoonshineAudioIpcMetricsC, capture_overruns) == 20, "Moon
 static_assert(offsetof(MoonshineAudioIpcMetricsC, sample_rate) == 24, "MoonshineAudioIpcMetricsC::sample_rate offset mismatch");
 static_assert(offsetof(MoonshineAudioIpcMetricsC, channels) == 28, "MoonshineAudioIpcMetricsC::channels offset mismatch");
 static_assert(offsetof(MoonshineAudioIpcMetricsC, is_connected) == 32, "MoonshineAudioIpcMetricsC::is_connected offset mismatch");
+
+static_assert(sizeof(MoonshineAdapterInfo) == 160, "MoonshineAdapterInfo size mismatch");
+static_assert(offsetof(MoonshineAdapterInfo, adapter_index) == 0, "MoonshineAdapterInfo::adapter_index offset mismatch");
+static_assert(offsetof(MoonshineAdapterInfo, adapter_luid) == 4, "MoonshineAdapterInfo::adapter_luid offset mismatch");
+static_assert(offsetof(MoonshineAdapterInfo, description) == 12, "MoonshineAdapterInfo::description offset mismatch");
+static_assert(offsetof(MoonshineAdapterInfo, dedicated_video_memory) == 140, "MoonshineAdapterInfo::dedicated_video_memory offset mismatch");
+static_assert(offsetof(MoonshineAdapterInfo, is_hardware) == 148, "MoonshineAdapterInfo::is_hardware offset mismatch");
+static_assert(offsetof(MoonshineAdapterInfo, reserved) == 149, "MoonshineAdapterInfo::reserved offset mismatch");
+
+static_assert(sizeof(MoonshineDisplayInfo) == 36, "MoonshineDisplayInfo size mismatch");
+static_assert(offsetof(MoonshineDisplayInfo, display_index) == 0, "MoonshineDisplayInfo::display_index offset mismatch");
+static_assert(offsetof(MoonshineDisplayInfo, adapter_index) == 4, "MoonshineDisplayInfo::adapter_index offset mismatch");
+static_assert(offsetof(MoonshineDisplayInfo, width) == 8, "MoonshineDisplayInfo::width offset mismatch");
+static_assert(offsetof(MoonshineDisplayInfo, height) == 12, "MoonshineDisplayInfo::height offset mismatch");
+static_assert(offsetof(MoonshineDisplayInfo, refresh_rate_num) == 16, "MoonshineDisplayInfo::refresh_rate_num offset mismatch");
+static_assert(offsetof(MoonshineDisplayInfo, refresh_rate_den) == 20, "MoonshineDisplayInfo::refresh_rate_den offset mismatch");
+static_assert(offsetof(MoonshineDisplayInfo, rotation) == 24, "MoonshineDisplayInfo::rotation offset mismatch");
+static_assert(offsetof(MoonshineDisplayInfo, is_attached_to_desktop) == 28, "MoonshineDisplayInfo::is_attached_to_desktop offset mismatch");
+static_assert(offsetof(MoonshineDisplayInfo, is_hdr) == 29, "MoonshineDisplayInfo::is_hdr offset mismatch");
+static_assert(offsetof(MoonshineDisplayInfo, bits_per_color) == 30, "MoonshineDisplayInfo::bits_per_color offset mismatch");
+static_assert(offsetof(MoonshineDisplayInfo, reserved) == 31, "MoonshineDisplayInfo::reserved offset mismatch");
 
 #endif
 
