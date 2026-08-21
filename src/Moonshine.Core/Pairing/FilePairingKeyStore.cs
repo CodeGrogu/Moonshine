@@ -56,6 +56,13 @@ public sealed class FilePairingKeyStore : IPairingKeyStore, IDisposable
                         continue;
                     }
 
+                    string fileName = Path.GetFileName(file);
+                    // Target exclusively the application's secure keystore temporary file convention (<name>.tmp.<GUID>)
+                    if (!fileName.Contains(".tmp.", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
                     // Prune only files exceeding the conservative age threshold to protect concurrent active writes
                     if (File.GetLastWriteTimeUtc(file) < thresholdUtc)
                     {
