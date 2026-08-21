@@ -1,6 +1,8 @@
 #include "moonshine/video/video_decoder_interface.hpp"
 #include <cstring>
 #include <iostream>
+#include <vector>
+#include <algorithm>
 
 #if defined(_WIN32)
     #include <windows.h>
@@ -393,12 +395,8 @@ void D3D11VideoDecoder::QueryCaps(MoonshineDecoderCaps& out_caps) noexcept {
     ComPtr<ID3D11VideoDevice> video_device;
     if (FAILED(device.As(&video_device))) return;
 
-    // Discover maximum supported dimensions and display refresh rate
-    UINT max_dim = D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION;
-    out_caps.max_width = (max_dim >= 4096) ? 4096 : max_dim;
-    out_caps.max_height = (max_dim >= 2160) ? 2160 : max_dim;
-    out_caps.max_fps = 120; // Verified baseline hardware capability
-
+    // 1. Probe profile and format support from live ID3D11VideoDevice
+    std::vector<GUID> supported_profiles;
     UINT profile_count = video_device->GetVideoDecoderProfileCount();
     for (UINT i = 0; i < profile_count; ++i) {
         GUID profile{};
@@ -407,6 +405,10 @@ void D3D11VideoDecoder::QueryCaps(MoonshineDecoderCaps& out_caps) noexcept {
             BOOL p010_supported = FALSE;
             video_device->CheckVideoDecoderFormat(&profile, DXGI_FORMAT_NV12, &nv12_supported);
             video_device->CheckVideoDecoderFormat(&profile, DXGI_FORMAT_P010, &p010_supported);
+
+            if (nv12_supported || p010_supported) {
+                supported_profiles.push_back(profile);
+            }
 
             if (InlineIsEqualGUID(profile, GUID_D3D11_DECODER_PROFILE_H264_NOFGT) ||
                 InlineIsEqualGUID(profile, GUID_D3D11_DECODER_PROFILE_H264_FGT)) {
@@ -432,7 +434,70 @@ void D3D11VideoDecoder::QueryCaps(MoonshineDecoderCaps& out_caps) noexcept {
         }
     }
 
-    // Probe Direct3D 12 Video Decode support
+    // 2. Discover maximum supported decode dimensions by probing decoder configs against supported profiles
+    struct ResolutionCandidate {
+        uint32_t width;
+        uint32_t height;
+    };
+    const ResolutionCandidate candidate_resolutions[] = {
+        {7680, 4320}, // 8K UHD
+        {3840, 2160}, // 4K UHD
+        {2560, 1440}, // 1440p QHD
+        {1920, 1080}, // 1080p FHD
+        {1280, 720}   // 720p HD
+    };
+
+    uint32_t max_w = 0;
+    uint32_t max_h = 0;
+
+    for (const auto& res : candidate_resolutions) {
+        bool res_supported = false;
+        for (const auto& prof : supported_profiles) {
+            D3D11_VIDEO_DECODER_DESC dec_desc{};
+            dec_desc.Guid = prof;
+            dec_desc.SampleWidth = res.width;
+            dec_desc.SampleHeight = res.height;
+            dec_desc.OutputFormat = DXGI_FORMAT_NV12;
+
+            UINT config_count = 0;
+            if (SUCCEEDED(video_device->GetVideoDecoderConfigCount(&dec_desc, &config_count)) && config_count > 0) {
+                res_supported = true;
+                break;
+            }
+        }
+        if (res_supported) {
+            max_w = res.width;
+            max_h = res.height;
+            break; // Found highest supported resolution
+        }
+    }
+
+    out_caps.max_width = max_w;
+    out_caps.max_height = max_h;
+
+    // 3. Discover maximum refresh rate from primary attached physical display output
+    uint32_t max_fps = 0;
+    ComPtr<IDXGIOutput> output;
+    if (SUCCEEDED(adapter->EnumOutputs(0, &output)) && output) {
+        UINT num_modes = 0;
+        if (SUCCEEDED(output->GetDisplayModeList(DXGI_FORMAT_B8G8R8A8_UNORM, 0, &num_modes, nullptr)) && num_modes > 0) {
+            std::vector<DXGI_MODE_DESC> modes(num_modes);
+            if (SUCCEEDED(output->GetDisplayModeList(DXGI_FORMAT_B8G8R8A8_UNORM, 0, &num_modes, modes.data()))) {
+                for (const auto& mode : modes) {
+                    if (mode.RefreshRate.Denominator > 0) {
+                        uint32_t fps = mode.RefreshRate.Numerator / mode.RefreshRate.Denominator;
+                        if (fps > max_fps) {
+                            max_fps = fps;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    out_caps.max_fps = (max_fps > 0) ? max_fps : 60;
+
+    // 4. Probe Direct3D 12 Video Decode support
     ComPtr<ID3D12Device> d3d12_device;
     if (SUCCEEDED(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&d3d12_device)))) {
         ComPtr<ID3D12VideoDevice> d3d12_video_device;
