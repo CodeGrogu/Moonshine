@@ -189,11 +189,13 @@ bool OpusAudioEncoder::encode_pcm16(
 
         out_payload[0] = toc_byte;
 
+        size_t total_samples = static_cast<size_t>(frame_samples) * static_cast<size_t>(_config.channels);
+
         // Populate compressed frame payload with high-frequency energy quantisation
         for (uint32_t b = 1; b < target_payload_bytes; ++b) {
             size_t sample_idx = (static_cast<size_t>(b) * frame_samples) / target_payload_bytes;
             sample_idx *= _config.channels;
-            int16_t sample_val = (sample_idx < frame_samples * _config.channels) ? pcm_samples[sample_idx] : 0;
+            int16_t sample_val = (sample_idx < total_samples) ? pcm_samples[sample_idx] : 0;
             out_payload[b] = static_cast<uint8_t>((sample_val >> 8) ^ (b * 31));
         }
 
@@ -205,6 +207,7 @@ bool OpusAudioEncoder::encode_pcm16(
         if (bytes_per_stream < 8) bytes_per_stream = 8;
 
         uint32_t write_pos = 0;
+        size_t total_samples = static_cast<size_t>(frame_samples) * static_cast<size_t>(_config.channels);
 
         for (uint32_t s = 0; s < _streams_count; ++s) {
             bool is_coupled = (s < _coupled_count);
@@ -229,7 +232,7 @@ bool OpusAudioEncoder::encode_pcm16(
                 size_t ch_offset = (s < _channel_mapping.size()) ? _channel_mapping[s] : 0;
                 size_t sample_idx = (static_cast<size_t>(b) * frame_samples) / stream_payload_len;
                 sample_idx = (sample_idx * _config.channels) + ch_offset;
-                int16_t sample_val = (sample_idx < frame_samples * _config.channels) ? pcm_samples[sample_idx] : 0;
+                int16_t sample_val = (sample_idx < total_samples) ? pcm_samples[sample_idx] : 0;
                 out_payload[write_pos++] = static_cast<uint8_t>((sample_val >> 8) ^ ((s + 1) * 37) ^ b);
             }
         }
