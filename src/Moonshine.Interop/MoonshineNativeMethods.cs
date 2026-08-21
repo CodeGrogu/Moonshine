@@ -338,4 +338,59 @@ public static unsafe partial class MoonshineNativeMethods
         uint period,
         uint count
     );
+
+    // ========================================================================
+    // AMD AMF Dedicated Custom APIs
+    // ========================================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_amf_query_codec_support")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int AmfQueryCodecSupport(
+        uint codec,
+        out uint outSupported
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_amf_set_tuning")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int AmfSetTuning(
+        IntPtr handle,
+        uint preset,
+        uint usage
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_amf_set_intra_refresh")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int AmfSetIntraRefresh(
+        IntPtr handle,
+        int enable,
+        uint mbsPerSlot
+    );
+
+    // ========================================================================
+    // Intel QuickSync / oneVPL Dedicated Custom APIs
+    // ========================================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_qsv_query_codec_support")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int QsvQueryCodecSupport(
+        uint codec,
+        out uint outSupported
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_qsv_set_tuning")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int QsvSetTuning(
+        IntPtr handle,
+        uint targetUsage,
+        int lowPowerVdenc
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_qsv_set_intra_refresh")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int QsvSetIntraRefresh(
+        IntPtr handle,
+        int enable,
+        uint cycleSize,
+        int qpDelta
+    );
 }

@@ -360,6 +360,49 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_nvenc_set_intra_refresh(
     uint32_t count
 );
 
+// ============================================================================
+// AMD AMF Dedicated Custom APIs
+// ============================================================================
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_amf_query_codec_support(
+    uint32_t codec,
+    uint32_t* out_supported
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_amf_set_tuning(
+    MoonshineEncoderHandle handle,
+    uint32_t preset,
+    uint32_t usage
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_amf_set_intra_refresh(
+    MoonshineEncoderHandle handle,
+    int enable,
+    uint32_t mbs_per_slot
+);
+
+// ============================================================================
+// Intel QuickSync / oneVPL Dedicated Custom APIs
+// ============================================================================
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_qsv_query_codec_support(
+    uint32_t codec,
+    uint32_t* out_supported
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_qsv_set_tuning(
+    MoonshineEncoderHandle handle,
+    uint32_t target_usage,
+    int low_power_vdenc
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_qsv_set_intra_refresh(
+    MoonshineEncoderHandle handle,
+    int enable,
+    uint32_t cycle_size,
+    int32_t qp_delta
+);
+
 #ifdef __cplusplus
 }
 #endif

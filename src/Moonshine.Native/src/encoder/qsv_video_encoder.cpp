@@ -17,8 +17,10 @@ bool QsvVideoEncoder::initialize(void* d3d_device, const EncoderConfig& config) 
     _frame_counter = 0;
     _force_keyframe = true;
 
+    // Cache NAL parameter sets according to codec
     _header_cache.clear();
     if (_config.codec == static_cast<uint32_t>(VideoCodec::H264)) {
+        // H.264 SPS / PPS Annex B prefix
         uint8_t h264_sps_pps[] = {
             0x00, 0x00, 0x00, 0x01, 0x67, 0x64, 0x00, 0x28, 0xAC, 0xD9, 0x40, 0x78, 0x02, 0x27, 0xE5, 0x84,
             0x00, 0x00, 0x00, 0x01, 0x68, 0xEB, 0xE3, 0xCB, 0x22, 0xC0
@@ -26,6 +28,7 @@ bool QsvVideoEncoder::initialize(void* d3d_device, const EncoderConfig& config) 
         _header_cache.assign(std::begin(h264_sps_pps), std::end(h264_sps_pps));
     } else if (_config.codec == static_cast<uint32_t>(VideoCodec::Hevc) ||
                _config.codec == static_cast<uint32_t>(VideoCodec::HevcMain10)) {
+        // HEVC VPS / SPS / PPS Annex B prefix
         uint8_t hevc_headers[] = {
             0x00, 0x00, 0x00, 0x01, 0x40, 0x01, 0x0C, 0x01, 0xFF, 0xFF, 0x01, 0x60, 0x00, 0x00, 0x03, 0x00,
             0x00, 0x00, 0x00, 0x01, 0x42, 0x01, 0x01, 0x01, 0x60, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00,
@@ -33,6 +36,7 @@ bool QsvVideoEncoder::initialize(void* d3d_device, const EncoderConfig& config) 
         };
         _header_cache.assign(std::begin(hevc_headers), std::end(hevc_headers));
     } else if (_config.codec == static_cast<uint32_t>(VideoCodec::Av1)) {
+        // AV1 Sequence Header OBU
         uint8_t av1_headers[] = {
             0x0A, 0x0E, 0x00, 0x00, 0x00, 0x24, 0xC7, 0xAB, 0xBF, 0xF3, 0x00, 0x10, 0x00, 0x00
         };
@@ -58,6 +62,7 @@ bool QsvVideoEncoder::encode_frame(
     bool is_key = force_idr || _force_keyframe.exchange(false) || (_frame_counter == 0);
     uint32_t header_len = is_key ? static_cast<uint32_t>(_header_cache.size()) : 0;
 
+    // Simulated compressed slice data size based on bitrate / fps
     uint32_t target_slice_bytes = (_config.bitrate_kbps * 1000) / (_config.fps * 8);
     if (target_slice_bytes < 64) target_slice_bytes = 64;
     if (is_key) target_slice_bytes = target_slice_bytes * 3 / 2;
@@ -67,10 +72,12 @@ bool QsvVideoEncoder::encode_frame(
         total_payload = max_buffer_size;
     }
 
+    // Write headers if keyframe
     if (header_len > 0 && header_len <= total_payload) {
         std::memcpy(out_bitstream, _header_cache.data(), header_len);
     }
 
+    // Write NAL slice payload
     uint32_t slice_offset = header_len;
     if (slice_offset + 4 <= total_payload) {
         out_bitstream[slice_offset] = 0x00;
@@ -122,6 +129,19 @@ void QsvVideoEncoder::request_keyframe() {
     _force_keyframe.store(true);
 }
 
+bool QsvVideoEncoder::set_target_usage(QsvTargetUsage usage, bool low_power_vdenc) {
+    _usage = usage;
+    _low_power_vdenc = low_power_vdenc;
+    return true;
+}
+
+bool QsvVideoEncoder::set_intra_refresh(bool enabled, uint32_t cycle_size, int32_t qp_delta) {
+    _intra_refresh_enabled = enabled;
+    _intra_refresh_cycle_size = cycle_size;
+    _intra_refresh_qp_delta = qp_delta;
+    return true;
+}
+
 void QsvVideoEncoder::cleanup() {
     _initialized = false;
     _d3d_device = nullptr;
@@ -130,17 +150,29 @@ void QsvVideoEncoder::cleanup() {
 
 bool QsvVideoEncoder::query_capabilities(void* /*d3d_device*/, EncoderCaps& out_caps) {
     out_caps = {};
-    out_caps.supported_codecs_mask = 0x0F; // H264 | HEVC | HEVC Main10 | AV1 (Intel Arc / Meteor Lake+)
+    out_caps.supported_codecs_mask = 0x0F; // H264 | HEVC | HEVC Main10 | AV1
     out_caps.max_width = 8192;
     out_caps.max_height = 8192;
     out_caps.max_fps = 240;
     out_caps.supports_10bit = 1;
-    out_caps.supports_lossless = 0;
+    out_caps.supports_lossless = 1;
     out_caps.supports_smart_idr = 1;
     out_caps.vendor_id = static_cast<uint8_t>(EncoderVendor::IntelQuickSync);
     out_caps.min_bitrate_kbps = 500;
     out_caps.max_bitrate_kbps = 160000;
     return true;
+}
+
+bool QsvVideoEncoder::query_codec_support(VideoCodec codec) {
+    switch (codec) {
+        case VideoCodec::H264:
+        case VideoCodec::Hevc:
+        case VideoCodec::HevcMain10:
+        case VideoCodec::Av1:
+            return true;
+        default:
+            return false;
+    }
 }
 
 } // namespace moonshine::encoder
