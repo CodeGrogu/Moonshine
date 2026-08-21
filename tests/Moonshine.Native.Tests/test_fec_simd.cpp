@@ -309,6 +309,78 @@ void TestNegativeAndDefensiveValidation()
     TEST_ASSERT(codec.Reconstruct(ptrs2, 1, 33, kShardSize, erased1, 1) != 0);
 }
 
+void TestExhaustiveGfMultiplicationConsistency()
+{
+    std::cout << "[Test] Exhaustive Galois Field GF(2^8) VectorGfMulAdd vs GfMultiplyScalar consistency..." << std::endl;
+    constexpr size_t kLen = 256;
+    alignas(64) uint8_t src[kLen];
+    alignas(64) uint8_t dest[kLen];
+    alignas(64) uint8_t expected[kLen];
+
+    for (size_t i = 0; i < kLen; ++i) {
+        src[i] = static_cast<uint8_t>(i);
+    }
+
+    for (int coeff = 0; coeff < 256; ++coeff) {
+        uint8_t c = static_cast<uint8_t>(coeff);
+        std::memset(dest, 0, kLen);
+        ReedSolomonSimd::VectorGfMulAdd(dest, src, c, kLen);
+
+        for (size_t i = 0; i < kLen; ++i) {
+            expected[i] = ReedSolomonSimd::GfMultiplyScalar(src[i], c);
+        }
+
+        TEST_ASSERT(std::memcmp(dest, expected, kLen) == 0);
+    }
+}
+
+void TestIndependentScalarEncodeToSimdReconstruct()
+{
+    std::cout << "[Test] Pure Reference Encode -> SIMD Reconstruct (zero SIMD encode dependency)..." << std::endl;
+    constexpr int k = 10;
+    constexpr int m = 2;
+    constexpr int total = k + m;
+    constexpr int size = 1400;
+
+    std::vector<std::vector<uint8_t>> shards(total, std::vector<uint8_t>(size));
+    std::vector<std::vector<uint8_t>> backup(total, std::vector<uint8_t>(size));
+    std::vector<uint8_t*> shard_ptrs(total);
+    std::vector<const uint8_t*> data_ptrs(k);
+
+    for (int i = 0; i < k; ++i) {
+        for (int b = 0; b < size; ++b) {
+            shards[i][b] = static_cast<uint8_t>((i + 5) * 43 + b * 11);
+        }
+        data_ptrs[i] = shards[i].data();
+    }
+
+    std::vector<uint8_t*> parity_ptrs(m);
+    for (int p = 0; p < m; ++p) {
+        parity_ptrs[p] = shards[k + p].data();
+    }
+
+    // Explicitly generate parity ONLY with the independent scalar reference
+    ScalarReferenceEncode(data_ptrs.data(), k, parity_ptrs.data(), m, size);
+
+    for (int i = 0; i < total; ++i) {
+        backup[i] = shards[i];
+        shard_ptrs[i] = shards[i].data();
+    }
+
+    // Erase shard 2 and shard 10 (1 data, 1 parity)
+    int erased[] = {2, 10};
+    std::memset(shards[2].data(), 0xEE, static_cast<size_t>(size));
+    std::memset(shards[10].data(), 0xEE, static_cast<size_t>(size));
+
+    // Call SIMD Reconstruct directly without ever invoking SIMD Encode
+    ReedSolomonSimd codec;
+    int res = codec.Reconstruct(shard_ptrs.data(), k, m, size, erased, 2);
+    TEST_ASSERT(res == 0);
+
+    TEST_ASSERT(std::memcmp(shards[2].data(), backup[2].data(), static_cast<size_t>(size)) == 0);
+    TEST_ASSERT(std::memcmp(shards[10].data(), backup[10].data(), static_cast<size_t>(size)) == 0);
+}
+
 int main()
 {
     std::cout << "=== Running Comprehensive FEC SIMD Test Suite ===" << std::endl;
@@ -317,7 +389,9 @@ int main()
     TestVectorXorEdgeLengths();
     TestVectorXorSelfInverse();
     TestGaloisFieldMultiplication();
+    TestExhaustiveGfMultiplicationConsistency();
     TestParityEncodingVsScalarReference();
+    TestIndependentScalarEncodeToSimdReconstruct();
     TestMultiShardRecoveryGroundTruth();
     TestNegativeAndDefensiveValidation();
     std::cout << "All FEC SIMD tests passed successfully." << std::endl;

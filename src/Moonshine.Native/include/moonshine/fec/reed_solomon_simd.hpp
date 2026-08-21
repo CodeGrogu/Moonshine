@@ -47,9 +47,9 @@ public:
     /**
      * @brief Encodes parity shards from data shards using the Cauchy systematic generator matrix.
      * @param data_shards Array of pointers to data shards.
-     * @param data_shards_count Number of data shards (K <= 64).
+     * @param data_shards_count Number of data shards (K <= 64, K + M <= 255).
      * @param parity_shards Array of pointers to parity shards.
-     * @param parity_shards_count Number of parity shards (M <= 32).
+     * @param parity_shards_count Number of parity shards (M <= 32, K + M <= 255).
      * @param shard_size Size in bytes of each shard.
      * @return 0 on success, non-zero on invalid arguments.
      */
@@ -64,10 +64,10 @@ public:
     /**
      * @brief Reconstructs lost data and parity shards using genuine GF(2^8) Gauss-Jordan matrix inversion.
      * @param shards Array of pointers to all shards (K data followed by M parity shards).
-     * @param data_shards_count Number of data shards (K <= 64).
-     * @param parity_shards_count Number of parity shards (M <= 32).
+     * @param data_shards_count Number of data shards (K <= 64, K + M <= 255).
+     * @param parity_shards_count Number of parity shards (M <= 32, K + M <= 255).
      * @param shard_size Size in bytes of each shard.
-     * @param erased_indices Indices of lost shards to reconstruct.
+     * @param erased_indices Indices of lost shards to reconstruct (must be unique and in [0, K+M)).
      * @param erased_count Number of lost shards (must be <= M).
      * @return 0 on success, -1 on invalid argument, -2 on unrecoverable/too many erasures, -3 on singular matrix.
      */
