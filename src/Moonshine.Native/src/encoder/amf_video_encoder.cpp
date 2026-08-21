@@ -10,6 +10,7 @@ AmfVideoEncoder::~AmfVideoEncoder() {
     cleanup();
 }
 
+// SIMULATED: GPU AMF encoder context and bitstream output are synthesized with NAL parameter sets and deterministic filler bytes because AMD Advanced Media Framework SDK link libraries are not integrated into this build.
 bool AmfVideoEncoder::initialize(void* d3d_device, const EncoderConfig& config) {
     cleanup();
     _d3d_device = d3d_device;
@@ -47,6 +48,7 @@ bool AmfVideoEncoder::initialize(void* d3d_device, const EncoderConfig& config) 
     return true;
 }
 
+// SIMULATED: Frame bitstream output is synthesized with valid NAL headers and deterministic filler bytes for test harness execution without physical AMD AMF hardware ASICs.
 bool AmfVideoEncoder::encode_frame(
     void* /*d3d_texture*/,
     bool force_idr,

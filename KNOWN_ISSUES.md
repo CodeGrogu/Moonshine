@@ -23,9 +23,21 @@ This document tracks known platform limitations, environment requirements, and c
 ### Managed .NET 9 Solution
 - **Status**: Verified (238 unit tests passed across `Moonshine.Interop.Tests`, `Moonshine.Host.Tests`, `Moonshine.Protocol.Tests`, `Moonshine.Core.Tests`).
 
-### Hardware Video Encoders (NVENC, AMF, QSV)
-- **Status**: Prototype on non-GPU CI runners; Verified on dedicated hardware test nodes.
-- **Scaffolding Tracking**: Fallback paths for systems lacking physical hardware encoding ASICs are isolated and return unsupported capability flags rather than simulating bitstreams.
+### NVIDIA NVENC Hardware Video Encoder
+- **Status**: Simulated / Prototype.
+- **Scaffolding Tracking**: Bitstream frames and NAL parameter sets are synthesized in software with compliant `// SIMULATED:` headers; physical NVIDIA Video Codec SDK link libraries are planned for dedicated hardware driver integration.
+
+### AMD AMF Hardware Video Encoder
+- **Status**: Simulated / Prototype.
+- **Scaffolding Tracking**: Bitstream frames and NAL parameter sets are synthesized in software with compliant `// SIMULATED:` headers; physical AMD Advanced Media Framework SDK link libraries are planned for dedicated hardware driver integration.
+
+### Intel QuickSync Hardware Video Encoder
+- **Status**: Simulated / Prototype.
+- **Scaffolding Tracking**: Bitstream frames and NAL parameter sets are synthesized in software with compliant `// SIMULATED:` headers; physical Intel oneVPL / Media SDK link libraries are planned for dedicated hardware driver integration.
+
+### Direct3D 11 / 12 Hardware Video Decoder
+- **Status**: Simulated / Prototype.
+- **Scaffolding Tracking**: Decoder frame submission and capability flags are modeled with compliant `// STUB:` headers; physical Direct3D 11 Video Accelerator (`ID3D11VideoDecoder`) and D3D12 bitstream decode buffer submission are staged for downstream driver integration.
 
 ### Dedicated Virtual Audio Driver (WaveRT Miniport)
 - **Status**: Verified (C-ABI bridge, PortCls WaveRT driver package, and Shared Memory IPC pipeline passing in software test harnesses). Real-device PnP deployment requires WHQL attestation or Windows Test-Signing mode.

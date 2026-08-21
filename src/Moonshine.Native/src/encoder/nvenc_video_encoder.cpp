@@ -17,6 +17,7 @@ NvencVideoEncoder::~NvencVideoEncoder() {
     cleanup();
 }
 
+// SIMULATED: GPU NVENC encoder context and bitstream output are synthesized with NAL parameter sets and deterministic filler bytes because NVIDIA Video Codec SDK link libraries are not integrated into this build.
 bool NvencVideoEncoder::initialize(void* d3d_device, const EncoderConfig& config) {
     cleanup();
     _d3d_device = d3d_device;
@@ -54,6 +55,7 @@ bool NvencVideoEncoder::initialize(void* d3d_device, const EncoderConfig& config
     return true;
 }
 
+// SIMULATED: Frame bitstream output is synthesized with valid NAL headers and deterministic filler bytes for test harness execution without physical NVENC hardware ASICs.
 bool NvencVideoEncoder::encode_frame(
     void* /*d3d_texture*/,
     bool force_idr,

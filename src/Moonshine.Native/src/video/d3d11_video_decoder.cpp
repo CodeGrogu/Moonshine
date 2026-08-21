@@ -86,6 +86,7 @@ int D3D11VideoDecoder::Initialize(void* hwnd, uint32_t width, uint32_t height, V
     return 0;
 }
 
+// STUB: Hardware D3D11VA video decoder buffer submission is modeled via frame counter increments rather than physical Direct3D 11 bitstream buffer execution in this build.
 int D3D11VideoDecoder::SubmitFrame(const MoonshineFrameDesc& frame) {
     if (!initialized_ || !frame.frame_buffer || frame.total_bytes == 0) {
         return -1;
@@ -147,6 +148,7 @@ int D3D12VideoDecoder::Initialize(void* hwnd, uint32_t width, uint32_t height, V
     return 0;
 }
 
+// STUB: Hardware D3D12 video decoder buffer submission is modeled via frame counter increments rather than physical Direct3D 12 Video bitstream execution in this build.
 int D3D12VideoDecoder::SubmitFrame(const MoonshineFrameDesc& frame) {
     if (!initialized_ || !frame.frame_buffer || frame.total_bytes == 0) {
         return -1;

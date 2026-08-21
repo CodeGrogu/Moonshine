@@ -10,6 +10,7 @@ D3D11HardwareEncoder::~D3D11HardwareEncoder() {
     cleanup();
 }
 
+// SIMULATED: Direct3D 11 hardware encoder context and bitstream output are synthesized with NAL parameter sets and deterministic filler bytes because low-level Media Foundation / D3D11 encoder transforms are not integrated into this build.
 bool D3D11HardwareEncoder::initialize(void* d3d_device, const EncoderConfig& config) {
     cleanup();
     _d3d_device = d3d_device;
@@ -43,6 +44,7 @@ bool D3D11HardwareEncoder::initialize(void* d3d_device, const EncoderConfig& con
     return true;
 }
 
+// SIMULATED: Frame bitstream output is synthesized with valid NAL headers and deterministic filler bytes for test harness execution without physical hardware MFT transforms.
 bool D3D11HardwareEncoder::encode_frame(
     void* /*d3d_texture*/,
     bool force_idr,
