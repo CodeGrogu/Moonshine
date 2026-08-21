@@ -17,201 +17,140 @@
 
 ## What is Moonshine?
 
-**Moonshine is one custom Windows application, written in C# and C++, that provides a high-performance platform for remotely streaming and interacting with PCs.**
+**Moonshine is one custom Windows application, written in C# and C++, for high-performance remote PC streaming and interaction.**
 
-A user installs the same Moonshine application on a PC and chooses how that installation should operate:
+A user installs the same Moonshine application on a PC and selects how that installation operates:
 
-- **Host mode**: the application exposes the PC as a streaming host.
-- **Client mode**: the application connects to another Moonshine host and acts as the remote client.
-- **Host + Client mode**: the same installation can perform both roles when the user explicitly enables both.
+- **Host only** - the application exposes the local PC as a Moonshine streaming host.
+- **Client only** - the application connects to another Moonshine host as a client.
+- **Host + Client** - the same application enables both roles simultaneously.
 
-These are **runtime roles of one application**, not separate host and client products.
+These are **runtime roles of one application**, not separate Host and Client products.
 
-When only one role is enabled, the other role is intended to be completely inactive. A Host-only installation must not start client media pipelines, client capture/rendering components, or client-specific network listeners. A Client-only installation must not initialise host capture/encoding/device services, open host-side listening ports, or consume host-specific resources. The goal is that an unused role has effectively no runtime footprint beyond the small amount of configuration needed to select or change the role.
+Moonshine is being designed as its **own platform, protocol, architecture, and implementation**. It is not a reimplementation of Sunshine or Moonlight, and their architecture and protocols are not the foundation of the project. Moonshine may independently use techniques that are technically useful, but its wire formats, media pipeline, device integration, security model, and performance architecture are designed specifically for Moonshine.
 
-Moonshine is being designed as its **own platform, protocol, architecture, and implementation**. It is not a reimplementation of Sunshine or Moonlight, and it does not use their architecture or protocol as a foundation. Compatibility with other streaming systems is not a prerequisite for correctness. Moonshine's protocols, data structures, media pipeline, device integration, security model, and performance characteristics are designed specifically for Moonshine.
+---
 
-The core model is:
+## Runtime Role Model
+
+Role selection is an architectural resource boundary, not merely a UI setting.
 
 ```text
                          ONE MOONSHINE APPLICATION
+
+                     ┌───────────────────────────┐
+                     │       Runtime Role        │
+                     └─────────────┬─────────────┘
                                    │
-                    ┌──────────────┼──────────────┐
-                    │              │              │
-                    ▼              ▼              ▼
-                 HOST ONLY     CLIENT ONLY    HOST + CLIENT
-                    │              │              │
-                    │              │              │
-             Host subsystems   Client subsystems  Both role sets
-             active only       active only         explicitly active
-                    │              │              │
-                    └──────────────┴──────────────┘
-                                   │
-                            Moonshine Core
+                  ┌────────────────┼────────────────┐
+                  │                │                │
+                  ▼                ▼                ▼
+             HOST ONLY        CLIENT ONLY      HOST + CLIENT
+                  │                │                │
+                  ▼                ▼                ▼
+             Host role        Client role       Both roles
+              active            active            active
 ```
 
-When a session exists, the application can carry traffic in both directions:
+### Host only
 
-```text
-                         MOONSHINE SESSION
+When Host-only mode is selected, the Client role is not initialised.
 
-                 HOST ROLE                    CLIENT ROLE
-              ┌─────────────┐              ┌─────────────┐
-              │ PC Capture  │─────────────►│ Video       │
-              │ Video       │   Video      │ Rendering   │
-              └─────────────┘              └─────────────┘
+Client-specific media pipelines, rendering, microphone capture, client-side workers, client-only connections, and other Client resources must not be started.
 
-              ┌─────────────┐              ┌─────────────┐
-              │ Host Audio  │─────────────►│ Audio       │
-              │ Capture     │   Audio      │ Playback    │
-              └─────────────┘              └─────────────┘
+Host-only mode should expose only the listeners, devices, memory pools, worker threads, and media pipelines required by the Host role.
 
-              ┌─────────────┐              ┌─────────────┐
-              │ Virtual     │◄─────────────│ Client      │
-              │ Microphone  │  Microphone  │ Microphone  │
-              └─────────────┘              └─────────────┘
+### Client only
 
-                       ◄──── Control ────►
-                    Host + Client Settings
-                    Session Management
-                    Device Configuration
-```
+When Client-only mode is selected, the Host role is not initialised.
 
-The client is not merely a passive receiver. A connected client is intended to **interact with the host PC and manage authorised host-side settings**, while also managing its own local configuration.
+Host capture, hardware encoders, host-side listeners, host virtual devices, host-only workers, large host media buffers, and other Host resources must not be started.
+
+Client-only mode should therefore behave like a client installation without consuming resources or opening ports that belong to the Host role.
+
+### Host + Client
+
+Host + Client mode enables both role sets in the same process.
+
+The roles remain independently owned and managed so that each can be started, stopped, faulted, and reconfigured without accidentally starting resources belonging to the other role.
+
+The desired invariant is simple:
+
+> **A disabled role has no meaningful runtime footprint beyond the configuration required to select or re-enable that role.**
+
+That includes avoiding unnecessary CPU work, memory allocation, GPU contexts, audio devices, network listeners, sockets, timers, background threads, and driver/device initialisation.
 
 ---
 
-## Application Roles
-
-### Host mode
-
-When the user selects **Host only**, Moonshine activates the services required to make the local PC available for remote streaming and control.
-
-Host responsibilities include:
-
-- Desktop and/or application capture.
-- Game or desktop video capture.
-- Hardware-accelerated video encoding.
-- Host audio capture.
-- Client input reception.
-- Client microphone reception and decoding.
-- Moonshine virtual microphone integration.
-- Host-side device management.
-- Authenticated remote configuration.
-- Host-side session and transport services.
-
-The Client role is not initialised in Host-only mode.
-
-### Client mode
-
-When the user selects **Client only**, Moonshine activates the services required to connect to and use another Moonshine host.
-
-Client responsibilities include:
-
-- Receiving and decoding streamed video.
-- Rendering the remote PC.
-- Receiving and playing host audio.
-- Capturing the client's local microphone.
-- Sending microphone audio to the host.
-- Sending input to the host.
-- Managing authorised host settings.
-- Managing local client configuration.
-
-The Host role is not initialised in Client-only mode. Host capture, encoder, virtual microphone, host listener, and host-specific device services remain inactive.
-
-### Host + Client mode
-
-Users who want the local PC to both provide and consume Moonshine sessions can explicitly enable **Host + Client mode**. The application then activates both role sets while keeping their resources and lifecycle boundaries separate.
-
-Role selection is therefore an architectural concern, not merely a UI preference. Disabled subsystems must not create listeners, initialise drivers/devices, allocate large media buffers, or start background workers unnecessarily.
-
----
-
-## Core Capabilities
+## What Moonshine Does
 
 ### PC Streaming
 
-Moonshine allows a host PC to stream its PC environment to a client with an emphasis on low latency, high throughput, deterministic behaviour, and efficient resource utilisation.
+A Moonshine Host streams its PC environment to a Moonshine Client.
 
-The streaming pipeline is being designed to support:
+The target pipeline includes:
 
-- Desktop and application capture.
-- Game streaming.
-- Hardware-accelerated video encoding and decoding.
-- High-quality host audio streaming.
-- Client input sent back to the host.
-- Bidirectional audio communication.
-- Session and connection management.
+```text
+Host PC
+  │
+  ├── Desktop / application capture
+  ├── Video encoding
+  ├── Host audio capture
+  │
+  ▼
+Moonshine transport
+  │
+  ▼
+Client
+  ├── Video decode + rendering
+  └── Audio decode + playback
+```
+
+The system is designed for low latency, high throughput, predictable timing, and efficient resource use rather than general-purpose media processing.
 
 ### Bidirectional Audio
 
-Audio is a first-class part of Moonshine rather than an afterthought.
+Host-to-client audio is only one direction of the audio architecture.
 
-The host can send its audio to the client:
-
-```text
-Host applications / games
-        │
-        ▼
-Moonshine host audio pipeline
-        │
-        ▼
-Audio encoding
-        │
-        ▼
-Moonshine transport
-        │
-        ▼
-Client audio decoding
-        │
-        ▼
-Client audio output
-```
-
-The client can also send microphone audio back to the host:
+Moonshine also supports the intended reverse path:
 
 ```text
 Client microphone
-        │
-        ▼
-Microphone capture
-        │
-        ▼
-Audio encoding
-        │
-        ▼
-Moonshine transport
-        │
-        ▼
-Host audio decoding
-        │
-        ▼
+      │
+      ▼
+Client capture
+      │
+      ▼
+Moonshine microphone stream
+      │
+      ▼
+Host transport / decode
+      │
+      ▼
 Moonshine virtual microphone
-        │
-        ▼
+      │
+      ▼
 Windows applications
 ```
 
-This allows applications running on the host PC to use the remote client's microphone as a normal Windows microphone source.
+This allows an application running on the Host PC to use the Client PC's physical microphone as a normal Windows microphone source.
 
-### Windows-Native Audio Devices
+### Windows-Native Audio Integration
 
-Moonshine is intended to provide dedicated Windows audio-device integration so that Moonshine's streaming audio is separated from unrelated applications and audio devices.
+Moonshine is intended to provide dedicated Windows audio endpoints so that Moonshine's streaming audio can be separated from unrelated application audio and devices.
 
-The host-side device architecture is intended to provide dedicated Moonshine audio endpoints rather than treating existing application audio devices as Moonshine-owned resources.
-
-The planned device layer includes:
+The planned Host-side device layer includes:
 
 - A Moonshine audio endpoint for host-side streaming audio.
-- A Moonshine virtual microphone for client microphone input.
+- A Moonshine virtual microphone for Client microphone input.
 - Efficient audio input/output paths designed specifically for streaming.
-- Low-latency buffering and transport between the Windows audio stack and the Moonshine media pipeline.
+- Low-latency buffering between the Windows audio stack and the Moonshine media pipeline.
 
-The exact driver architecture will be determined during implementation. Moonshine will not introduce a driver merely for the sake of having one; kernel/device components will exist where they provide a concrete architectural or performance benefit.
+A driver is not being introduced merely because it is called a driver. Kernel or device components will exist where a real Windows integration or performance requirement justifies them.
 
 ### Remote Host Control
 
-A Moonshine client is intended to be able to manage authorised host settings remotely.
+A connected Client is not a passive receiver. It is intended to be able to manage authorised Host settings through a dedicated authenticated control plane.
 
 Examples include:
 
@@ -224,48 +163,46 @@ Examples include:
 - Session configuration.
 - Host status and capabilities.
 
-The control system will use an explicit authenticated and authorised protocol rather than exposing unrestricted access to host internals.
-
-The architecture therefore treats Moonshine as a **bidirectional platform**, not simply a one-way streaming client.
+The Client also has its own local configuration. Host settings and Client settings are separate domains and must not be conflated.
 
 ---
 
-## Custom Architecture
+## Application Architecture
 
-Moonshine is being designed around a clear separation of responsibilities inside the single application.
+Moonshine is one application with three major backend planes.
 
 ```text
                          Moonshine Application
                                   │
-                    ┌─────────────┼─────────────┐
-                    │             │             │
-                    ▼             ▼             ▼
-                Host Role     Client Role    Shared Core
-                    │             │             │
-                    │             │             │
-                    └──────┬──────┴──────┬──────┘
-                           │             │
-                           ▼             ▼
-                     Media Plane     Control Plane
-                           │             │
-                           └──────┬──────┘
-                                  ▼
-                            Device Plane
+              ┌───────────────────┼───────────────────┐
+              │                   │                   │
+              ▼                   ▼                   ▼
+         Host Role           Client Role          Shared Core
+              │                   │                   │
+              └──────────┬────────┴──────────┬────────┘
+                         │                   │
+                         ▼                   ▼
+                    Media Plane         Control Plane
+                         │                   │
+                         └─────────┬─────────┘
+                                   ▼
+                              Device Plane
 ```
 
 ### Media Plane
 
-The media plane carries time-sensitive data:
+The Media Plane carries time-sensitive traffic:
 
 - Video.
 - Host-to-client audio.
 - Client-to-host microphone audio.
+- Other session media required by Moonshine.
 
-The media plane is designed around low latency and predictable processing rather than general-purpose request/response semantics.
+It is designed around low latency, bounded processing, explicit ownership, and predictable timing.
 
 ### Control Plane
 
-The control plane handles state and configuration:
+The Control Plane handles state and configuration:
 
 - Host settings.
 - Client settings.
@@ -275,11 +212,11 @@ The control plane handles state and configuration:
 - Runtime status.
 - Telemetry.
 
-Media transport and host management are intentionally separated so that configuration operations cannot interfere with the real-time media path.
+Control operations are separated from real-time media transport so configuration traffic cannot interfere with media timing.
 
 ### Device Plane
 
-The device plane integrates Moonshine with Windows hardware and software interfaces, including audio devices and future device components where required.
+The Device Plane integrates Moonshine with Windows APIs, audio devices, GPU interfaces, and other OS-level resources required by the product.
 
 ---
 
@@ -287,49 +224,65 @@ The device plane integrates Moonshine with Windows hardware and software interfa
 
 **Performance is a core architectural requirement of Moonshine.**
 
-The project is being engineered with the expectation that latency, throughput, CPU utilisation, memory behaviour, and scheduling overhead must be measurable and continuously verified.
+The goal is high end-to-end performance across the complete path:
 
-The hot path should favour:
+```text
+capture
+  → encode
+  → packetise
+  → transport
+  → buffering / FEC
+  → decode
+  → render / playback
+```
 
-- C++ for performance-critical native components.
-- C# for high-level orchestration and application logic where appropriate.
+and for the reverse microphone path:
+
+```text
+microphone capture
+  → encode
+  → transport
+  → decode
+  → virtual microphone
+```
+
+The backend should favour:
+
+- C++ for genuinely performance-critical native components.
+- C# for orchestration and application logic where appropriate.
 - Zero or near-zero allocations in latency-sensitive paths.
-- Lock-free or low-contention data structures where they provide a measurable benefit.
+- Lock-free or low-contention structures where they provide measurable benefit.
 - Cache-aware data structures.
 - SIMD acceleration where appropriate.
 - Preallocated buffers and memory pools.
 - Explicit ownership and lifetime rules.
-- Hardware acceleration wherever available.
-- Asynchronous I/O without unnecessary scheduling overhead.
-- Deterministic error and shutdown behaviour.
+- Hardware acceleration where available.
+- Efficient asynchronous I/O.
+- Deterministic failure and shutdown behaviour.
 
-Performance claims are expected to be backed by benchmarks and profiling rather than assumptions.
-
-Moonshine is not being optimised around a single synthetic benchmark. The objective is **high end-to-end performance**, from capture and encoding through transport, buffering, decoding, rendering, audio processing, microphone uplink, and control operations.
+Performance claims must be measured and reproducible rather than inferred from implementation style.
 
 ---
 
 ## GPU Support
 
-Moonshine is intended to support **a broad range of GPU hardware and vendor acceleration paths** rather than being designed around a single GPU manufacturer.
+Moonshine is intended to support a broad range of modern Windows GPUs rather than being tied to one vendor.
 
-The native backend architecture is therefore being designed to accommodate vendor-specific implementations where necessary while presenting a consistent Moonshine interface to the rest of the system.
-
-The intended hardware acceleration scope includes support for the major Windows GPU ecosystems, including:
+The target hardware ecosystems include:
 
 - NVIDIA.
 - AMD.
 - Intel.
 
-Hardware capabilities must be discovered from the actual system. A backend must never claim operational hardware support when the required device, driver, or vendor API is unavailable.
+Vendor-specific backends may be implemented where the underlying hardware and API require it, while Moonshine exposes a consistent internal media interface.
 
-Where a hardware backend cannot operate, Moonshine must report that state explicitly rather than silently pretending that a simulated or unavailable implementation is operational.
+Hardware capability discovery must reflect the actual machine. A backend must never report operational support when the required GPU, driver, SDK, or device resources do not exist.
+
+Synthetic or simulated backends are for controlled development/testing environments and must never masquerade as production hardware.
 
 ---
 
 ## Technology Stack
-
-Moonshine uses two primary implementation languages:
 
 ### C#
 
@@ -340,7 +293,7 @@ C# is used for managed application and orchestration responsibilities, including
 - Configuration.
 - Authentication and trust management.
 - High-level networking.
-- Host/client coordination.
+- Host/Client coordination.
 - Application-level control logic.
 
 ### C++
@@ -357,34 +310,33 @@ C++ is used where native execution and predictable performance are important, in
 - Performance-critical audio components.
 - Native Windows integration.
 
-The boundary between C# and C++ is intended to remain explicit and measurable. Native code is not used simply because it is faster in theory, and managed code is not avoided simply because it is managed. Components are implemented in the layer that provides the best combination of correctness, maintainability, and measured performance.
+The C# and C++ boundary should remain explicit and measurable. Neither language is used merely because it is traditionally associated with a particular task. Components belong in the layer that provides the best combination of correctness, maintainability, and measured performance.
 
 ---
 
-## Current Development Focus
+## Current Backend Focus
 
-Moonshine is currently focused heavily on the **backend foundation**.
+The current priority is the **backend**, not the UI.
 
-The immediate priority is not the visual UI. The priority is making the underlying system correct, fast, testable, and reliable.
+The immediate engineering focus includes:
 
-Current architectural focus areas include:
+1. Runtime Host/Client role selection and strict resource isolation.
+2. Network transport and packet processing.
+3. Buffer ownership and memory management.
+4. Low-latency concurrency.
+5. Video capture, encoding, decoding, and presentation.
+6. Host audio capture and Client playback.
+7. Client microphone capture and Host microphone injection.
+8. FEC and packet-loss recovery.
+9. Jitter buffering and frame assembly.
+10. Hardware capability detection and acceleration.
+11. Windows audio/device integration.
+12. Authentication and session security.
+13. Remote Host configuration and control.
+14. End-to-end performance measurement.
+15. Reliability and fault propagation.
 
-1. Network transport and packet processing.
-2. Buffer ownership and memory management.
-3. Low-latency concurrency.
-4. Video capture, encoding, decoding, and presentation.
-5. Host audio capture and client playback.
-6. Client microphone capture and host microphone injection.
-7. FEC and packet-loss recovery.
-8. Jitter buffering and frame assembly.
-9. Hardware capability detection and acceleration.
-10. Windows audio/device integration.
-11. Authentication and session security.
-12. Remote host configuration and control.
-13. End-to-end performance measurement.
-14. Reliability and fault propagation.
-
-The UI and broader user experience will be built on top of these foundations once the backend architecture is sufficiently mature.
+UI work will build on these foundations rather than defining the backend architecture.
 
 ---
 
@@ -396,19 +348,19 @@ Moonshine is organised as a modular solution across managed and native component
 - [`src/Moonshine.Protocol`](./src/Moonshine.Protocol): Moonshine-native protocol definitions, packet formats, stream metadata, capability negotiation, and control messages.
 - [`src/Moonshine.Interop`](./src/Moonshine.Interop): C#/.NET to native C++ interoperability layer.
 - [`src/Moonshine.Core`](./src/Moonshine.Core): Shared managed application and session logic, configuration, security, orchestration, and networking coordination.
-- [`src/Moonshine.Host`](./src/Moonshine.Host): Host-role capture, encoding, audio, microphone, streaming, and remote-control components.
+- [`src/Moonshine.Host`](./src/Moonshine.Host): Host-role capture, encoding, audio, microphone, streaming, device, and remote-control components.
 - [`src/Moonshine.Client`](./src/Moonshine.Client): Client-role receiving, decoding, rendering, microphone capture, input, and host-control components.
 - [`src/Moonshine.Benchmarks`](./src/Moonshine.Benchmarks): Performance and micro-benchmark suite.
 
-The exact boundaries between these projects may evolve as the native and managed architectures mature, but the separation between role, media, control, device, and application concerns is intentional.
+The exact project boundaries may evolve as the backend matures, but role, media, control, device, and application concerns remain deliberate architectural boundaries.
 
 ---
 
 ## Platform and Scope
 
-Moonshine is initially focused on **Windows 11 x64 PCs** because Windows provides the native graphics, audio, input, and driver interfaces required for the project's performance goals.
+Moonshine is initially focused on **Windows 11 x64 PCs** because Windows provides the native graphics, audio, input, device, and driver interfaces required for the project's performance goals.
 
-The initial platform scope allows Moonshine to optimise deeply for:
+The platform focus allows Moonshine to optimise deeply for:
 
 - Direct3D.
 - DXGI.
@@ -422,13 +374,27 @@ Cross-platform support is not currently a primary goal. The project will priorit
 
 ---
 
-## Engineering Principles
+## Runtime Resource Isolation
 
-Moonshine follows several principles throughout development:
+The runtime mode is an explicit resource boundary.
+
+| Mode | Host role | Client role | Host listeners | Client connections | Host devices | Client devices |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Host only** | On | Off | On | Off | On | Off |
+| **Client only** | Off | On | Off | On | Off | On |
+| **Host + Client** | On | On | On | On | On | On |
+
+A disabled role must not initialise its listeners, sockets, capture sessions, decoders/encoders, audio endpoints, device interfaces, large media buffers, background workers, or other persistent role-specific resources.
+
+The intent is not merely to stop unused code paths from processing data. The inactive role should not meaningfully consume resources or expose network/device surfaces.
+
+---
+
+## Engineering Principles
 
 ### One application, explicit roles
 
-Host and Client are runtime roles of the same application. Disabled roles must not initialise their pipelines, listeners, devices, drivers, large resource pools, or background workers.
+Host and Client are runtime roles of the same application. Disabled roles remain inactive and resource-isolated.
 
 ### Custom by design
 
@@ -437,6 +403,10 @@ Moonshine defines its own architecture and protocol. Compatibility with other st
 ### No fake capabilities
 
 A component must not report functionality that it cannot actually provide.
+
+### No pretend implementations
+
+Production functionality must be implemented with real OS, hardware, networking, or algorithmic behaviour. Simulated/stub implementations are explicitly isolated to development and test contexts and must never be exposed as operational production capabilities.
 
 ### Performance must be measurable
 
@@ -456,7 +426,7 @@ Network, hardware, device, and pipeline failures must propagate to the appropria
 
 ### Security is part of the architecture
 
-Authentication, trust, authorisation, and secure configuration are designed into the system rather than added after the media pipeline is complete.
+Authentication, trust, authorisation, secure configuration, and control-plane permissions are designed into the system rather than added after the media pipeline is complete.
 
 ---
 
