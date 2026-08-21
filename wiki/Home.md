@@ -34,6 +34,7 @@ Moonshine is a next-generation, ultra-low-latency game streaming client engineer
 - **[Opus Audio Compression Engine](Opus-Audio-Compression)**: Ultra-low latency multi-channel Opus audio compression and multi-stream encoding.
 - **[Microphone Passthrough Engine](Microphone-Passthrough-and-Virtual-Sink)**: Client-to-host low-latency microphone audio streaming, jitter buffering, and virtual audio device injection.
 - **[Dedicated Virtual Audio Driver](Virtual-Audio-Driver)**: Custom Windows WDK PortCls WaveRT miniport driver exposing Moonshine Audio and Moonshine Microphone endpoints.
+- **[Virtual Audio Shared Memory IPC](Virtual-Audio-Shared-Memory-IPC)**: Zero-copy lock-free ring buffer IPC bridge with MMCSS Pro Audio event signaling and DACL security permissions.
 - **[Virtual Input & Driver Injection](Virtual-Input-Driver-Injection)**: ViGEmBus controller emulation and kernel-level mouse/keyboard injection.
 - **[GameStream HTTPS & RTSP Host Server](GameStream-HTTPS-RTSP-Host-Server)**: Embedded pairing, discovery, and RTSP stream orchestration.
 - **[Authenticated Remote Control Plane](Authenticated-Remote-Control-Plane)**: Secure client-to-host RPC, dynamic display mode adaptation, and zero-overhead coordinator.

@@ -412,6 +412,70 @@ public static unsafe partial class MoonshineNativeMethods
     public static partial int VirtualAudioDriverDisableMmcss(IntPtr handle, IntPtr taskHandle);
 
     // ========================================================================
+    // Real-Time Shared Memory IPC Bridge APIs
+    // ========================================================================
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct AudioIpcMetricsInterop
+    {
+        public uint RenderPacketsRead;
+        public uint RenderUnderruns;
+        public uint RenderOverruns;
+        public uint CapturePacketsWritten;
+        public uint CaptureUnderruns;
+        public uint CaptureOverruns;
+        public uint SampleRate;
+        public uint Channels;
+        public uint IsConnected;
+    }
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_audio_ipc_bridge_create")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial IntPtr AudioIpcBridgeCreate(int isHostServer, uint sampleRate, uint channels);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_audio_ipc_bridge_destroy")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void AudioIpcBridgeDestroy(IntPtr handle);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_audio_ipc_bridge_is_connected")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int AudioIpcBridgeIsConnected(IntPtr handle);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_audio_ipc_bridge_write_capture_pcm")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static unsafe partial long AudioIpcBridgeWriteCapturePcm(
+        IntPtr handle,
+        float* pcmSamples,
+        uint sampleCount
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_audio_ipc_bridge_read_render_pcm")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static unsafe partial long AudioIpcBridgeReadRenderPcm(
+        IntPtr handle,
+        float* outPcmSamples,
+        uint maxSamples,
+        int waitEvent,
+        uint timeoutMs
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_audio_ipc_bridge_wait_render_event")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int AudioIpcBridgeWaitRenderEvent(IntPtr handle, uint timeoutMs);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_audio_ipc_bridge_get_metrics")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int AudioIpcBridgeGetMetrics(IntPtr handle, out AudioIpcMetricsInterop outMetrics);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_audio_ipc_bridge_enable_mmcss")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int AudioIpcBridgeEnableMmcss(IntPtr handle);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_audio_ipc_bridge_revert_mmcss")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void AudioIpcBridgeRevertMmcss(IntPtr handle);
+
+    // ========================================================================
     // Zero-Copy Direct3D Desktop Capture APIs
     // ========================================================================
 

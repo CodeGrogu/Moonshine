@@ -29,6 +29,7 @@
 - [Opus Audio Compression](Opus-Audio-Compression)
 - [Microphone Passthrough](Microphone-Passthrough-and-Virtual-Sink)
 - [Dedicated Virtual Audio Driver](Virtual-Audio-Driver)
+- [Virtual Audio Shared Memory IPC](Virtual-Audio-Shared-Memory-IPC)
 - [Virtual Input & Injection](Virtual-Input-Driver-Injection)
 - [GameStream HTTPS & RTSP Host Server](GameStream-HTTPS-RTSP-Host-Server)
 - [Authenticated Remote Control Plane](Authenticated-Remote-Control-Plane)

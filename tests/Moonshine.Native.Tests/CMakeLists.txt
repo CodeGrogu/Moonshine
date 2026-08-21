@@ -1,3 +1,8 @@
+include_directories(
+    ${CMAKE_SOURCE_DIR}/src/Moonshine.Native/include
+    ${CMAKE_SOURCE_DIR}/drivers/audio
+)
+
 add_executable(test_fec_simd 
     test_fec_simd.cpp 
     ${CMAKE_SOURCE_DIR}/src/Moonshine.Native/src/fec/reed_solomon_simd.cpp
@@ -96,6 +101,13 @@ add_executable(test_virtual_audio_driver
 )
 target_link_libraries(test_virtual_audio_driver PRIVATE Moonshine.Native $<$<BOOL:${WIN32}>:avrt>)
 add_test(NAME test_virtual_audio_driver COMMAND test_virtual_audio_driver)
+
+add_executable(test_virtual_audio_ipc
+    test_virtual_audio_ipc.cpp
+    ${CMAKE_SOURCE_DIR}/src/Moonshine.Native/src/audio/virtual_audio_ipc.cpp
+)
+target_link_libraries(test_virtual_audio_ipc PRIVATE Moonshine.Native $<$<BOOL:${WIN32}>:avrt>)
+add_test(NAME test_virtual_audio_ipc COMMAND test_virtual_audio_ipc)
 
 if(WIN32)
     add_custom_command(TARGET test_c_abi_export POST_BUILD

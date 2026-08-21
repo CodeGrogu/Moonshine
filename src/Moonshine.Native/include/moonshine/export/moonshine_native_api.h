@@ -391,6 +391,70 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_virtual_audio_driver_disable_mmcss(
 );
 
 // ============================================================================
+// Real-Time Shared Memory IPC Bridge APIs
+// ============================================================================
+
+typedef void* MoonshineAudioIpcBridgeHandle;
+
+typedef struct MoonshineAudioIpcMetricsC {
+    uint32_t render_packets_read;
+    uint32_t render_underruns;
+    uint32_t render_overruns;
+    uint32_t capture_packets_written;
+    uint32_t capture_underruns;
+    uint32_t capture_overruns;
+    uint32_t sample_rate;
+    uint32_t channels;
+    uint32_t is_connected;
+} MoonshineAudioIpcMetricsC;
+
+MOONSHINE_API MoonshineAudioIpcBridgeHandle MOONSHINE_CONV moonshine_audio_ipc_bridge_create(
+    int is_host_server,
+    uint32_t sample_rate,
+    uint32_t channels
+);
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_audio_ipc_bridge_destroy(
+    MoonshineAudioIpcBridgeHandle handle
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_audio_ipc_bridge_is_connected(
+    MoonshineAudioIpcBridgeHandle handle
+);
+
+MOONSHINE_API int64_t MOONSHINE_CONV moonshine_audio_ipc_bridge_write_capture_pcm(
+    MoonshineAudioIpcBridgeHandle handle,
+    const float* pcm_samples,
+    uint32_t sample_count
+);
+
+MOONSHINE_API int64_t MOONSHINE_CONV moonshine_audio_ipc_bridge_read_render_pcm(
+    MoonshineAudioIpcBridgeHandle handle,
+    float* out_pcm_samples,
+    uint32_t max_samples,
+    int wait_event,
+    uint32_t timeout_ms
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_audio_ipc_bridge_wait_render_event(
+    MoonshineAudioIpcBridgeHandle handle,
+    uint32_t timeout_ms
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_audio_ipc_bridge_get_metrics(
+    MoonshineAudioIpcBridgeHandle handle,
+    MoonshineAudioIpcMetricsC* out_metrics
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_audio_ipc_bridge_enable_mmcss(
+    MoonshineAudioIpcBridgeHandle handle
+);
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_audio_ipc_bridge_revert_mmcss(
+    MoonshineAudioIpcBridgeHandle handle
+);
+
+// ============================================================================
 // Zero-Copy Direct3D Desktop Capture APIs
 // ============================================================================
 
