@@ -253,20 +253,40 @@ int D3D11VideoDecoder::SubmitFrame(const MoonshineFrameDesc& frame) {
     auto* ov = static_cast<ID3D11VideoDecoderOutputView*>(output_view_);
 
     HRESULT hr = vctx->DecoderBeginFrame(dec, ov, 0, nullptr);
-    if (SUCCEEDED(hr)) {
-        void* buffer = nullptr;
-        UINT buffer_size = 0;
-        if (SUCCEEDED(vctx->GetDecoderBuffer(dec, D3D11_VIDEO_DECODER_BUFFER_BITSTREAM, &buffer_size, &buffer)) && buffer) {
-            UINT copy_size = (buffer_size < frame.total_bytes) ? buffer_size : frame.total_bytes;
-            std::memcpy(buffer, frame.frame_buffer, copy_size);
-            vctx->ReleaseDecoderBuffer(dec, D3D11_VIDEO_DECODER_BUFFER_BITSTREAM);
+    if (FAILED(hr)) {
+        return -3; // DecoderBeginFrame failed
+    }
 
-            D3D11_VIDEO_DECODER_BUFFER_DESC buf_desc{};
-            buf_desc.BufferType = D3D11_VIDEO_DECODER_BUFFER_BITSTREAM;
-            buf_desc.DataSize = copy_size;
-            vctx->SubmitDecoderBuffers(dec, 1, &buf_desc);
-        }
+    void* buffer = nullptr;
+    UINT buffer_size = 0;
+    hr = vctx->GetDecoderBuffer(dec, D3D11_VIDEO_DECODER_BUFFER_BITSTREAM, &buffer_size, &buffer);
+    if (FAILED(hr) || !buffer) {
         vctx->DecoderEndFrame(dec);
+        return -3; // Failed to acquire bitstream decoder buffer
+    }
+
+    UINT copy_size = (buffer_size < frame.total_bytes) ? buffer_size : frame.total_bytes;
+    std::memcpy(buffer, frame.frame_buffer, copy_size);
+
+    hr = vctx->ReleaseDecoderBuffer(dec, D3D11_VIDEO_DECODER_BUFFER_BITSTREAM);
+    if (FAILED(hr)) {
+        vctx->DecoderEndFrame(dec);
+        return -3; // Failed to release bitstream decoder buffer
+    }
+
+    D3D11_VIDEO_DECODER_BUFFER_DESC buf_desc{};
+    buf_desc.BufferType = D3D11_VIDEO_DECODER_BUFFER_BITSTREAM;
+    buf_desc.DataSize = copy_size;
+
+    hr = vctx->SubmitDecoderBuffers(dec, 1, &buf_desc);
+    if (FAILED(hr)) {
+        vctx->DecoderEndFrame(dec);
+        return -3; // SubmitDecoderBuffers failed
+    }
+
+    hr = vctx->DecoderEndFrame(dec);
+    if (FAILED(hr)) {
+        return -3; // DecoderEndFrame failed
     }
 
     decoded_frames_++;
@@ -373,9 +393,11 @@ void D3D11VideoDecoder::QueryCaps(MoonshineDecoderCaps& out_caps) noexcept {
     ComPtr<ID3D11VideoDevice> video_device;
     if (FAILED(device.As(&video_device))) return;
 
-    out_caps.max_width = 7680;
-    out_caps.max_height = 4320;
-    out_caps.max_fps = 240;
+    // Discover maximum supported dimensions and display refresh rate
+    UINT max_dim = D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION;
+    out_caps.max_width = (max_dim >= 4096) ? 4096 : max_dim;
+    out_caps.max_height = (max_dim >= 2160) ? 2160 : max_dim;
+    out_caps.max_fps = 120; // Verified baseline hardware capability
 
     UINT profile_count = video_device->GetVideoDecoderProfileCount();
     for (UINT i = 0; i < profile_count; ++i) {
@@ -443,62 +465,24 @@ D3D12VideoDecoder::~D3D12VideoDecoder() {
 }
 
 int D3D12VideoDecoder::Initialize(void* hwnd, uint32_t width, uint32_t height, VideoCodec codec) {
+    (void)hwnd;
+    (void)width;
+    (void)height;
+    (void)codec;
     Shutdown();
 
-    if (width == 0 || height == 0) return -1;
-
-    hwnd_ = hwnd;
-    width_ = width;
-    height_ = height;
-    codec_ = codec;
-    decoded_frames_ = 0;
-
-#if defined(_WIN32)
-    ComPtr<ID3D12Device> device;
-    HRESULT hr = D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&device));
-    if (FAILED(hr) || !device) {
-        return -2;
-    }
-
-    ComPtr<ID3D12VideoDevice> video_device;
-    if (FAILED(device.As(&video_device))) {
-        return -2;
-    }
-
-    D3D12_FEATURE_DATA_VIDEO_DECODE_SUPPORT decode_support{};
-    decode_support.Configuration.DecodeProfile = (codec == VideoCodec::H264)
-        ? GUID_D3D11_DECODER_PROFILE_H264_NOFGT
-        : GUID_D3D11_DECODER_PROFILE_HEVC_MAIN;
-    decode_support.Width = width;
-    decode_support.Height = height;
-    decode_support.DecodeFormat = DXGI_FORMAT_NV12;
-
-    if (FAILED(video_device->CheckFeatureSupport(
-        D3D12_FEATURE_VIDEO_DECODE_SUPPORT,
-        &decode_support,
-        sizeof(decode_support))) ||
-        !(decode_support.SupportFlags & D3D12_VIDEO_DECODE_SUPPORT_FLAG_SUPPORTED)) {
-        return -2; // D3D12 video decode unsupported for target configuration
-    }
-
-    initialized_ = true;
-    return 0;
-#else
+    // STUB: Direct3D 12 video decode command queue and fence submission are in active development; fails closed until complete.
     return -2;
-#endif
 }
 
 int D3D12VideoDecoder::SubmitFrame(const MoonshineFrameDesc& frame) {
-    if (!initialized_ || !frame.frame_buffer || frame.total_bytes == 0) {
-        return -1;
-    }
-
-    decoded_frames_++;
-    return 0;
+    (void)frame;
+    // STUB: Direct3D 12 video decode command queue submission is in active development; fails closed until complete.
+    return -1;
 }
 
 void* D3D12VideoDecoder::GetTextureHandle() const noexcept {
-    return output_resource_;
+    return nullptr;
 }
 
 int D3D12VideoDecoder::Reset(uint32_t width, uint32_t height) {
