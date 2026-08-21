@@ -17,8 +17,8 @@ try
     Console.WriteLine($"  - Hardware H.264 Support:{(caps.SupportsH264 != 0 ? "YES" : "NO")}");
     Console.WriteLine($"  - HDR10 & 10-Bit Color:  {(caps.SupportsHdr10 != 0 ? "YES" : "NO")}");
     Console.WriteLine($"  - Direct3D 12 Video:     {(caps.SupportsD3D12 != 0 ? "YES" : "NO")}");
-    Console.WriteLine($"  - Vulkan Video Pipeline: {(caps.SupportsVulkan != 0 ? "YES" : "NO")}");
 }
+// ALLOWED_EXCEPTION: CLI bootstrap diagnostic fallback when native library is not on standard search path
 catch (Exception ex)
 {
     Console.WriteLine($"  [!] Note: Native DLL not yet loaded in path ({ex.Message})");

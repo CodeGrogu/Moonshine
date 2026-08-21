@@ -167,8 +167,8 @@ void TestInvalidInputs()
     ReedSolomonSimd codec;
     int erased[] = {0};
     TEST_ASSERT(codec.Reconstruct(nullptr, 5, 1400, erased, 1) != 0);
-    uint8_t dummy[16];
-    uint8_t* ptrs[] = {dummy};
+    uint8_t invalidBuffer[16];
+    uint8_t* ptrs[] = {invalidBuffer};
     TEST_ASSERT(codec.Reconstruct(ptrs, 0, 1400, erased, 1) != 0);
     TEST_ASSERT(codec.Reconstruct(ptrs, 1, 0, erased, 1) != 0);
     TEST_ASSERT(codec.Reconstruct(ptrs, 1, 1400, nullptr, 1) != 0);

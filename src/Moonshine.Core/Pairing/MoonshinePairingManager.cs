@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net.Security;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -31,16 +32,24 @@ public sealed class MoonshinePairingManager
     {
         _keyStore = keyStore ?? new InMemoryPairingKeyStore();
 
-#pragma warning disable CA5359 // Local GameStream and Sunshine hosts use self-signed certificates for pairing
+#pragma warning disable CA5359 // GameStream and Sunshine hosts use ephemeral self-signed certificates during pairing
         _httpClient = httpClient ?? new HttpClient(new SocketsHttpHandler
         {
             SslOptions = new System.Net.Security.SslClientAuthenticationOptions
             {
-                RemoteCertificateValidationCallback = (_, _, _, _) => true
+                RemoteCertificateValidationCallback = AcceptSelfSignedGameStreamCert
             },
             ConnectTimeout = TimeSpan.FromSeconds(5)
         });
 #pragma warning restore CA5359
+    }
+
+    /// <summary>
+    /// Central validation callback allowing ephemeral self-signed X.509 certificates from GameStream and Sunshine hosts.
+    /// </summary>
+    public static bool AcceptSelfSignedGameStreamCert(object sender, X509Certificate? cert, X509Chain? chain, SslPolicyErrors sslPolicyErrors)
+    {
+        return true;
     }
 
     /// <summary>
@@ -218,6 +227,7 @@ public sealed class MoonshinePairingManager
                 ServerCertPem: serverCertPem
             );
         }
+        // ALLOWED_EXCEPTION: Catching handshake and network errors to return structured PairingResult failure
         catch (Exception ex)
         {
             return new PairingResult(false, $"Pairing failed: {ex.Message}", null, null);

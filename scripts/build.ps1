@@ -43,10 +43,23 @@ $cmakeBuildCmd = "call `"$VcvarsBat`" && `"$CMakeExe`" --build `"$BuildDir`" --c
 cmd.exe /c $cmakeBuildCmd
 if ($LASTEXITCODE -ne 0) { throw "Native compilation failed." }
 
+# Physical Artifact Check: Moonshine.Native.dll
+$nativeDll = if (Test-Path "$BuildDir\bin\Moonshine.Native.dll") {
+    "$BuildDir\bin\Moonshine.Native.dll"
+} elseif (Test-Path "$BuildDir\src\Moonshine.Native\Moonshine.Native.dll") {
+    "$BuildDir\src\Moonshine.Native\Moonshine.Native.dll"
+} else {
+    $null
+}
+if (-not $nativeDll) {
+    throw "Native build reported success but output artifact Moonshine.Native.dll does not exist on disk."
+}
+Write-Host "[+] Verified native artifact exists: $nativeDll" -ForegroundColor Green
+
 # 2. Run Native Tests
 if (-not $SkipTests) {
     Write-Host "`n[2/4] Executing Native CTest Suite..." -ForegroundColor Yellow
-    $nativeDllDir = Join-Path $BuildDir "src\Moonshine.Native"
+    $nativeDllDir = Split-Path -Parent $nativeDll
     $ctestCmd = "call `"$VcvarsBat`" && set PATH=$nativeDllDir;%PATH% && `"$CTestExe`" --test-dir `"$BuildDir`" --output-on-failure -C $Configuration"
     cmd.exe /c $ctestCmd
     if ($LASTEXITCODE -ne 0) { throw "Native tests failed." }
@@ -57,6 +70,12 @@ if ($DotNetExe) {
     Write-Host "`n[3/4] Building Managed .NET Solution ($Configuration)..." -ForegroundColor Yellow
     & $DotNetExe build "$RootDir\Moonshine.sln" -c $Configuration
     if ($LASTEXITCODE -ne 0) { throw ".NET build failed." }
+
+    $hostDll = "$RootDir\src\Moonshine.Host\bin\$Configuration\net9.0\Moonshine.Host.dll"
+    if (-not (Test-Path $hostDll)) {
+        throw "Managed build reported success but output artifact Moonshine.Host.dll does not exist on disk."
+    }
+    Write-Host "[+] Verified managed artifact exists: $hostDll" -ForegroundColor Green
 
     # 4. Run Managed Tests
     if (-not $SkipTests) {

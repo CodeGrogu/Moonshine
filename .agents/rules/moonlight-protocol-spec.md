@@ -1,5 +1,7 @@
 # Moonlight & GameStream / Sunshine Protocol Invariants
 
+All protocol handlers, cryptographic routines, and packet codecs must comply with [`STANDARDS.md`](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/STANDARDS.md).
+
 ## 1. Network Ports
 - `47989`: HTTP Discovery & Server Information
 - `47984`: HTTPS Pairing & Certificate Exchange

@@ -35,6 +35,7 @@
 - [Authenticated Remote Control Plane](Authenticated-Remote-Control-Plane)
 
 **Workflows and Quality Assurance**
+- [Engineering Standards](Engineering-Standards)
 - [CI and GitHub Workflows](Continuous-Integration-and-Workflows)
 - [Exhaustive Testing Strategy](Exhaustive-Testing-Strategy)
 - [Benchmarking and Audit](Benchmarking-and-Performance-Audit)

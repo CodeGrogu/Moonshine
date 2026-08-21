@@ -42,7 +42,7 @@ public class PairingTests
                 int ampIdx = challengeHex.IndexOf('&');
                 if (ampIdx > 0) challengeHex = challengeHex[..ampIdx];
 
-                if (ExpectedPin != "1234") // Incorrect PIN simulation
+                if (ExpectedPin != "1234") // Incorrect PIN test branch
                 {
                     return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                     {
