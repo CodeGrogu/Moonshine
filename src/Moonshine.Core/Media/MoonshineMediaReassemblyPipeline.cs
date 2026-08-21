@@ -29,6 +29,7 @@ public sealed class MoonshineMediaReassemblyPipeline : IDisposable
     private readonly int _fecDataShards;
     private readonly int _fecParityShards;
     private readonly int _mtuPayloadSize;
+    private readonly int _maxPacketsPerFrame;
     private readonly Lock _lock = new();
 
     private ulong _packetsIngested;
@@ -50,6 +51,7 @@ public sealed class MoonshineMediaReassemblyPipeline : IDisposable
 
     public bool IsActive => !_disposed && _nativeJitterHandle != IntPtr.Zero;
     public int MaxFrames => _maxFrames;
+    public int MaxPacketsPerFrame => _maxPacketsPerFrame;
     public MediaReassemblyMetrics Metrics
     {
         get
@@ -78,11 +80,17 @@ public sealed class MoonshineMediaReassemblyPipeline : IDisposable
         int maxPacketsPerFrame = 512)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(maxFrames, 4, nameof(maxFrames));
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(maxFrames, 1024, nameof(maxFrames));
         ArgumentOutOfRangeException.ThrowIfLessThan(maxPacketsPerFrame, 16, nameof(maxPacketsPerFrame));
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(maxPacketsPerFrame, ushort.MaxValue, nameof(maxPacketsPerFrame));
+        ArgumentOutOfRangeException.ThrowIfLessThan(mtuPayloadSize, 64, nameof(mtuPayloadSize));
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(mtuPayloadSize, 65535, nameof(mtuPayloadSize));
+
         _maxFrames = maxFrames;
         _fecDataShards = fecDataShards;
         _fecParityShards = fecParityShards;
         _mtuPayloadSize = mtuPayloadSize;
+        _maxPacketsPerFrame = maxPacketsPerFrame;
 
         _slotBitmasks = new ulong[maxFrames * 8]; // 512 packet bits per slot
         _slotFrameIndices = new uint[maxFrames];
@@ -162,6 +170,42 @@ public sealed class MoonshineMediaReassemblyPipeline : IDisposable
         lock (_lock)
         {
             if (_disposed || _nativeJitterHandle == IntPtr.Zero) return -1;
+
+            // Packet-index and total-packet validation against protocol invariants
+            if (packet.TotalPackets == 0 || packet.TotalPackets > _maxPacketsPerFrame)
+            {
+                _packetsLost++;
+                return -1;
+            }
+
+            if (!isParity)
+            {
+                if (packet.PacketIndex >= packet.TotalPackets)
+                {
+                    _packetsLost++;
+                    return -1;
+                }
+
+                if (_fecDataShards > 0 && fecBlockIndex != (packet.PacketIndex / _fecDataShards))
+                {
+                    _packetsLost++;
+                    return -1;
+                }
+            }
+            else
+            {
+                if (packet.PacketIndex < packet.TotalPackets)
+                {
+                    _packetsLost++;
+                    return -1;
+                }
+
+                if (_fecParityShards > 0 && fecBlockIndex != ((packet.PacketIndex - packet.TotalPackets) / _fecParityShards))
+                {
+                    _packetsLost++;
+                    return -1;
+                }
+            }
 
             _packetsIngested++;
             long startTicks = Stopwatch.GetTimestamp();
@@ -357,12 +401,15 @@ public sealed class MoonshineMediaReassemblyPipeline : IDisposable
 
             if (dataShards > 0 && parityShards > 0)
             {
-                _maxBlocks = Math.Max(1, (maxPacketsPerFrame + dataShards - 1) / dataShards);
-                _maxData = dataShards * _maxBlocks;
-                _maxParity = parityShards * _maxBlocks;
+                ArgumentOutOfRangeException.ThrowIfGreaterThan(dataShards, 128, nameof(dataShards));
+                ArgumentOutOfRangeException.ThrowIfGreaterThan(parityShards, 128, nameof(parityShards));
 
-                nuint dataBytes = (nuint)(_maxData * shardSize);
-                nuint parityBytes = (nuint)(_maxParity * shardSize);
+                _maxBlocks = Math.Max(1, (maxPacketsPerFrame + dataShards - 1) / dataShards);
+                _maxData = checked(dataShards * _maxBlocks);
+                _maxParity = checked(parityShards * _maxBlocks);
+
+                nuint dataBytes = checked((nuint)_maxData * (nuint)shardSize);
+                nuint parityBytes = checked((nuint)_maxParity * (nuint)shardSize);
 
                 _pDataBuffers = (byte*)NativeMemory.AllocZeroed(dataBytes);
                 _pParityBuffers = (byte*)NativeMemory.AllocZeroed(parityBytes);

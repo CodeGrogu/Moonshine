@@ -366,4 +366,122 @@ public class MoonshineMediaReassemblyPipelineTests
         reassembly.Metrics.FramesCompleted.Should().Be(1);
         reassembly.Metrics.PacketsRecoveredFec.Should().Be(1);
     }
+
+    [Fact]
+    public void Lifecycle_DoubleDispose_IsSafeAndIdempotent()
+    {
+        var reassembly = new MoonshineMediaReassemblyPipeline(maxFrames: 16, fecDataShards: 4, fecParityShards: 2);
+        reassembly.IsActive.Should().BeTrue();
+
+        reassembly.Dispose();
+        reassembly.IsActive.Should().BeFalse();
+
+        // Second dispose call must not throw or cause access violation
+        var act = () => reassembly.Dispose();
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Lifecycle_PostDisposalOperations_FailClosed()
+    {
+        var reassembly = new MoonshineMediaReassemblyPipeline(maxFrames: 16);
+        reassembly.Dispose();
+
+        Span<byte> probeDatagram = stackalloc byte[64];
+        reassembly.IngestDatagram(probeDatagram).Should().Be(-1);
+        reassembly.TryPopCompletedFrame(out _).Should().Be(0);
+    }
+
+    [Fact]
+    public void PacketValidation_InvalidIndicesAndBlockMismatches_FailsClosed()
+    {
+        using var reassembly = new MoonshineMediaReassemblyPipeline(maxFrames: 16, fecDataShards: 4, fecParityShards: 2);
+
+        // Packet with 0 TotalPackets
+        var pZero = new MoonshinePacketDesc
+        {
+            FrameIndex = 1,
+            PacketIndex = 0,
+            TotalPackets = 0,
+            PayloadSize = 100
+        };
+        reassembly.IngestPacketDesc(in pZero).Should().Be(-1);
+
+        // Data packet with PacketIndex >= TotalPackets
+        var pDataOverflow = new MoonshinePacketDesc
+        {
+            FrameIndex = 1,
+            PacketIndex = 4,
+            TotalPackets = 4,
+            PayloadSize = 100
+        };
+        reassembly.IngestPacketDesc(in pDataOverflow).Should().Be(-1);
+
+        // Parity packet with PacketIndex < TotalPackets
+        var pParityUnderflow = new MoonshinePacketDesc
+        {
+            FrameIndex = 1,
+            PacketIndex = 1,
+            TotalPackets = 4,
+            PayloadSize = 100
+        };
+        reassembly.IngestPacketDesc(in pParityUnderflow, isParity: true).Should().Be(-1);
+
+        // Data packet with mismatched fecBlockIndex (PacketIndex 5 in K=4 should be block 1, but passed as block 0)
+        var pBlockMismatch = new MoonshinePacketDesc
+        {
+            FrameIndex = 1,
+            PacketIndex = 5,
+            TotalPackets = 8,
+            PayloadSize = 100
+        };
+        reassembly.IngestPacketDesc(in pBlockMismatch, isParity: false, fecBlockIndex: 0).Should().Be(-1);
+    }
+
+    [Fact]
+    public unsafe void Fec_MultiBlockRecovery_RecoversAllLostPacketsByteForByte()
+    {
+        // 2 FEC blocks: K=4, M=2 per block. Total data packets: 8 (4 in block 0, 4 in block 1) + 4 parity packets = 12 total packets
+        int mtu = 500;
+        int k = 4;
+        int m = 2;
+
+        var packetiser = new MoonshineVideoPacketiser(streamId: 1, sessionId: 100, mtuPayloadSize: mtu, fecDataShards: k, fecParityShards: m);
+        using var reassembly = new MoonshineMediaReassemblyPipeline(maxFrames: 16, fecDataShards: k, fecParityShards: m, mtuPayloadSize: mtu);
+
+        byte[] groundTruth = new byte[3750]; // 7 full 500-byte packets + 1 250-byte packet = 8 data packets
+        for (int i = 0; i < groundTruth.Length; i++)
+        {
+            groundTruth[i] = (byte)((i * 31 + 43) & 0xFF);
+        }
+
+        List<byte[]> allPackets = new();
+        packetiser.PacketiseFrame(groundTruth, frameIndex: 120, timestampUs: 120000, isKeyframe: true, isHdr10: false, d => allPackets.Add(d.ToArray()));
+
+        allPackets.Count.Should().Be(12); // 8 data + 4 parity (2 for block 0, 2 for block 1)
+
+        // Drop packet 1 from block 0, and drop packet 6 from block 1!
+        // Ingest block 0: data 0, data 2, data 3 + parity 0 (block 0 parity 0 recovers data 1)
+        reassembly.IngestDatagram(allPackets[0]).Should().Be(0);
+        reassembly.IngestDatagram(allPackets[2]).Should().Be(0);
+        reassembly.IngestDatagram(allPackets[3]).Should().Be(0);
+        reassembly.IngestDatagram(allPackets[8]).Should().Be(0); // Parity 0 (block 0) reconstructs packet 1!
+
+        // Ingest block 1: data 4, data 5, data 7 + parity 2 (block 1 parity 0 recovers data 6)
+        reassembly.IngestDatagram(allPackets[4]).Should().Be(0);
+        reassembly.IngestDatagram(allPackets[5]).Should().Be(0);
+        reassembly.IngestDatagram(allPackets[7]).Should().Be(0);
+        int finalRes = reassembly.IngestDatagram(allPackets[10]); // Parity 2 (block 1) reconstructs packet 6 and completes frame!
+
+        finalRes.Should().Be(1, "Multi-block loss recovery must reconstruct missing shards across both blocks and complete the frame");
+
+        int popRes = reassembly.TryPopCompletedFrame(out var popped);
+        popRes.Should().Be(1);
+        popped.FrameIndex.Should().Be(120);
+        popped.TotalBytes.Should().Be((uint)groundTruth.Length);
+
+        ReadOnlySpan<byte> reassembledSpan = new(popped.FrameBuffer, (int)popped.TotalBytes);
+        reassembledSpan.SequenceEqual(groundTruth).Should().BeTrue("Multi-block FEC reconstructed frame must match ground truth byte-for-byte");
+        reassembly.Metrics.PacketsRecoveredFec.Should().Be(2);
+    }
 }
