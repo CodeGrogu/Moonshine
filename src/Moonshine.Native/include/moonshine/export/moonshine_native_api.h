@@ -187,6 +187,46 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_audio_submit_pcm(MoonshineAudioHandle
 MOONSHINE_API void MOONSHINE_CONV moonshine_audio_get_metrics(MoonshineAudioHandle handle, uint64_t* out_frames_rendered, uint32_t* out_underruns);
 
 // ============================================================================
+// WASAPI Master Loopback Audio Capture APIs
+// ============================================================================
+
+typedef void* MoonshineAudioCaptureHandle;
+
+MOONSHINE_API MoonshineAudioCaptureHandle MOONSHINE_CONV moonshine_audio_capture_create(
+    uint32_t sample_rate,
+    uint32_t channels,
+    uint32_t buffer_duration_ms
+);
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_audio_capture_destroy(
+    MoonshineAudioCaptureHandle handle
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_audio_capture_read_float(
+    MoonshineAudioCaptureHandle handle,
+    float* out_buffer,
+    uint32_t max_samples,
+    uint32_t* out_samples_read,
+    uint64_t* out_timestamp_qpc
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_audio_capture_read_pcm16(
+    MoonshineAudioCaptureHandle handle,
+    int16_t* out_buffer,
+    uint32_t max_samples,
+    uint32_t* out_samples_read,
+    uint64_t* out_timestamp_qpc
+);
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_audio_capture_get_metrics(
+    MoonshineAudioCaptureHandle handle,
+    uint64_t* out_frames_captured,
+    uint64_t* out_samples_captured,
+    uint32_t* out_underruns,
+    uint32_t* out_overruns
+);
+
+// ============================================================================
 // Zero-Copy Direct3D Desktop Capture APIs
 // ============================================================================
 

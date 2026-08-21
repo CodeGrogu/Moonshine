@@ -187,6 +187,48 @@ public static unsafe partial class MoonshineNativeMethods
     public static partial void AudioGetMetrics(IntPtr handle, out ulong outFramesRendered, out uint outUnderruns);
 
     // ========================================================================
+    // WASAPI Master Loopback Audio Capture APIs
+    // ========================================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_audio_capture_create")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial IntPtr AudioCaptureCreate(uint sampleRate, uint channels, uint bufferDurationMs);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_audio_capture_destroy")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void AudioCaptureDestroy(IntPtr handle);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_audio_capture_read_float")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int AudioCaptureReadFloat(
+        IntPtr handle,
+        float* outBuffer,
+        uint maxSamples,
+        out uint outSamplesRead,
+        out ulong outTimestampQpc
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_audio_capture_read_pcm16")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int AudioCaptureReadPcm16(
+        IntPtr handle,
+        short* outBuffer,
+        uint maxSamples,
+        out uint outSamplesRead,
+        out ulong outTimestampQpc
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_audio_capture_get_metrics")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void AudioCaptureGetMetrics(
+        IntPtr handle,
+        out ulong outFramesCaptured,
+        out ulong outSamplesCaptured,
+        out uint outUnderruns,
+        out uint outOverruns
+    );
+
+    // ========================================================================
     // Zero-Copy Direct3D Desktop Capture APIs
     // ========================================================================
 
