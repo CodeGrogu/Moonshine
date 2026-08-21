@@ -1,4 +1,4 @@
-name: Security & Vulnerability Audit
+name: Security, Dependency & Application Audit
 
 on:
   push:
@@ -6,20 +6,68 @@ on:
   pull_request:
     branches: [ main ]
   schedule:
-    - cron: '0 0 * * 1' # Weekly on Mondays
+    - cron: '0 0 * * 1'
+  workflow_dispatch:
 
 jobs:
-  nuget-security-scan:
+  preflight-security:
+    name: Security Standards & Regression Tests
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Set up .NET SDK from global.json
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version-file: global.json
+
+      - name: Set up Ninja
+        uses: ashutoshvarma/setup-ninja@v1.1
+        with:
+          version: '1.11.1'
+
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Verify repository preflight
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File .\scripts\preflight.ps1
+
+      - name: Build Release security test prerequisites
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1 -Configuration Release
+
+      - name: Run managed security regression tests
+        shell: pwsh
+        run: >
+          .\tools\dotnet_sdk\dotnet.exe test tests/Moonshine.Core.Tests/Moonshine.Core.Tests.csproj
+          -c Release --no-build --no-restore --arch x64
+          --filter "FullyQualifiedName~Pairing|FullyQualifiedName~SecureFileStore"
+
+      - name: Run native IPC security regression tests
+        shell: pwsh
+        run: >
+          ctest --test-dir build/release-avx2 -C Release
+          -R "test_virtual_audio_ipc"
+          --output-on-failure
+
+  dependency-audit:
     name: NuGet Dependency Vulnerability Scan
     runs-on: windows-2022
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup .NET 9 SDK
+      - name: Set up .NET SDK from global.json
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.0.x'
+          dotnet-version-file: global.json
 
       - name: Audit NuGet Package Vulnerabilities
         run: dotnet list package --vulnerable --include-transitive
@@ -35,16 +83,18 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
           languages: c-cpp, csharp
 
-      - name: Setup .NET 9 SDK
+      - name: Set up .NET SDK from global.json
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.0.x'
+          dotnet-version-file: global.json
 
       - name: Set up Ninja
         uses: ashutoshvarma/setup-ninja@v1.1
