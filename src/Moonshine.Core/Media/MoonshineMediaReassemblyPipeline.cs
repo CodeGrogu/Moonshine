@@ -74,9 +74,11 @@ public sealed class MoonshineMediaReassemblyPipeline : IDisposable
         int maxFrames = 16,
         int fecDataShards = 0,
         int fecParityShards = 0,
-        int mtuPayloadSize = MoonshineVideoPacketiser.DefaultMtuPayloadSize)
+        int mtuPayloadSize = MoonshineVideoPacketiser.DefaultMtuPayloadSize,
+        int maxPacketsPerFrame = 512)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(maxFrames, 4, nameof(maxFrames));
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxPacketsPerFrame, 16, nameof(maxPacketsPerFrame));
         _maxFrames = maxFrames;
         _fecDataShards = fecDataShards;
         _fecParityShards = fecParityShards;
@@ -87,7 +89,7 @@ public sealed class MoonshineMediaReassemblyPipeline : IDisposable
         _fecSlotTrackers = new FecSlotTracker[maxFrames];
         for (int i = 0; i < maxFrames; i++)
         {
-            _fecSlotTrackers[i] = new FecSlotTracker(fecDataShards, fecParityShards, mtuPayloadSize);
+            _fecSlotTrackers[i] = new FecSlotTracker(fecDataShards, fecParityShards, mtuPayloadSize, maxPacketsPerFrame);
         }
 
         _nativeJitterHandle = MoonshineNativeMethods.JitterCreate((nuint)maxFrames);
@@ -173,21 +175,42 @@ public sealed class MoonshineMediaReassemblyPipeline : IDisposable
             }
             _lastFrameTimestampUs = packetTimestampUs;
 
-            // Stale check
+            // Global stale check: packets belonging to an already-completed frame are dropped
             if (_lastCompletedFrameIndex > 0 && packet.FrameIndex <= _lastCompletedFrameIndex)
             {
                 _stalePacketsDropped++;
                 return 0;
             }
 
-            // Zero-allocation duplicate check using preallocated slot bitmasks
+            // Slot-specific staleness and recycling check
             int slotIdx = (int)(packet.FrameIndex % (uint)_maxFrames);
-            if (_slotFrameIndices[slotIdx] != packet.FrameIndex)
+            uint currentSlotFrame = _slotFrameIndices[slotIdx];
+
+            if (currentSlotFrame != 0)
             {
+                if (packet.FrameIndex < currentSlotFrame)
+                {
+                    // Late packet belonging to an older, superseded frame that previously used this slot
+                    _stalePacketsDropped++;
+                    return 0;
+                }
+                else if (packet.FrameIndex > currentSlotFrame)
+                {
+                    // Newer frame evicts and reuses this slot
+                    _slotFrameIndices[slotIdx] = packet.FrameIndex;
+                    Array.Clear(_slotBitmasks, slotIdx * 8, 8);
+                    _fecSlotTrackers[slotIdx].Reset(packet.FrameIndex, packet.TotalPackets, totalFrameBytes);
+                }
+            }
+            else
+            {
+                // Initial frame assignment to this slot
                 _slotFrameIndices[slotIdx] = packet.FrameIndex;
                 Array.Clear(_slotBitmasks, slotIdx * 8, 8);
+                _fecSlotTrackers[slotIdx].Reset(packet.FrameIndex, packet.TotalPackets, totalFrameBytes);
             }
 
+            // Zero-allocation duplicate check using preallocated slot bitmask
             if (!isParity && packet.PacketIndex < 512)
             {
                 int wordIdx = packet.PacketIndex / 64;
@@ -211,7 +234,7 @@ public sealed class MoonshineMediaReassemblyPipeline : IDisposable
             int pushRes = MoonshineNativeMethods.JitterPushPacket(_nativeJitterHandle, in packet);
             if (pushRes == 0)
             {
-                // Incomplete (handled within native pre-allocated slot)
+                // Incomplete (tracked within native pre-allocated slot)
                 if (_fecDataShards > 0 && _fecParityShards > 0 && packet.TotalPackets > 0)
                 {
                     TrackFecDataPacket(in packet, fecBlockIndex, totalFrameBytes);
@@ -278,6 +301,7 @@ public sealed class MoonshineMediaReassemblyPipeline : IDisposable
         if (pushRes == 1)
         {
             _framesCompleted++;
+            _lastCompletedFrameIndex = packet.FrameIndex;
             tracker.Clear();
         }
         return pushRes;
@@ -296,20 +320,23 @@ public sealed class MoonshineMediaReassemblyPipeline : IDisposable
             }
             for (int i = 0; i < _fecSlotTrackers.Length; i++)
             {
-                _fecSlotTrackers[i]?.Clear();
+                _fecSlotTrackers[i]?.Dispose();
             }
         }
     }
 
-    private sealed class FecSlotTracker
+    private sealed unsafe class FecSlotTracker : IDisposable
     {
         private readonly int _dataShards;
         private readonly int _parityShards;
         private readonly int _shardSize;
         private readonly int _totalShardsInBlock;
+        private readonly int _maxBlocks;
+        private readonly int _maxData;
+        private readonly int _maxParity;
 
-        private readonly byte[][] _dataBuffers;
-        private readonly byte[][] _parityBuffers;
+        private readonly byte* _pDataBuffers;
+        private readonly byte* _pParityBuffers;
         private readonly bool[] _hasData;
         private readonly bool[] _hasParity;
         private readonly bool[] _reconstructedBlocks;
@@ -317,35 +344,44 @@ public sealed class MoonshineMediaReassemblyPipeline : IDisposable
         private ulong _frameIndex;
         private int _totalPackets;
         private uint _totalFrameBytes;
+        private bool _disposed;
 
         public ulong FrameIndex => _frameIndex;
 
-        public FecSlotTracker(int dataShards, int parityShards, int shardSize)
+        public FecSlotTracker(int dataShards, int parityShards, int shardSize, int maxPacketsPerFrame = 512)
         {
             _dataShards = dataShards;
             _parityShards = parityShards;
             _shardSize = shardSize;
             _totalShardsInBlock = dataShards + parityShards;
 
-            int maxBlocks = 64;
-            int maxData = Math.Max(1, dataShards * maxBlocks);
-            int maxParity = Math.Max(1, parityShards * maxBlocks);
-
-            _dataBuffers = new byte[maxData][];
-            _hasData = new bool[maxData];
-            for (int i = 0; i < maxData; i++)
+            if (dataShards > 0 && parityShards > 0)
             {
-                _dataBuffers[i] = new byte[shardSize];
-            }
+                _maxBlocks = Math.Max(1, (maxPacketsPerFrame + dataShards - 1) / dataShards);
+                _maxData = dataShards * _maxBlocks;
+                _maxParity = parityShards * _maxBlocks;
 
-            _parityBuffers = new byte[maxParity][];
-            _hasParity = new bool[maxParity];
-            for (int i = 0; i < maxParity; i++)
+                nuint dataBytes = (nuint)(_maxData * shardSize);
+                nuint parityBytes = (nuint)(_maxParity * shardSize);
+
+                _pDataBuffers = (byte*)NativeMemory.AllocZeroed(dataBytes);
+                _pParityBuffers = (byte*)NativeMemory.AllocZeroed(parityBytes);
+
+                _hasData = new bool[_maxData];
+                _hasParity = new bool[_maxParity];
+                _reconstructedBlocks = new bool[_maxBlocks];
+            }
+            else
             {
-                _parityBuffers[i] = new byte[shardSize];
+                _maxBlocks = 0;
+                _maxData = 0;
+                _maxParity = 0;
+                _pDataBuffers = null;
+                _pParityBuffers = null;
+                _hasData = Array.Empty<bool>();
+                _hasParity = Array.Empty<bool>();
+                _reconstructedBlocks = Array.Empty<bool>();
             }
-
-            _reconstructedBlocks = new bool[maxBlocks];
         }
 
         public void Reset(ulong frameIndex, int totalPackets, uint totalFrameBytes)
@@ -353,9 +389,9 @@ public sealed class MoonshineMediaReassemblyPipeline : IDisposable
             _frameIndex = frameIndex;
             _totalPackets = totalPackets;
             _totalFrameBytes = totalFrameBytes;
-            Array.Clear(_hasData);
-            Array.Clear(_hasParity);
-            Array.Clear(_reconstructedBlocks);
+            if (_hasData.Length > 0) Array.Clear(_hasData);
+            if (_hasParity.Length > 0) Array.Clear(_hasParity);
+            if (_reconstructedBlocks.Length > 0) Array.Clear(_reconstructedBlocks);
         }
 
         public void Clear()
@@ -363,39 +399,38 @@ public sealed class MoonshineMediaReassemblyPipeline : IDisposable
             _frameIndex = 0;
             _totalPackets = 0;
             _totalFrameBytes = 0;
-            Array.Clear(_hasData);
-            Array.Clear(_hasParity);
-            Array.Clear(_reconstructedBlocks);
+            if (_hasData.Length > 0) Array.Clear(_hasData);
+            if (_hasParity.Length > 0) Array.Clear(_hasParity);
+            if (_reconstructedBlocks.Length > 0) Array.Clear(_reconstructedBlocks);
         }
 
-        public unsafe void AddDataPacket(in MoonshinePacketDesc packet, int blockIndex)
+        public void AddDataPacket(in MoonshinePacketDesc packet, int blockIndex)
         {
+            if (_pDataBuffers == null) return;
             int packetIdx = packet.PacketIndex;
-            if (packetIdx >= 0 && packetIdx < _dataBuffers.Length)
+            if (packetIdx >= 0 && packetIdx < _maxData)
             {
-                fixed (byte* pDst = _dataBuffers[packetIdx])
-                {
-                    NativeMemory.Copy(packet.PayloadPtr, pDst, (nuint)Math.Min((int)packet.PayloadSize, _shardSize));
-                }
+                byte* pDst = _pDataBuffers + (packetIdx * _shardSize);
+                NativeMemory.Copy(packet.PayloadPtr, pDst, (nuint)Math.Min((int)packet.PayloadSize, _shardSize));
                 _hasData[packetIdx] = true;
             }
         }
 
-        public unsafe void AddParityPacket(in MoonshinePacketDesc packet, int blockIndex)
+        public void AddParityPacket(in MoonshinePacketDesc packet, int blockIndex)
         {
+            if (_pParityBuffers == null) return;
             int parityIdx = (int)packet.PacketIndex - _totalPackets;
-            if (parityIdx >= 0 && parityIdx < _parityBuffers.Length)
+            if (parityIdx >= 0 && parityIdx < _maxParity)
             {
-                fixed (byte* pDst = _parityBuffers[parityIdx])
-                {
-                    NativeMemory.Copy(packet.PayloadPtr, pDst, (nuint)Math.Min((int)packet.PayloadSize, _shardSize));
-                }
+                byte* pDst = _pParityBuffers + (parityIdx * _shardSize);
+                NativeMemory.Copy(packet.PayloadPtr, pDst, (nuint)Math.Min((int)packet.PayloadSize, _shardSize));
                 _hasParity[parityIdx] = true;
             }
         }
 
-        public unsafe int ReconstructLostShardsAndPush(IntPtr jitterHandle, int blockIndex, ref ulong recoveredCount)
+        public int ReconstructLostShardsAndPush(IntPtr jitterHandle, int blockIndex, ref ulong recoveredCount)
         {
+            if (_pDataBuffers == null || _pParityBuffers == null) return 0;
             if (blockIndex < 0 || blockIndex >= _reconstructedBlocks.Length || _reconstructedBlocks[blockIndex])
             {
                 return 0;
@@ -424,7 +459,7 @@ public sealed class MoonshineMediaReassemblyPipeline : IDisposable
             int parityAvailable = 0;
             for (int p = 0; p < _parityShards; p++)
             {
-                if (parityStart + p < _hasParity.Length && _hasParity[parityStart + p])
+                if (parityStart + p < _maxParity && _hasParity[parityStart + p])
                 {
                     parityAvailable++;
                 }
@@ -437,85 +472,92 @@ public sealed class MoonshineMediaReassemblyPipeline : IDisposable
             }
 
             int totalShards = _totalShardsInBlock;
-            byte*[] shardPtrs = new byte*[totalShards];
-            GCHandle[] handles = new GCHandle[totalShards];
+            byte** pShards = stackalloc byte*[totalShards];
 
             for (int i = 0; i < _dataShards; i++)
             {
                 int packetIdx = blockStart + i;
-                handles[i] = GCHandle.Alloc(_dataBuffers[packetIdx], GCHandleType.Pinned);
-                shardPtrs[i] = (byte*)handles[i].AddrOfPinnedObject();
+                pShards[i] = _pDataBuffers + (packetIdx * _shardSize);
             }
 
             for (int p = 0; p < _parityShards; p++)
             {
                 int parIdx = parityStart + p;
-                handles[_dataShards + p] = GCHandle.Alloc(_parityBuffers[parIdx], GCHandleType.Pinned);
-                shardPtrs[_dataShards + p] = (byte*)handles[_dataShards + p].AddrOfPinnedObject();
+                pShards[_dataShards + p] = _pParityBuffers + (parIdx * _shardSize);
             }
 
             int lastPushRes = 0;
-            try
+            fixed (int* pErased = missingIndices[..missingCount])
             {
-                fixed (byte** pShards = shardPtrs)
-                fixed (int* pErased = missingIndices[..missingCount])
+                int res = MoonshineNativeMethods.FecReconstructSimd(
+                    pShards,
+                    _dataShards,
+                    _parityShards,
+                    _shardSize,
+                    pErased,
+                    missingCount
+                );
+
+                if (res != 0) return 0;
+            }
+
+            _reconstructedBlocks[blockIndex] = true;
+
+            for (int m = 0; m < missingCount; m++)
+            {
+                int erasedIdx = missingIndices[m];
+                int recoveredPacketIdx = blockStart + erasedIdx;
+                _hasData[recoveredPacketIdx] = true;
+                recoveredCount++;
+
+                ushort sliceSize = (ushort)_shardSize;
+                if (recoveredPacketIdx == _totalPackets - 1 && _totalFrameBytes > 0)
                 {
-                    int res = MoonshineNativeMethods.FecReconstructSimd(
-                        pShards,
-                        _dataShards,
-                        _parityShards,
-                        _shardSize,
-                        pErased,
-                        missingCount
-                    );
-
-                    if (res != 0) return 0;
-                }
-
-                _reconstructedBlocks[blockIndex] = true;
-
-                for (int m = 0; m < missingCount; m++)
-                {
-                    int erasedIdx = missingIndices[m];
-                    int recoveredPacketIdx = blockStart + erasedIdx;
-                    _hasData[recoveredPacketIdx] = true;
-                    recoveredCount++;
-
-                    ushort sliceSize = (ushort)_shardSize;
-                    if (recoveredPacketIdx == _totalPackets - 1 && _totalFrameBytes > 0)
+                    int fullSlicesBytes = (_totalPackets - 1) * _shardSize;
+                    if (_totalFrameBytes > (uint)fullSlicesBytes)
                     {
-                        int fullSlicesBytes = (_totalPackets - 1) * _shardSize;
-                        if (_totalFrameBytes > (uint)fullSlicesBytes)
-                        {
-                            sliceSize = (ushort)(_totalFrameBytes - (uint)fullSlicesBytes);
-                        }
+                        sliceSize = (ushort)(_totalFrameBytes - (uint)fullSlicesBytes);
                     }
-
-                    var recDesc = new MoonshinePacketDesc
-                    {
-                        SequenceNumber = (uint)recoveredPacketIdx,
-                        FrameIndex = (uint)_frameIndex,
-                        PacketIndex = (ushort)recoveredPacketIdx,
-                        TotalPackets = (ushort)_totalPackets,
-                        PayloadSize = sliceSize,
-                        Flags = (byte)((recoveredPacketIdx == 0 ? 0x01 : 0) | (recoveredPacketIdx == _totalPackets - 1 ? 0x02 : 0)),
-                        PayloadPtr = (byte*)handles[erasedIdx].AddrOfPinnedObject(),
-                        BufferSlotIndex = -1,
-                        StreamPacketIndex = 0
-                    };
-
-                    lastPushRes = MoonshineNativeMethods.JitterPushPacket(jitterHandle, in recDesc);
                 }
 
-                return lastPushRes;
-            }
-            finally
-            {
-                for (int i = 0; i < totalShards; i++)
+                var recDesc = new MoonshinePacketDesc
                 {
-                    if (handles[i].IsAllocated) handles[i].Free();
-                }
+                    SequenceNumber = (uint)recoveredPacketIdx,
+                    FrameIndex = (uint)_frameIndex,
+                    PacketIndex = (ushort)recoveredPacketIdx,
+                    TotalPackets = (ushort)_totalPackets,
+                    PayloadSize = sliceSize,
+                    Flags = (byte)((recoveredPacketIdx == 0 ? 0x01 : 0) | (recoveredPacketIdx == _totalPackets - 1 ? 0x02 : 0)),
+                    PayloadPtr = _pDataBuffers + (recoveredPacketIdx * _shardSize),
+                    BufferSlotIndex = -1,
+                    StreamPacketIndex = 0
+                };
+
+                lastPushRes = MoonshineNativeMethods.JitterPushPacket(jitterHandle, in recDesc);
             }
+
+            return lastPushRes;
+        }
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+
+            if (_pDataBuffers != null)
+            {
+                NativeMemory.Free(_pDataBuffers);
+            }
+            if (_pParityBuffers != null)
+            {
+                NativeMemory.Free(_pParityBuffers);
+            }
+            GC.SuppressFinalize(this);
+        }
+
+        ~FecSlotTracker()
+        {
+            Dispose();
         }
     }
 }
