@@ -11,6 +11,7 @@
 #include "moonshine/audio/opus_audio_encoder.hpp"
 #include "moonshine/audio/mic_audio_sink.hpp"
 #include "moonshine/audio/virtual_audio_driver.hpp"
+#include "moonshine/audio/virtual_audio_ipc.hpp"
 #include "moonshine/capture/dxgi_desktop_duplicator.hpp"
 #include "moonshine/capture/wgc_desktop_capture.hpp"
 #include "moonshine/color/hdr_metadata_extractor.hpp"
@@ -615,6 +616,107 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_virtual_audio_driver_disable_mmcss(
     if (!handle) return 0;
     auto* controller = static_cast<audio::VirtualAudioDriverController*>(handle);
     return controller->DisableMmcssScheduling(task_handle) ? 1 : 0;
+}
+
+// ============================================================================
+// Real-Time Shared Memory IPC Bridge APIs
+// ============================================================================
+
+MOONSHINE_API MoonshineAudioIpcBridgeHandle MOONSHINE_CONV moonshine_audio_ipc_bridge_create(
+    int is_host_server,
+    uint32_t sample_rate,
+    uint32_t channels
+) {
+    auto* bridge = new audio::VirtualAudioIpcBridge();
+    if (!bridge->Initialize(is_host_server != 0, sample_rate, channels)) {
+        delete bridge;
+        return nullptr;
+    }
+    return static_cast<MoonshineAudioIpcBridgeHandle>(bridge);
+}
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_audio_ipc_bridge_destroy(
+    MoonshineAudioIpcBridgeHandle handle
+) {
+    if (handle) {
+        auto* bridge = static_cast<audio::VirtualAudioIpcBridge*>(handle);
+        delete bridge;
+    }
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_audio_ipc_bridge_is_connected(
+    MoonshineAudioIpcBridgeHandle handle
+) {
+    if (!handle) return 0;
+    auto* bridge = static_cast<audio::VirtualAudioIpcBridge*>(handle);
+    return bridge->IsConnected() ? 1 : 0;
+}
+
+MOONSHINE_API int64_t MOONSHINE_CONV moonshine_audio_ipc_bridge_write_capture_pcm(
+    MoonshineAudioIpcBridgeHandle handle,
+    const float* pcm_samples,
+    uint32_t sample_count
+) {
+    if (!handle || !pcm_samples) return 0;
+    auto* bridge = static_cast<audio::VirtualAudioIpcBridge*>(handle);
+    return static_cast<int64_t>(bridge->WriteCapturePcm(pcm_samples, sample_count));
+}
+
+MOONSHINE_API int64_t MOONSHINE_CONV moonshine_audio_ipc_bridge_read_render_pcm(
+    MoonshineAudioIpcBridgeHandle handle,
+    float* out_pcm_samples,
+    uint32_t max_samples,
+    int wait_event,
+    uint32_t timeout_ms
+) {
+    if (!handle || !out_pcm_samples) return 0;
+    auto* bridge = static_cast<audio::VirtualAudioIpcBridge*>(handle);
+    return static_cast<int64_t>(bridge->ReadRenderPcm(out_pcm_samples, max_samples, wait_event != 0, timeout_ms));
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_audio_ipc_bridge_wait_render_event(
+    MoonshineAudioIpcBridgeHandle handle,
+    uint32_t timeout_ms
+) {
+    if (!handle) return 0;
+    auto* bridge = static_cast<audio::VirtualAudioIpcBridge*>(handle);
+    return bridge->WaitRenderEvent(timeout_ms) ? 1 : 0;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_audio_ipc_bridge_get_metrics(
+    MoonshineAudioIpcBridgeHandle handle,
+    MoonshineAudioIpcMetricsC* out_metrics
+) {
+    if (!handle || !out_metrics) return 0;
+    auto* bridge = static_cast<audio::VirtualAudioIpcBridge*>(handle);
+    audio::VirtualAudioIpcMetrics metrics = bridge->GetMetrics();
+    out_metrics->render_packets_read = metrics.renderPacketsRead;
+    out_metrics->render_underruns = metrics.renderUnderruns;
+    out_metrics->render_overruns = metrics.renderOverruns;
+    out_metrics->capture_packets_written = metrics.capturePacketsWritten;
+    out_metrics->capture_underruns = metrics.captureUnderruns;
+    out_metrics->capture_overruns = metrics.captureOverruns;
+    out_metrics->sample_rate = metrics.sampleRate;
+    out_metrics->channels = metrics.channels;
+    out_metrics->is_connected = metrics.isConnected;
+    return 1;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_audio_ipc_bridge_enable_mmcss(
+    MoonshineAudioIpcBridgeHandle handle
+) {
+    if (!handle) return 0;
+    auto* bridge = static_cast<audio::VirtualAudioIpcBridge*>(handle);
+    return bridge->EnableMmcss() ? 1 : 0;
+}
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_audio_ipc_bridge_revert_mmcss(
+    MoonshineAudioIpcBridgeHandle handle
+) {
+    if (handle) {
+        auto* bridge = static_cast<audio::VirtualAudioIpcBridge*>(handle);
+        bridge->RevertMmcss();
+    }
 }
 
 // ============================================================================

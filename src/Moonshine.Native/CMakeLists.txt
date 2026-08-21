@@ -9,6 +9,7 @@ add_library(Moonshine.Native SHARED
     src/audio/opus_audio_encoder.cpp
     src/audio/mic_audio_sink.cpp
     src/audio/virtual_audio_driver.cpp
+    src/audio/virtual_audio_ipc.cpp
     src/capture/dxgi_desktop_duplicator.cpp
     src/capture/wgc_desktop_capture.cpp
     src/color/hdr_metadata_extractor.cpp
@@ -23,6 +24,7 @@ add_library(Moonshine.Native SHARED
 target_include_directories(Moonshine.Native
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/drivers/audio>
         $<INSTALL_INTERFACE:include>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src

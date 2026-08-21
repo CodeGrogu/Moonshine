@@ -86,6 +86,12 @@ typedef struct MoonshineSharedAudioRing {
 #define MOONSHINE_AUDIO_IOCTL_GET_BUFFER_PTR 0x8003
 #define MOONSHINE_AUDIO_IOCTL_RESET_BUFFER   0x8004
 
+/* Global Named Object Identifiers for Win32 IPC */
+#define MOONSHINE_SHARED_MEM_RENDER_NAME   L"Global\\Moonshine_Audio_RingBuffer_Render"
+#define MOONSHINE_SHARED_EVENT_RENDER_NAME L"Global\\Moonshine_Audio_Event_Render"
+#define MOONSHINE_SHARED_MEM_CAPTURE_NAME  L"Global\\Moonshine_Audio_RingBuffer_Capture"
+#define MOONSHINE_SHARED_EVENT_CAPTURE_NAME L"Global\\Moonshine_Audio_Event_Capture"
+
 #pragma pack(pop)
 
 #ifdef __cplusplus
