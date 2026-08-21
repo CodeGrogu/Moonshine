@@ -2,107 +2,329 @@
 
 # Moonshine
 
-**Next-Generation, Low-Latency GameStream and Sunshine Client Engine**  
-*Engineered for Windows 11 with C# 13 (.NET 9 Native AOT) and MSVC C++23 / AVX2 / AVX-512 SIMD*
+**A Custom, High-Performance Windows PC Streaming Platform**  
+*Built from the ground up with C# and C++ for low-latency streaming, bidirectional audio, remote host control, and Windows-native device integration.*
 
 [![CI Build](https://github.com/moonshine-stream/moonshine/actions/workflows/ci.yml/badge.svg)](https://github.com/moonshine-stream/moonshine/actions)
 [![Benchmarks](https://github.com/moonshine-stream/moonshine/actions/workflows/benchmarks.yml/badge.svg)](https://github.com/moonshine-stream/moonshine/actions)
 [![Code Quality](https://github.com/moonshine-stream/moonshine/actions/workflows/code-quality.yml/badge.svg)](https://github.com/moonshine-stream/moonshine/actions)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![Platform: Windows 11](https://img.shields.io/badge/Platform-Windows%2011-informational)](#prerequisites)
+[![Platform: Windows 11](https://img.shields.io/badge/Platform-Windows%2011-informational)](#platform-and-scope)
 
 </div>
 
 ---
 
-## Overview
+## What is Moonshine?
 
-**Moonshine** is a ground-up reimagining of the client streaming stack for NVIDIA GameStream and [Sunshine](https://github.com/LizardByte/Sunshine) hosts (originally popularised by the open-source [Moonlight](https://moonlight-stream.org) project).
+**Moonshine is one custom Windows application, written in C# and C++, for high-performance remote PC streaming and interaction.**
 
-While Moonlight remains the cross-platform standard with broad hardware coverage, Moonshine is engineered with a singular platform focus: **delivering low latency, zero managed heap allocations in hot paths, and deterministic frame pacing on Windows 11**.
+A user installs the same application on a PC and selects how that installation operates:
 
-By combining managed orchestration in C# 13 (.NET 9 Native AOT) with a bare-metal C++23 acceleration library, Moonshine eliminates abstraction layers across network socket ingestion, cryptographic handshake validation, lock-free thread synchronisation, SIMD Galois Field FEC recovery, Direct3D video surface presentation, and WASAPI audio rendering.
+- **Host only** - the application exposes the local PC as a Moonshine streaming host.
+- **Client only** - the application connects to another Moonshine host as a client.
+- **Host + Client** - the same application enables both roles simultaneously.
 
-```mermaid
-graph TD
-    subgraph Host ["Sunshine / GameStream Host"]
-        VideoEncoder["Hardware NVENC / AMF / QSV (AV1/HEVC/H.264)"]
-        AudioEncoder["Opus / 7.1 Surround Encoder"]
-        CryptoEngine["AES-128-GCM / RTSP Server"]
-        NetTx["UDP / RTP / FEC Streamer"]
-    end
+These are **runtime roles of one application**, not separate Host and Client products.
 
-    subgraph Moonshine ["Moonshine Client Pipeline"]
-        subgraph NetLayer ["Zero-Allocation Ingestion Plane"]
-            SocketRx["Socket Receiver (NativeMemoryOwner)"]
-            RtpParser["Zero-Alloc RTP/FEC Header Parser (Span<byte>)"]
-            SPSC["Lock-Free Cache-Aligned SPSC Ring Buffer (C++23)"]
-        end
+Moonshine is being designed as its **own platform, protocol, architecture, and implementation**. It is not a reimplementation of Sunshine or Moonlight, and their architecture and protocols are not the foundation of the project. Moonshine may independently use techniques that are technically useful, but its wire formats, media pipeline, device integration, security model, and performance architecture are designed specifically for Moonshine.
 
-        subgraph CoreEngine ["High-Performance Native Engine"]
-            FecSimd["SIMD Reed-Solomon FEC Engine (AVX2 / AVX-512)"]
-            JitterBuffer["Predictive Sub-Millisecond Jitter Buffer"]
-            D3DVideo["Direct3D 11/12 Video Decoder Surface"]
-            WasapiAudio["WASAPI Exclusive Audio Pipeline"]
-        end
+---
 
-        subgraph ProtocolLayer ["Managed Protocol Plane (.NET 9 Native AOT)"]
-            RtspClient["Async Zero-Alloc RTSP State Machine"]
-            Pairing["Cryptographic Pairing (AES-GCM / X.509)"]
-            InputEngine["Raw Input Event Dispatch (Win32 WM_INPUT)"]
-        end
+## Runtime Role Model
 
-        subgraph Presentation ["Direct Hardware Presentation"]
-            DisplayFlip["DXGI Flip Model Swapchain (Allow Tearing / VRR)"]
-            DisplayOut["HDR10 / 240Hz+ Display Output"]
-        end
-    end
+Role selection is an architectural resource boundary, not merely a UI setting.
 
-    NetTx ==> SocketRx
-    SocketRx --> RtpParser --> SPSC
-    SPSC --> FecSimd --> JitterBuffer --> D3DVideo
-    SPSC --> WasapiAudio
-    CryptoEngine <--> Pairing
-    CryptoEngine <--> RtspClient
-    InputEngine ==> NetTx
-    D3DVideo ==> DisplayFlip ==> DisplayOut
+| Mode | Host role | Client role | Host listeners | Client connections | Host devices | Client devices |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Host only** | On | Off | On | Off | On | Off |
+| **Client only** | Off | On | Off | On | Off | On |
+| **Host + Client** | On | On | On | On | On | On |
+
+### Host only
+
+When Host-only mode is selected, the Client role is not initialised.
+
+Client-specific media pipelines, rendering, microphone capture, client-side workers, client-only connections, and other Client resources must not be started.
+
+Host-only mode should expose only the listeners, devices, memory pools, worker threads, and media pipelines required by the Host role.
+
+### Client only
+
+When Client-only mode is selected, the Host role is not initialised.
+
+Host capture, hardware encoders, host-side listeners, host virtual devices, host-only workers, large host media buffers, and other Host resources must not be started.
+
+Client-only mode should therefore behave like a client installation without consuming resources or opening ports that belong to the Host role.
+
+### Host + Client
+
+Host + Client mode enables both role sets in the same process.
+
+The roles remain independently owned and managed so that each can be started, stopped, faulted, and reconfigured without accidentally starting resources belonging to the other role.
+
+> **A disabled role should have no meaningful runtime footprint beyond the configuration required to select or re-enable that role.**
+
+That includes avoiding unnecessary CPU work, memory allocation, GPU contexts, audio devices, network listeners, sockets, timers, background threads, and driver/device initialisation.
+
+---
+
+## What Moonshine Does
+
+### PC Streaming
+
+A Moonshine Host streams its PC environment to a Moonshine Client.
+
+The target media path is:
+
+```text
+Host PC
+  |
+  +-- Desktop / application capture
+  +-- Video encoding
+  +-- Host audio capture
+  |
+  v
+Moonshine transport
+  |
+  v
+Client
+  +-- Video decode + rendering
+  +-- Audio decode + playback
 ```
 
+The system is designed for low latency, high throughput, predictable timing, and efficient resource use rather than general-purpose media processing.
+
+### Bidirectional Audio
+
+Host-to-client audio is only one direction of the audio architecture.
+
+Moonshine also supports the intended reverse path:
+
+```text
+Client microphone
+      |
+      v
+Client capture
+      |
+      v
+Moonshine microphone stream
+      |
+      v
+Host transport / decode
+      |
+      v
+Moonshine virtual microphone
+      |
+      v
+Windows applications
+```
+
+This allows an application running on the Host PC to use the Client PC's physical microphone as a normal Windows microphone source.
+
+### Windows-Native Audio Integration
+
+Moonshine is intended to provide dedicated Windows audio endpoints so that Moonshine's streaming audio can be separated from unrelated application audio and devices.
+
+The planned Host-side device layer includes:
+
+- A Moonshine audio endpoint for host-side streaming audio.
+- A Moonshine virtual microphone for Client microphone input.
+- Efficient audio input/output paths designed specifically for streaming.
+- Low-latency buffering between the Windows audio stack and the Moonshine media pipeline.
+
+A driver is not being introduced merely because it is called a driver. Kernel or device components will exist where a real Windows integration or performance requirement justifies them.
+
+### Remote Host Control
+
+A connected Client is not a passive receiver. It is intended to manage authorised Host settings through a dedicated authenticated control plane.
+
+Examples include:
+
+- Video configuration.
+- Audio configuration.
+- Microphone configuration.
+- Capture configuration.
+- Streaming configuration.
+- Host device selection.
+- Session configuration.
+- Host status and capabilities.
+
+The Client also has its own local configuration. Host settings and Client settings are separate domains and must not be conflated.
+
 ---
 
-## Architectural Comparisons and Design Trade-Offs
+## Application Architecture
 
-The table below provides a technically accurate comparison between the multi-platform architecture of Moonlight and the Windows 11-specialised architecture of Moonshine:
+Moonshine is one application with three major backend planes.
 
-| Architectural Dimension | Moonlight (Established Architecture) | Moonshine (Specialised Architecture) |
-| :--- | :--- | :--- |
-| **Target Scope & Platform** | Universal multi-platform client across desktop, mobile, and embedded platforms | Focused exclusively on Windows 11 (x64) and modern PC gaming hardware |
-| **Language Stack** | C (`moonlight-common-c`) core with Qt / C++ UI and platform glue | Managed C# 13 (.NET 9 Native AOT) orchestration + MSVC C++23 native core |
-| **Video Decoding & Presentation** | Routes video through FFmpeg (`libavcodec`) wrappers (D3D11VA, VAAPI, VideoToolbox) onto Qt/SDL window surfaces | Direct3D 11/12 video decoding surfaces presenting directly into native DXGI flip-model swapchains (`DXGI_SWAP_EFFECT_FLIP_DISCARD`) |
-| **Input Ingestion & Dispatch** | Processes input events through SDL2 event polling loops and periodic timer callbacks | Direct Win32 `WM_INPUT` (Raw Input) handler bypassing SDL message queues for 1000Hz polling |
-| **Buffer & Memory Ingestion** | Uses internal C packet buffers with pool reuse through queue boundaries | Contiguous pinned native memory arenas (`PinnedBufferPool`) with zero-allocation `Span<byte>` parsing |
-| **FEC Galois Field Arithmetic** | Scalar 256-byte exponent/logarithm lookup tables in sequential loops | Multi-tiered SIMD nibble-decomposition kernels: AVX2 (`_mm256_shuffle_epi8`) and AVX-512 (`_mm512_shuffle_epi8`) |
-| **Thread Synchronisation** | Traditional POSIX / C++ standard mutexes and condition variables | Cacheline-padded (`alignas(64)`), lock-free Single-Producer Single-Consumer (SPSC) atomic ring buffers |
-| **Audio Presentation** | Audio rendering through SDL2 callback buffers | Direct WASAPI Exclusive mode rendering, bypassing Windows Audio Engine mixer latency |
+```text
+                         Moonshine Application
+                                  |
+              +-------------------+-------------------+
+              |                   |                   |
+              v                   v                   v
+         Host Role           Client Role          Shared Core
+              |                   |                   |
+              +----------+--------+--------+----------+
+                         |                 |
+                         v                 v
+                    Media Plane       Control Plane
+                         |                 |
+                         +--------+--------+
+                                  |
+                                  v
+                             Device Plane
+```
+
+### Media Plane
+
+The Media Plane carries time-sensitive traffic:
+
+- Video.
+- Host-to-client audio.
+- Client-to-host microphone audio.
+- Other session media required by Moonshine.
+
+It is designed around low latency, bounded processing, explicit ownership, and predictable timing.
+
+### Control Plane
+
+The Control Plane handles state and configuration:
+
+- Host settings.
+- Client settings.
+- Session lifecycle.
+- Capability negotiation.
+- Device configuration.
+- Runtime status.
+- Telemetry.
+
+Control operations are separated from real-time media transport so configuration traffic cannot interfere with media timing.
+
+### Device Plane
+
+The Device Plane integrates Moonshine with Windows APIs, audio devices, GPU interfaces, and other OS-level resources required by the product.
 
 ---
 
-## Component Maturity and Implementation Status
+## Performance Philosophy
 
-In accordance with Rule 8 of [STANDARDS.md](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/STANDARDS.md), Moonshine tracks every subsystem under a four-tier maturity taxonomy (**Prototype**, **Verified**, **Interop-verified**, and **Trusted**):
+**Performance is a core architectural requirement of Moonshine.**
 
-<!-- VERIFIED: 2026-08-21, via `tools/dotnet_sdk/dotnet.exe test Moonshine.sln -c Release --no-build --no-restore --arch x64` on Windows 11 -->
-| Component / Subsystem | Maturity Tier | Verified Capabilities | Current Work in Progress / Scope |
-| :--- | :--- | :--- | :--- |
-| **Protocol & RTP Parsing** | **Verified** | Zero-allocation header parsing (1.13ns mean), sequence unwrapping, SDP negotiation | Dynamic RTCP feedback tuning |
-| **Cryptographic Authentication** | **Verified** | X.509 RSA 2048 cert generation, PBKDF2/SHA-256 derivation, AES-128-GCM, constant-time compare | Windows owner-only DACL storage ([#57](https://github.com/CodeGrogu/Moonshine/issues/57)) |
-| **Native SIMD FEC Engine** | **Verified** | AVX2 nibble shuffle table and AVX-512 single-cycle multiplication; single-parity reconstruction | Cauchy/Vandermonde multi-shard matrix solver ([#54](https://github.com/CodeGrogu/Moonshine/issues/54)) |
-| **Lock-Free Concurrency** | **Verified** | 64-byte cacheline-padded SPSC ring buffer (11.86ns enqueue/dequeue) | Multi-threaded slot return cycle ([#53](https://github.com/CodeGrogu/Moonshine/issues/53)) |
-| **Sub-Millisecond Jitter Buffer** | **Verified** | Pre-allocated 2MB frame slot arena assembly (53.35ns pop latency) | Variable trailing MTU packet stride ([#56](https://github.com/CodeGrogu/Moonshine/issues/56)) |
-| **WASAPI Audio Pipeline** | **Verified** | Stereo, 5.1, and 7.1 surround exclusive-mode rendering with float32/int16 PCM buffers | Device hotplug recovery and drift compensation |
-| **Hardware Video Decoders** | **Prototype** | D3D11/D3D12 device creation, capability probing, and C-ABI export interop | Direct D3D11VA/DXVA2 decode buffer submission |
-| **Hardware Video Encoders** | **Prototype** | Pipeline wrappers, rate-control negotiation, and C-ABI export contracts | Vendor SDK integration (NVENC, AMF, QSV) |
-| **Desktop Frame Capture** | **Verified** | DXGI Output Duplication and Windows.Graphics.Capture ingestion wrappers | Multi-monitor dynamic display switching |
+The goal is high end-to-end performance across the complete path:
+
+```text
+capture
+  -> encode
+  -> packetise
+  -> transport
+  -> buffering / FEC
+  -> decode
+  -> render / playback
+```
+
+and for the reverse microphone path:
+
+```text
+microphone capture
+  -> encode
+  -> transport
+  -> decode
+  -> virtual microphone
+```
+
+The backend should favour:
+
+- C++ for genuinely performance-critical native components.
+- C# for orchestration and application logic where appropriate.
+- Zero or near-zero allocations in latency-sensitive paths.
+- Lock-free or low-contention structures where they provide measurable benefit.
+- Cache-aware data structures.
+- SIMD acceleration where appropriate.
+- Preallocated buffers and memory pools.
+- Explicit ownership and lifetime rules.
+- Hardware acceleration where available.
+- Efficient asynchronous I/O.
+- Deterministic failure and shutdown behaviour.
+
+Performance claims must be measured and reproducible rather than inferred from implementation style.
+
+---
+
+## GPU Support
+
+Moonshine is intended to support a broad range of modern Windows GPUs rather than being tied to one vendor.
+
+The target hardware ecosystems include:
+
+- NVIDIA.
+- AMD.
+- Intel.
+
+Vendor-specific backends may be implemented where the underlying hardware and API require it, while Moonshine exposes a consistent internal media interface.
+
+Hardware capability discovery must reflect the actual machine. A backend must never report operational support when the required GPU, driver, SDK, or device resources do not exist.
+
+Synthetic or simulated backends are for controlled development/testing environments and must never masquerade as production hardware.
+
+---
+
+## Technology Stack
+
+### C#
+
+C# is used for managed application and orchestration responsibilities, including:
+
+- Session management.
+- Protocol orchestration.
+- Configuration.
+- Authentication and trust management.
+- High-level networking.
+- Host/Client coordination.
+- Application-level control logic.
+
+### C++
+
+C++ is used where native execution and predictable performance are important, including:
+
+- High-throughput networking primitives.
+- Packet processing.
+- Buffer management.
+- Lock-free queues.
+- FEC and SIMD processing.
+- Hardware media backends.
+- Direct3D integration.
+- Performance-critical audio components.
+- Native Windows integration.
+
+The C# and C++ boundary should remain explicit and measurable. Neither language is used merely because it is traditionally associated with a particular task. Components belong in the layer that provides the best combination of correctness, maintainability, and measured performance.
+
+---
+
+## Current Backend Focus
+
+The current priority is the **backend**, not the UI.
+
+The immediate engineering focus includes:
+
+1. Runtime Host/Client role selection and strict resource isolation.
+2. Network transport and packet processing.
+3. Buffer ownership and memory management.
+4. Low-latency concurrency.
+5. Video capture, encoding, decoding, and presentation.
+6. Host audio capture and Client playback.
+7. Client microphone capture and Host microphone injection.
+8. FEC and packet-loss recovery.
+9. Jitter buffering and frame assembly.
+10. Hardware capability detection and acceleration.
+11. Windows audio/device integration.
+12. Authentication and session security.
+13. Remote Host configuration and control.
+14. End-to-end performance measurement.
+15. Reliability and fault propagation.
+
+UI work will build on these foundations rather than defining the backend architecture.
 
 ---
 
@@ -110,54 +332,73 @@ In accordance with Rule 8 of [STANDARDS.md](file:///c:/Users/Jaden/Documents/ant
 
 Moonshine is organised as a modular solution across managed and native components:
 
-- [`src/Moonshine.Native`](./src/Moonshine.Native): Modern C++23 native acceleration library containing SIMD Galois Field FEC kernels, lock-free SPSC queues, predictive jitter buffers, and Direct3D decoder wrappers.
-- [`src/Moonshine.Protocol`](./src/Moonshine.Protocol): High-throughput binary protocol definitions for RTSP, SDP, RTP headers, FEC frames, encrypted control messages, and raw input packets.
-- [`src/Moonshine.Interop`](./src/Moonshine.Interop): Zero-overhead `[LibraryImport]` source-generated P/Invoke bindings with 1:1 blittable memory layouts.
-- [`src/Moonshine.Core`](./src/Moonshine.Core): Managed client engine managing mDNS/SSDP discovery, cryptographic X.509/AES-GCM pairing, RTSP state machine orchestration, and UDP network ingestion.
-- [`src/Moonshine.Host`](./src/Moonshine.Host): Host streaming pipeline components (WASAPI loopback capture, desktop duplication, and multi-vendor hardware encoder pipelines).
-- [`src/Moonshine.Client`](./src/Moonshine.Client): Client orchestrator, display presenter, and input capture system.
-- [`src/Moonshine.Benchmarks`](./src/Moonshine.Benchmarks): Automated BenchmarkDotNet suite tracking micro-architectural throughput, latency, and memory allocations.
+- [`src/Moonshine.Native`](./src/Moonshine.Native): C++ native engine containing performance-critical networking, memory, concurrency, SIMD, media, and Windows integration components.
+- [`src/Moonshine.Protocol`](./src/Moonshine.Protocol): Moonshine-native protocol definitions, packet formats, stream metadata, capability negotiation, and control messages.
+- [`src/Moonshine.Interop`](./src/Moonshine.Interop): C#/.NET to native C++ interoperability layer.
+- [`src/Moonshine.Core`](./src/Moonshine.Core): Shared managed application and session logic, configuration, security, orchestration, and networking coordination.
+- [`src/Moonshine.Host`](./src/Moonshine.Host): Host-role capture, encoding, audio, microphone, streaming, device, and remote-control components.
+- [`src/Moonshine.Client`](./src/Moonshine.Client): Client-role receiving, decoding, rendering, microphone capture, input, and host-control components.
+- [`src/Moonshine.Benchmarks`](./src/Moonshine.Benchmarks): Performance and micro-benchmark suite.
+
+The exact project boundaries may evolve as the backend matures, but role, media, control, device, and application concerns remain deliberate architectural boundaries.
 
 ---
 
-## Prerequisites and Build Instructions
+## Platform and Scope
 
-### Prerequisites
-- **Operating System**: Microsoft Windows 11 version 21H2 (build 22000) or later, x64
-- **C++ Compiler**: MSVC v143 (Visual Studio 2022 Build Tools with C++23 support)
-- **Build Tools**: CMake 3.25+ and Ninja
-- **.NET SDK**: .NET 9.0 SDK (version 9.0.317 pinned via [`global.json`](./global.json))
+Moonshine is initially focused on **Windows 11 x64 PCs** because Windows provides the native graphics, audio, input, device, and driver interfaces required for the project's performance goals.
 
-### 1. Verify Toolchain Environment
-```powershell
-# Probe toolchain and auto-initialise developer environment
-powershell -ExecutionPolicy Bypass -File .\scripts\verify_environment.ps1
-```
+The platform focus allows Moonshine to optimise deeply for:
 
-### 2. Build and Verify Entire Codebase
-```powershell
-# Run canonical verification pipeline (MSVC C++23 build, 16 CTests, .NET 9 build, 238 xUnit tests)
-powershell -ExecutionPolicy Bypass -File .\scripts\verify_codebase.ps1
-```
+- Direct3D.
+- DXGI.
+- Windows audio APIs.
+- Windows device integration.
+- Win32 input.
+- Modern x64 CPUs.
+- Modern NVIDIA, AMD, and Intel GPUs.
 
-### 3. Run In-Process Micro-Benchmarks
-```powershell
-# Run the complete BenchmarkDotNet micro-benchmark suite
-.\tools\dotnet_sdk\dotnet.exe run --project src/Moonshine.Benchmarks/Moonshine.Benchmarks.csproj -c Release --no-restore -- --job short -i -f "*"
-```
+Cross-platform support is not currently a primary goal. The project will prioritise a highly capable Windows implementation before considering other platforms.
 
 ---
 
-## Performance Manifesto
+## Engineering Principles
 
-In Moonshine, low latency is an architectural requirement enforced at build and test time:
+### One application, explicit roles
 
-1. **Zero Heap Allocation in Hot Paths**: Video and audio streaming paths must never allocate managed objects, capture closures, or perform boxing operations.
-2. **Lock-Free Concurrency**: Packet processing threads use atomic acquire/release semantics over cacheline-padded structures rather than blocking mutexes.
-3. **Data-Oriented Cache Alignment**: All ring buffers, frame descriptors, and packet queues are aligned to CPU cachelines (`alignas(64)` / `Pack = 64`) to prevent false sharing across CPU cores.
-4. **Hardware SIMD Vectorisation**: Galois Field arithmetic, checksum verification, and memory transformation utilize AVX2 and AVX-512 instructions with automatic CPUID capability detection.
+Host and Client are runtime roles of the same application. Disabled roles remain inactive and resource-isolated.
 
-See [PERFORMANCE.md](./PERFORMANCE.md) for latency profiling methodologies and complete benchmark data.
+### Custom by design
+
+Moonshine defines its own architecture and protocol. Compatibility with other streaming platforms is not a prerequisite for correctness.
+
+### No fake capabilities
+
+A component must not report functionality that it cannot actually provide.
+
+### No pretend implementations
+
+Production functionality must be implemented with real OS, hardware, networking, or algorithmic behaviour. Simulated/stub implementations are explicitly isolated to development and test contexts and must never be exposed as operational production capabilities.
+
+### Performance must be measurable
+
+Claims about latency, throughput, allocations, or hardware acceleration must be supported by reproducible measurements.
+
+### Hot paths stay simple
+
+Real-time media processing should avoid unnecessary abstraction, allocation, locking, copying, and scheduling.
+
+### Explicit ownership
+
+Buffers, packets, frames, audio samples, and native resources must have clearly defined ownership and lifetime rules.
+
+### Failure must be visible
+
+Network, hardware, device, and pipeline failures must propagate to the appropriate subsystem instead of being silently swallowed or represented as successful operation.
+
+### Security is part of the architecture
+
+Authentication, trust, authorisation, secure configuration, and control-plane permissions are designed into the system rather than added after the media pipeline is complete.
 
 ---
 
@@ -175,4 +416,4 @@ See [PERFORMANCE.md](./PERFORMANCE.md) for latency profiling methodologies and c
 
 ## Licence
 
-Moonshine is licensed under the [GNU General Public License v3.0 (GPLv3)](./LICENSE), preserving compatibility with the open-source Moonlight and Sunshine streaming ecosystem.
+Moonshine is licensed under the [GNU General Public License v3.0 (GPLv3)](./LICENSE).
