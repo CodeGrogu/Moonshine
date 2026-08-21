@@ -62,7 +62,7 @@ public sealed unsafe class NativeBufferLease : IDisposable
 /// <summary>
 /// High-performance unmanaged memory owner wrapping native memory allocations
 /// to provide zero-allocation IMemoryOwner and Span/Memory instances with strict lease/release lifetime semantics.
-/// Guarantees deferred memory deallocation until all active leases have completed.
+/// Guarantees race-free deferred memory deallocation until all active leases have completed.
 /// </summary>
 public sealed unsafe class NativeMemoryOwner : MemoryManager<byte>
 {
@@ -106,12 +106,17 @@ public sealed unsafe class NativeMemoryOwner : MemoryManager<byte>
 
     /// <summary>
     /// Acquires an explicit lease over this unmanaged memory slab.
-    /// Fails closed if the owner is disposed.
+    /// Atomically increments active leases first and checks disposal state to prevent races with concurrent Dispose().
     /// </summary>
     public NativeBufferLease Lease()
     {
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         Interlocked.Increment(ref _activeLeases);
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            ReleaseLease();
+            throw new ObjectDisposedException(GetType().FullName);
+        }
+
         return new NativeBufferLease(this, _pointer, _length);
     }
 

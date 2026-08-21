@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using FluentAssertions;
 using Xunit;
 
@@ -107,5 +108,117 @@ public class NativeMemoryOwnerTests
         // Accessing disposed lease fails closed
         Action postDisposeAccess = () => { var _ = lease.Span[0]; };
         postDisposeAccess.Should().Throw<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public void NativeMemoryOwner_InvalidArguments_ThrowsAppropriateExceptions()
+    {
+        Action zeroLength = () => { using var _ = new NativeMemoryOwner(0); };
+        zeroLength.Should().Throw<ArgumentOutOfRangeException>();
+
+        Action negativeLength = () => { using var _ = new NativeMemoryOwner(-5); };
+        negativeLength.Should().Throw<ArgumentOutOfRangeException>();
+
+        unsafe
+        {
+            Action nullPointer = () => { using var _ = new NativeMemoryOwner(null, 100); };
+            nullPointer.Should().Throw<ArgumentNullException>();
+        }
+    }
+
+    [Fact]
+    public unsafe void NativeMemoryOwner_NonOwningAllocation_DoesNotFreeExternalMemory()
+    {
+        byte* rawBuffer = (byte*)NativeMemory.Alloc(64);
+        rawBuffer[0] = 0x11;
+        rawBuffer[63] = 0x22;
+
+        try
+        {
+            var nonOwner = new NativeMemoryOwner(rawBuffer, 64, ownsAllocation: false);
+            nonOwner.OwnsAllocation.Should().BeFalse();
+
+            NativeBufferLease lease = nonOwner.Lease();
+            lease.Span[0].Should().Be(0x11);
+            lease.Span[63].Should().Be(0x22);
+
+            ((IDisposable)nonOwner).Dispose();
+            lease.Dispose();
+
+            // External memory remains valid because owner did not own it
+            rawBuffer[0].Should().Be(0x11);
+            rawBuffer[63].Should().Be(0x22);
+        }
+        finally
+        {
+            NativeMemory.Free(rawBuffer);
+        }
+    }
+
+    [Fact]
+    public async Task NativeMemoryOwner_ConcurrentLeaseAndDispose_GuardsMemoryIntegrity()
+    {
+        for (int iteration = 0; iteration < 20; iteration++)
+        {
+            var owner = new NativeMemoryOwner(1024);
+            const int threadCount = 8;
+            var tasks = new Task[threadCount + 1];
+            using var barrier = new Barrier(threadCount + 1);
+
+            // Worker threads acquiring, modifying, and releasing leases
+            for (int t = 0; t < threadCount; t++)
+            {
+                tasks[t] = Task.Run(() =>
+                {
+                    barrier.SignalAndWait();
+                    for (int i = 0; i < 50; i++)
+                    {
+                        try
+                        {
+                            using NativeBufferLease lease = owner.Lease();
+                            lease.Span[0] = (byte)(i & 0xFF);
+                            lease.Span[1023] = (byte)((i * 2) & 0xFF);
+                        }
+                        catch (ObjectDisposedException)
+                        {
+                            // Expected once owner is disposed
+                            break;
+                        }
+                    }
+                });
+            }
+
+            // Dedicated thread triggering disposal concurrently
+            tasks[threadCount] = Task.Run(() =>
+            {
+                barrier.SignalAndWait();
+                Thread.Sleep(1);
+                ((IDisposable)owner).Dispose();
+            });
+
+            await Task.WhenAll(tasks);
+            owner.IsDisposed.Should().BeTrue();
+            owner.ActiveLeases.Should().Be(0);
+        }
+    }
+
+    [Fact]
+    public async Task NativeMemoryOwner_ConcurrentDisposeCalls_IsIdempotent()
+    {
+        var owner = new NativeMemoryOwner(512);
+        const int threadCount = 16;
+        var tasks = new Task[threadCount];
+
+        for (int t = 0; t < threadCount; t++)
+        {
+            tasks[t] = Task.Run(() =>
+            {
+                ((IDisposable)owner).Dispose();
+            });
+        }
+
+        await Task.WhenAll(tasks);
+        owner.IsDisposed.Should().BeTrue();
+        owner.ActiveLeases.Should().Be(0);
     }
 }
