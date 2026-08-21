@@ -242,6 +242,18 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_video_submit_frame(MoonshineDecoderHa
     return dec->SubmitFrame(*frame);
 }
 
+MOONSHINE_API void* MOONSHINE_CONV moonshine_video_get_texture(MoonshineDecoderHandle handle) {
+    if (!handle) return nullptr;
+    auto* dec = static_cast<video::IVideoDecoder*>(handle);
+    return dec->GetTextureHandle();
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_video_reset(MoonshineDecoderHandle handle, uint32_t width, uint32_t height) {
+    if (!handle) return -1;
+    auto* dec = static_cast<video::IVideoDecoder*>(handle);
+    return dec->Reset(width, height);
+}
+
 // ============================================================================
 // Low-Latency DXGI Flip Model Swapchain APIs
 // ============================================================================

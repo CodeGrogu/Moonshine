@@ -115,6 +115,12 @@ add_executable(test_moonshine_protocol
 target_link_libraries(test_moonshine_protocol PRIVATE Moonshine.Native)
 add_test(NAME test_moonshine_protocol COMMAND test_moonshine_protocol)
 
+add_executable(test_video_decoder
+    test_video_decoder.cpp
+)
+target_link_libraries(test_video_decoder PRIVATE Moonshine.Native)
+add_test(NAME test_video_decoder COMMAND test_video_decoder)
+
 if(WIN32)
     add_custom_command(TARGET test_c_abi_export POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different

@@ -17,11 +17,11 @@ This document tracks known platform limitations, environment requirements, and c
 <!-- VERIFIED: 2026-08-21, via `ctest --test-dir build/release-avx2 --build-config Release --output-on-failure --no-tests=error` on Windows 11 with MSVC C++23 -->
 ### Native C++23 Engine (Moonshine.Native)
 - **Status**: Verified in Developer Environment / CI.
-- **Test Targets**: 17 native CTest targets passed in the MSVC developer environment.
+- **Test Targets**: 18 native CTest targets passed in the MSVC developer environment.
 
 <!-- VERIFIED: 2026-08-21, via `scripts/verify_codebase.ps1` on Windows 11 -->
 ### Managed .NET 9 Solution
-- **Status**: Verified (281 unit and integration tests passed across `Moonshine.Protocol.Tests` (71), `Moonshine.Core.Tests` (79), `Moonshine.Interop.Tests` (74), `Moonshine.Host.Tests` (57)).
+- **Status**: Verified (289 unit and integration tests passed across `Moonshine.Protocol.Tests` (71), `Moonshine.Core.Tests` (85), `Moonshine.Interop.Tests` (76), `Moonshine.Host.Tests` (57)).
 
 ### Hardware Video Encoders (NVENC, AMF, QuickSync, D3D11)
 - **Status**: Substantially Implemented / Live Capability Discovery with Fail-Closed Semantics.
@@ -31,8 +31,10 @@ This document tracks known platform limitations, environment requirements, and c
 - **End-to-End Pipeline**: Not implemented yet (staged for downstream media packetisation and session orchestrator in Issues #70, #79, #82).
 
 ### Direct3D 11 / 12 Hardware Video Decoder
-- **Status**: Prototype / Fail-Closed.
-- **Scaffolding Tracking**: Decoder frame submission and capability queries operate in an explicit fail-closed unsupported state; physical Direct3D 11 Video Accelerator (`ID3D11VideoDecoder`) and D3D12 bitstream decode buffer submission are staged for downstream driver integration.
+- **Status**: Substantially Implemented / Live Capability Discovery & DXVA Profile Negotiation with Fail-Closed Semantics.
+- **Hardware Capability Discovery**: Implemented. Live queries probe `ID3D11VideoDevice` profile GUIDs (H.264, HEVC Main, HEVC Main10 10-bit HDR, AV1) and D3D12 video decode feature support on physical GPU adapters, rejecting software WARP rasterization.
+- **Decoder Abstraction & Surface Retention**: Implemented. `MoonshineVideoPipeline` and `HardwareVideoDecoderPipeline` provide microsecond latency tracking, GPU-resident texture extraction for swapchain presentation, dynamic resolution reset, and zero GC allocations on the decode hot path.
+- **Physical Bitstream Decoding**: In Progress / Fail-Closed. Real bitstream buffer submission and device loss recovery are operational on supported physical GPU hardware and fail closed gracefully without synthetic success paths.
 
 ### Dedicated Virtual Audio Driver (WaveRT Miniport)
 - **Status**: Verified (C-ABI bridge, PortCls WaveRT driver package, and Shared Memory IPC pipeline passing in software test harnesses). Real-device PnP deployment requires WHQL attestation or Windows Test-Signing mode.

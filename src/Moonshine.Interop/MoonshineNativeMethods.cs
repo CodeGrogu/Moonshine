@@ -184,6 +184,14 @@ public static unsafe partial class MoonshineNativeMethods
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int VideoSubmitFrame(IntPtr handle, in MoonshineFrameDesc frame);
 
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_video_get_texture")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial IntPtr VideoGetTexture(IntPtr handle);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_video_reset")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int VideoReset(IntPtr handle, uint width, uint height);
+
     // ========================================================================
     // Low-Latency DXGI Flip Model Swapchain APIs
     // ========================================================================

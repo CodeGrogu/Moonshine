@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Moonshine.Interop;
 
 namespace Moonshine.Core.Video;
@@ -10,7 +11,8 @@ public enum HardwareDecoderApi
 
 public sealed record VideoPipelineMetrics(
     ulong FramesSubmitted,
-    ulong DecodeErrors
+    ulong DecodeErrors,
+    double AverageDecodeLatencyMicroseconds
 );
 
 /// <summary>
@@ -23,17 +25,37 @@ public sealed class MoonshineVideoPipeline : IDisposable
     private bool _disposed;
     private ulong _framesSubmitted;
     private ulong _decodeErrors;
+    private ulong _totalDecodeTimeQpc;
+    private uint _width;
+    private uint _height;
 
     public IntPtr Handle => _decoderHandle;
     public HardwareDecoderApi DecoderApi { get; }
-    public uint Width { get; }
-    public uint Height { get; }
+    public uint Width => Volatile.Read(ref _width);
+    public uint Height => Volatile.Read(ref _height);
     public uint CodecId { get; }
+    public bool IsActive => _decoderHandle != IntPtr.Zero && !_disposed;
 
-    public VideoPipelineMetrics Metrics => new(
-        Volatile.Read(ref _framesSubmitted),
-        Volatile.Read(ref _decodeErrors)
-    );
+    public VideoPipelineMetrics Metrics
+    {
+        get
+        {
+            ulong frames = Volatile.Read(ref _framesSubmitted);
+            ulong totalQpc = Volatile.Read(ref _totalDecodeTimeQpc);
+            double avgLatencyUs = frames > 0 ? (double)totalQpc / frames * (1_000_000.0 / Stopwatch.Frequency) : 0.0;
+            return new(frames, Volatile.Read(ref _decodeErrors), avgLatencyUs);
+        }
+    }
+
+    public double AverageDecodeLatencyMicroseconds
+    {
+        get
+        {
+            ulong frames = Volatile.Read(ref _framesSubmitted);
+            ulong totalQpc = Volatile.Read(ref _totalDecodeTimeQpc);
+            return frames > 0 ? (double)totalQpc / frames * (1_000_000.0 / Stopwatch.Frequency) : 0.0;
+        }
+    }
 
     public MoonshineVideoPipeline(
         IntPtr hwnd,
@@ -45,8 +67,8 @@ public sealed class MoonshineVideoPipeline : IDisposable
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
 
-        Width = width;
-        Height = height;
+        _width = width;
+        _height = height;
         CodecId = codecId;
         DecoderApi = api;
 
@@ -70,22 +92,61 @@ public sealed class MoonshineVideoPipeline : IDisposable
     }
 
     /// <summary>
-    /// Submits a reconstructed frame directly into the hardware decoder pipeline.
+    /// Submits a reconstructed frame directly into the hardware decoder pipeline with zero GC allocations.
     /// </summary>
     public unsafe bool SubmitFrame(in MoonshineFrameDesc frame)
     {
+        long startQpc = Stopwatch.GetTimestamp();
+
         lock (_lock)
         {
             if (_disposed || _decoderHandle == IntPtr.Zero) return false;
 
-            Interlocked.Increment(ref _framesSubmitted);
             int res = MoonshineNativeMethods.VideoSubmitFrame(_decoderHandle, in frame);
             if (res != 0)
             {
                 Interlocked.Increment(ref _decodeErrors);
                 return false;
             }
+
+            long elapsed = Stopwatch.GetTimestamp() - startQpc;
+            Interlocked.Increment(ref _framesSubmitted);
+            Interlocked.Add(ref _totalDecodeTimeQpc, (ulong)elapsed);
             return true;
+        }
+    }
+
+    /// <summary>
+    /// Gets the GPU-resident decoded texture handle for zero-copy presentation.
+    /// </summary>
+    public IntPtr GetDecodedTexture()
+    {
+        lock (_lock)
+        {
+            if (_disposed || _decoderHandle == IntPtr.Zero) return IntPtr.Zero;
+            return MoonshineNativeMethods.VideoGetTexture(_decoderHandle);
+        }
+    }
+
+    /// <summary>
+    /// Dynamically reconfigures the decoder resolution without tearing down the pipeline.
+    /// </summary>
+    public bool Reset(uint newWidth, uint newHeight)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(newWidth);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(newHeight);
+
+        lock (_lock)
+        {
+            if (_disposed || _decoderHandle == IntPtr.Zero) return false;
+            int res = MoonshineNativeMethods.VideoReset(_decoderHandle, newWidth, newHeight);
+            if (res == 0)
+            {
+                Volatile.Write(ref _width, newWidth);
+                Volatile.Write(ref _height, newHeight);
+                return true;
+            }
+            return false;
         }
     }
 
