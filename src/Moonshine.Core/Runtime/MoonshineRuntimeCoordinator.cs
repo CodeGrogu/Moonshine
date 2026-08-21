@@ -1,3 +1,5 @@
+using Moonshine.Core.Network;
+
 namespace Moonshine.Core.Runtime;
 
 /// <summary>
@@ -9,6 +11,7 @@ public sealed class MoonshineRuntimeCoordinator : IRuntimeCoordinator
 {
     private readonly Func<IMoonshineHostService>? _hostServiceFactory;
     private readonly Func<IMoonshineClientService>? _clientServiceFactory;
+    private readonly HostEndpointConfig _hostEndpointConfig;
     private IMoonshineHostService? _hostService;
     private IMoonshineClientService? _clientService;
 
@@ -25,12 +28,15 @@ public sealed class MoonshineRuntimeCoordinator : IRuntimeCoordinator
     /// </summary>
     /// <param name="hostServiceFactory">Optional factory for constructing the host service.</param>
     /// <param name="clientServiceFactory">Optional factory for constructing the client service.</param>
+    /// <param name="hostEndpointConfig">Optional endpoint configuration for host network listeners.</param>
     public MoonshineRuntimeCoordinator(
         Func<IMoonshineHostService>? hostServiceFactory = null,
-        Func<IMoonshineClientService>? clientServiceFactory = null)
+        Func<IMoonshineClientService>? clientServiceFactory = null,
+        HostEndpointConfig? hostEndpointConfig = null)
     {
         _hostServiceFactory = hostServiceFactory;
         _clientServiceFactory = clientServiceFactory;
+        _hostEndpointConfig = hostEndpointConfig ?? HostEndpointConfig.Default;
     }
 
     public ApplicationRole ActiveRole
@@ -264,8 +270,8 @@ public sealed class MoonshineRuntimeCoordinator : IRuntimeCoordinator
 
         lock (_lock)
         {
-            SetStateNoLock(RuntimeState.Stopped, "All capabilities stopped cleanly.");
-            return new RoleTransitionResult(true, previousRole, ApplicationRole.None, RuntimeState.Stopped, "Runtime stopped successfully.");
+            SetStateNoLock(RuntimeState.Stopped, "All runtime capabilities stopped successfully.");
+            return new RoleTransitionResult(true, previousRole, ApplicationRole.None, _state, "Runtime stopped successfully.");
         }
     }
 
@@ -279,16 +285,31 @@ public sealed class MoonshineRuntimeCoordinator : IRuntimeCoordinator
 
         if (currentRole == ApplicationRole.None)
         {
-            return new RoleTransitionResult(true, ApplicationRole.None, ApplicationRole.None, RuntimeState.Stopped, "No active role to restart.");
+            return new RoleTransitionResult(true, ApplicationRole.None, ApplicationRole.None, RuntimeState.Stopped, "Runtime is not running.");
         }
 
-        await StopAsync(cancellationToken).ConfigureAwait(false);
+        var stopResult = await StopAsync(cancellationToken).ConfigureAwait(false);
+        if (!stopResult.Success)
+        {
+            return stopResult;
+        }
+
         return await StartAsync(currentRole, cancellationToken).ConfigureAwait(false);
     }
 
-    public ValueTask<RoleTransitionResult> TransitionToRoleAsync(ApplicationRole targetRole, CancellationToken cancellationToken = default)
+    public async ValueTask<RoleTransitionResult> TransitionToRoleAsync(ApplicationRole targetRole, CancellationToken cancellationToken = default)
     {
-        return StartAsync(targetRole, cancellationToken);
+        lock (_lock)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+
+            if (targetRole == _activeRole)
+            {
+                return new RoleTransitionResult(true, _activeRole, targetRole, _state, $"Already in target role: {targetRole.FormatRole()}");
+            }
+        }
+
+        return await StartAsync(targetRole, cancellationToken).ConfigureAwait(false);
     }
 
     public RuntimeStatus GetStatus()
@@ -301,14 +322,16 @@ public sealed class MoonshineRuntimeCoordinator : IRuntimeCoordinator
                 ActiveSessionCount: 0,
                 ActiveListenerCount: 0,
                 ActiveWorkerCount: 0,
-                ActiveBufferCount: 0);
+                ActiveBufferCount: 0,
+                LastError: null);
 
             ClientStatus clientStatus = _clientService?.GetStatus() ?? new ClientStatus(
                 State: RuntimeState.Stopped,
                 IsRunning: false,
                 IsConnected: false,
                 ActiveWorkerCount: 0,
-                ActiveBufferCount: 0);
+                ActiveBufferCount: 0,
+                LastError: null);
 
             return new RuntimeStatus(
                 ActiveRole: _activeRole,
@@ -326,7 +349,7 @@ public sealed class MoonshineRuntimeCoordinator : IRuntimeCoordinator
             return _hostServiceFactory();
         }
 
-        return new MoonshineDefaultHostService();
+        return new MoonshineDefaultHostService(endpointConfig: _hostEndpointConfig);
     }
 
     private IMoonshineClientService CreateClientServiceNoLock()
@@ -402,18 +425,28 @@ public sealed class MoonshineRuntimeCoordinator : IRuntimeCoordinator
 
 /// <summary>
 /// Default host role service used when no external host factory is supplied to the coordinator.
+/// Coordinates host network listeners and guarantees complete teardown when disabled.
 /// </summary>
 internal sealed class MoonshineDefaultHostService : IMoonshineHostService
 {
+    private readonly IMoonshineHostNetworkManager _networkManager;
+    private readonly HostEndpointConfig _endpointConfig;
     private readonly Lock _lock = new();
     private RuntimeState _state = RuntimeState.Stopped;
     private int _activeSessions;
-    private int _activeListeners;
     private int _activeWorkers;
     private int _activeBuffers;
     private string? _lastError;
     private CancellationTokenSource? _workerCts;
     private bool _disposed;
+
+    public MoonshineDefaultHostService(
+        IMoonshineHostNetworkManager? networkManager = null,
+        HostEndpointConfig? endpointConfig = null)
+    {
+        _networkManager = networkManager ?? new MoonshineHostNetworkManager();
+        _endpointConfig = endpointConfig ?? HostEndpointConfig.Default;
+    }
 
     public ApplicationRole Role => ApplicationRole.Host;
 
@@ -433,12 +466,12 @@ internal sealed class MoonshineDefaultHostService : IMoonshineHostService
         {
             lock (_lock)
             {
-                return _activeSessions > 0 || _activeListeners > 0 || _activeWorkers > 0 || _activeBuffers > 0;
+                return _activeSessions > 0 || _networkManager.ActiveListenerCount > 0 || _activeWorkers > 0 || _activeBuffers > 0;
             }
         }
     }
 
-    public ValueTask StartAsync(CancellationToken cancellationToken = default)
+    public async ValueTask StartAsync(CancellationToken cancellationToken = default)
     {
         lock (_lock)
         {
@@ -446,7 +479,7 @@ internal sealed class MoonshineDefaultHostService : IMoonshineHostService
 
             if (_state is RuntimeState.Running or RuntimeState.Starting)
             {
-                return ValueTask.CompletedTask;
+                return;
             }
 
             _state = RuntimeState.Starting;
@@ -457,6 +490,8 @@ internal sealed class MoonshineDefaultHostService : IMoonshineHostService
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            await _networkManager.StartListenersAsync(_endpointConfig, cancellationToken).ConfigureAwait(false);
+
             lock (_lock)
             {
                 _workerCts = new CancellationTokenSource();
@@ -464,8 +499,6 @@ internal sealed class MoonshineDefaultHostService : IMoonshineHostService
                 _state = RuntimeState.Unsupported;
                 _lastError = "Host media transport and session control are not yet implemented.";
             }
-
-            return ValueTask.CompletedTask;
         }
         // ALLOWED_EXCEPTION: Re-throws after capturing error state and cleaning up resources.
         catch (Exception ex)
@@ -474,27 +507,30 @@ internal sealed class MoonshineDefaultHostService : IMoonshineHostService
             {
                 _state = RuntimeState.Faulted;
                 _lastError = ex.Message;
-                CleanupResourcesNoLock();
             }
+            await CleanupResourcesAsync().ConfigureAwait(false);
             throw;
         }
     }
 
-    public ValueTask StopAsync(CancellationToken cancellationToken = default)
+    public async ValueTask StopAsync(CancellationToken cancellationToken = default)
     {
         lock (_lock)
         {
             if (_state == RuntimeState.Stopped)
             {
-                return ValueTask.CompletedTask;
+                return;
             }
 
             _state = RuntimeState.Stopping;
-            CleanupResourcesNoLock();
-            _state = RuntimeState.Stopped;
         }
 
-        return ValueTask.CompletedTask;
+        await CleanupResourcesAsync().ConfigureAwait(false);
+
+        lock (_lock)
+        {
+            _state = RuntimeState.Stopped;
+        }
     }
 
     public async ValueTask RestartAsync(CancellationToken cancellationToken = default)
@@ -511,24 +547,25 @@ internal sealed class MoonshineDefaultHostService : IMoonshineHostService
                 State: _state,
                 IsRunning: _state == RuntimeState.Running,
                 ActiveSessionCount: _activeSessions,
-                ActiveListenerCount: _activeListeners,
+                ActiveListenerCount: _networkManager.ActiveListenerCount,
                 ActiveWorkerCount: _activeWorkers,
                 ActiveBufferCount: _activeBuffers,
                 LastError: _lastError);
         }
     }
 
-    private void CleanupResourcesNoLock()
+    private async ValueTask CleanupResourcesAsync()
     {
         if (_workerCts is not null)
         {
-            _workerCts.Cancel();
+            await _workerCts.CancelAsync().ConfigureAwait(false);
             _workerCts.Dispose();
             _workerCts = null;
         }
 
+        await _networkManager.StopListenersAsync().ConfigureAwait(false);
+
         _activeSessions = 0;
-        _activeListeners = 0;
         _activeWorkers = 0;
         _activeBuffers = 0;
     }
@@ -540,7 +577,13 @@ internal sealed class MoonshineDefaultHostService : IMoonshineHostService
             if (_disposed) return;
             _disposed = true;
             _state = RuntimeState.Stopping;
-            CleanupResourcesNoLock();
+        }
+
+        CleanupResourcesAsync().AsTask().GetAwaiter().GetResult();
+        _networkManager.Dispose();
+
+        lock (_lock)
+        {
             _state = RuntimeState.Stopped;
         }
     }
