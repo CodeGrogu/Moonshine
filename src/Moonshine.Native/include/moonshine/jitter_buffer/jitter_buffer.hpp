@@ -11,7 +11,7 @@ namespace moonshine::jitter {
 
 constexpr size_t MAX_PACKETS_PER_FRAME = 512;
 constexpr size_t MAX_FRAME_PAYLOAD_BYTES = 2 * 1024 * 1024; // 2MB frame arena
-constexpr size_t MAX_PACKET_PAYLOAD_BYTES = 2048;           // Max standard RTP packet payload
+constexpr size_t MAX_PACKET_PAYLOAD_BYTES = 2048;           // Canonical maximum RTP packet payload matching PinnedBufferPool slot capacity (2048B)
 
 struct alignas(64) FrameSlot {
     uint32_t frame_index{0};
