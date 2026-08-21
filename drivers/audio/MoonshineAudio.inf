@@ -1,0 +1,122 @@
+;
+; MoonshineAudio.inf
+; Windows Virtual Audio Driver INF Package
+; Copyright (c) 2026 Moonshine Stream Project. All rights reserved.
+;
+
+[Version]
+Signature="$WINDOWS NT$"
+Class=MEDIA
+ClassGuid={4d36e96c-e325-11ce-bfc1-08002be10318}
+Provider=%ProviderName%
+DriverVer=08/21/2026,1.0.0.0
+CatalogFile=MoonshineAudio.cat
+PnpLockDown=1
+
+[DestinationDirs]
+DefaultDestDir = 12 ; %windir%\system32\drivers
+MoonshineAudio.CopyList = 12
+
+[SourceDisksNames]
+222 = %DiskDescription%,,,
+
+[SourceDisksFiles]
+MoonshineAudio.sys = 222
+
+[Manufacturer]
+%ManufacturerName%=Moonshine,NTamd64.10.0...16299,NTarm64.10.0...16299
+
+[Moonshine.NTamd64.10.0...16299]
+%DeviceDesc%=MoonshineAudio_Device, ROOT\MoonshineAudio
+%DeviceDesc%=MoonshineAudio_Device, *MSHNAUD
+
+[Moonshine.NTarm64.10.0...16299]
+%DeviceDesc%=MoonshineAudio_Device, ROOT\MoonshineAudio
+%DeviceDesc%=MoonshineAudio_Device, *MSHNAUD
+
+[MoonshineAudio_Device.NT]
+Include=ks.inf, wdmaudio.inf
+Needs=KS.Registration, WDMAUDIO.Registration, SysVad.Registration
+CopyFiles=MoonshineAudio.CopyList
+AddReg=MoonshineAudio.AddReg
+
+[MoonshineAudio_Device.NT.Interfaces]
+AddInterface=%KSCATEGORY_AUDIO%,%KSNAME_Wave%,MoonshineAudio.Wave
+AddInterface=%KSCATEGORY_RENDER%,%KSNAME_Wave%,MoonshineAudio.Render
+AddInterface=%KSCATEGORY_CAPTURE%,%KSNAME_Wave%,MoonshineAudio.Capture
+AddInterface=%KSCATEGORY_REALTIME%,%KSNAME_Wave%,MoonshineAudio.Wave
+AddInterface=%KSCATEGORY_TOPOLOGY%,%KSNAME_Topology%,MoonshineAudio.Topology
+
+[MoonshineAudio.Wave]
+AddReg=MoonshineAudio.Wave.AddReg
+
+[MoonshineAudio.Wave.AddReg]
+HKR,,CLSID,,%Proxy.CLSID%
+HKR,,FriendlyName,,%MoonshineAudio.Wave.szPname%
+
+[MoonshineAudio.Render]
+AddReg=MoonshineAudio.Render.AddReg
+
+[MoonshineAudio.Render.AddReg]
+HKR,,CLSID,,%Proxy.CLSID%
+HKR,,FriendlyName,,%MoonshineAudio.Render.szPname%
+
+[MoonshineAudio.Capture]
+AddReg=MoonshineAudio.Capture.AddReg
+
+[MoonshineAudio.Capture.AddReg]
+HKR,,CLSID,,%Proxy.CLSID%
+HKR,,FriendlyName,,%MoonshineAudio.Capture.szPname%
+
+[MoonshineAudio.Topology]
+AddReg=MoonshineAudio.Topology.AddReg
+
+[MoonshineAudio.Topology.AddReg]
+HKR,,CLSID,,%Proxy.CLSID%
+HKR,,FriendlyName,,%MoonshineAudio.Topology.szPname%
+
+[MoonshineAudio.AddReg]
+HKR,,AssociatedFilters,,"wdmaud,swmidi,redbook"
+HKR,,Driver,,MoonshineAudio.sys
+HKR,,NTMPDriver,,"MoonshineAudio.sys"
+HKR,Drivers,SubClasses,,"wave,midi,mixer"
+HKR,Drivers\wave\wdmaud.drv,Driver,,wdmaud.drv
+HKR,Drivers\midi\wdmaud.drv,Driver,,wdmaud.drv
+HKR,Drivers\mixer\wdmaud.drv,Driver,,wdmaud.drv
+HKR,Drivers\wave\wdmaud.drv,Description,,%DeviceDesc%
+HKR,Drivers\midi\wdmaud.drv,Description,,%DeviceDesc%
+HKR,Drivers\mixer\wdmaud.drv,Description,,%DeviceDesc%
+
+[MoonshineAudio.CopyList]
+MoonshineAudio.sys,,,0x00000040
+
+[MoonshineAudio_Device.NT.Services]
+AddService = MoonshineAudio, 0x00000002, MoonshineAudio_Service_Inst
+
+[MoonshineAudio_Service_Inst]
+DisplayName    = %ServiceDesc%
+ServiceType    = 1               ; SERVICE_KERNEL_DRIVER
+StartType      = 3               ; SERVICE_DEMAND_START
+ErrorControl   = 1               ; SERVICE_ERROR_NORMAL
+ServiceBinary  = %12%\MoonshineAudio.sys
+
+[Strings]
+ProviderName        = "Moonshine Stream"
+ManufacturerName    = "Moonshine Stream Project"
+DiskDescription     = "Moonshine Virtual Audio Driver Disk"
+DeviceDesc          = "Moonshine Virtual Audio Device"
+ServiceDesc         = "Moonshine Virtual Audio Service"
+MoonshineAudio.Wave.szPname     = "Moonshine Audio Wave Engine"
+MoonshineAudio.Topology.szPname = "Moonshine Audio Topology"
+MoonshineAudio.Render.szPname   = "Moonshine Audio"
+MoonshineAudio.Capture.szPname  = "Moonshine Microphone"
+
+Proxy.CLSID         = "{17CCA71B-ECD7-11D0-B908-00A0C9223196}"
+KSCATEGORY_AUDIO    = "{6994AD04-93EF-11D0-A3CC-00A0C9223196}"
+KSCATEGORY_RENDER   = "{65E8773E-8F56-11D0-A3B9-00A0C9223196}"
+KSCATEGORY_CAPTURE  = "{65E8773D-8F56-11D0-A3B9-00A0C9223196}"
+KSCATEGORY_TOPOLOGY = "{DDA54A40-1E4C-11D1-A050-405705C10000}"
+KSCATEGORY_REALTIME = "{EB115FFC-10C8-4964-831D-6DCB02E6F23F}"
+
+KSNAME_Wave         = "Wave"
+KSNAME_Topology     = "Topology"

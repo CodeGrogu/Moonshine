@@ -336,6 +336,61 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_mic_sink_get_metrics(
 );
 
 // ============================================================================
+// Dedicated Windows Virtual Audio Driver Controller APIs
+// ============================================================================
+
+typedef void* MoonshineVirtualAudioDriverHandle;
+
+typedef struct MoonshineVirtualAudioDriverStatusC {
+    uint8_t is_installed;
+    uint8_t is_render_endpoint_present;
+    uint8_t is_capture_endpoint_present;
+    uint32_t supported_sample_rates_count;
+    uint32_t supported_channels_count;
+    char driver_version[32];
+} MoonshineVirtualAudioDriverStatusC;
+
+MOONSHINE_API MoonshineVirtualAudioDriverHandle MOONSHINE_CONV moonshine_virtual_audio_driver_create(void);
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_virtual_audio_driver_destroy(
+    MoonshineVirtualAudioDriverHandle handle
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_virtual_audio_driver_is_installed(
+    MoonshineVirtualAudioDriverHandle handle
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_virtual_audio_driver_get_status(
+    MoonshineVirtualAudioDriverHandle handle,
+    MoonshineVirtualAudioDriverStatusC* out_status
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_virtual_audio_driver_validate_format(
+    MoonshineVirtualAudioDriverHandle handle,
+    uint32_t sample_rate,
+    uint32_t channels,
+    uint32_t format_type
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_virtual_audio_driver_get_endpoint_names(
+    MoonshineVirtualAudioDriverHandle handle,
+    char* out_render_name,
+    uint32_t render_name_max_len,
+    char* out_capture_name,
+    uint32_t capture_name_max_len
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_virtual_audio_driver_enable_mmcss(
+    MoonshineVirtualAudioDriverHandle handle,
+    void** out_task_handle
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_virtual_audio_driver_disable_mmcss(
+    MoonshineVirtualAudioDriverHandle handle,
+    void* task_handle
+);
+
+// ============================================================================
 // Zero-Copy Direct3D Desktop Capture APIs
 // ============================================================================
 

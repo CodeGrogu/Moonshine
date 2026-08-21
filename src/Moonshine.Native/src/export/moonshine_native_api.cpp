@@ -10,6 +10,7 @@
 #include "moonshine/audio/wasapi_loopback_capture.hpp"
 #include "moonshine/audio/opus_audio_encoder.hpp"
 #include "moonshine/audio/mic_audio_sink.hpp"
+#include "moonshine/audio/virtual_audio_driver.hpp"
 #include "moonshine/capture/dxgi_desktop_duplicator.hpp"
 #include "moonshine/capture/wgc_desktop_capture.hpp"
 #include "moonshine/color/hdr_metadata_extractor.hpp"
@@ -522,6 +523,98 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_mic_sink_get_metrics(
     if (out_loss_count) *out_loss_count = metrics.loss_count;
     if (out_drift_corrections) *out_drift_corrections = metrics.drift_corrections;
     if (out_jitter_ms) *out_jitter_ms = metrics.current_jitter_ms;
+}
+
+// ============================================================================
+// Dedicated Windows Virtual Audio Driver Controller APIs
+// ============================================================================
+
+MOONSHINE_API MoonshineVirtualAudioDriverHandle MOONSHINE_CONV moonshine_virtual_audio_driver_create(void) {
+    auto* controller = new audio::VirtualAudioDriverController();
+    if (!controller->Initialize()) {
+        delete controller;
+        return nullptr;
+    }
+    return static_cast<MoonshineVirtualAudioDriverHandle>(controller);
+}
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_virtual_audio_driver_destroy(
+    MoonshineVirtualAudioDriverHandle handle
+) {
+    if (!handle) return;
+    auto* controller = static_cast<audio::VirtualAudioDriverController*>(handle);
+    delete controller;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_virtual_audio_driver_is_installed(
+    MoonshineVirtualAudioDriverHandle handle
+) {
+    if (!handle) return 0;
+    auto* controller = static_cast<audio::VirtualAudioDriverController*>(handle);
+    return controller->IsDriverInstalled() ? 1 : 0;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_virtual_audio_driver_get_status(
+    MoonshineVirtualAudioDriverHandle handle,
+    MoonshineVirtualAudioDriverStatusC* out_status
+) {
+    if (!handle || !out_status) return 0;
+    auto* controller = static_cast<audio::VirtualAudioDriverController*>(handle);
+    audio::VirtualAudioDriverStatus status = controller->GetStatus();
+    out_status->is_installed = status.isInstalled ? 1 : 0;
+    out_status->is_render_endpoint_present = status.isRenderEndpointPresent ? 1 : 0;
+    out_status->is_capture_endpoint_present = status.isCaptureEndpointPresent ? 1 : 0;
+    out_status->supported_sample_rates_count = status.supportedSampleRatesCount;
+    out_status->supported_channels_count = status.supportedChannelsCount;
+    std::snprintf(out_status->driver_version, sizeof(out_status->driver_version), "%s", status.driverVersion);
+    return 1;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_virtual_audio_driver_validate_format(
+    MoonshineVirtualAudioDriverHandle handle,
+    uint32_t sample_rate,
+    uint32_t channels,
+    uint32_t format_type
+) {
+    if (!handle) return 0;
+    auto* controller = static_cast<audio::VirtualAudioDriverController*>(handle);
+    return controller->ValidateFormat(sample_rate, channels, format_type) ? 1 : 0;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_virtual_audio_driver_get_endpoint_names(
+    MoonshineVirtualAudioDriverHandle handle,
+    char* out_render_name,
+    uint32_t render_name_max_len,
+    char* out_capture_name,
+    uint32_t capture_name_max_len
+) {
+    if (!handle) return 0;
+    auto* controller = static_cast<audio::VirtualAudioDriverController*>(handle);
+    if (out_render_name && render_name_max_len > 0) {
+        std::snprintf(out_render_name, render_name_max_len, "%s", controller->GetRenderEndpointName());
+    }
+    if (out_capture_name && capture_name_max_len > 0) {
+        std::snprintf(out_capture_name, capture_name_max_len, "%s", controller->GetCaptureEndpointName());
+    }
+    return 1;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_virtual_audio_driver_enable_mmcss(
+    MoonshineVirtualAudioDriverHandle handle,
+    void** out_task_handle
+) {
+    if (!handle || !out_task_handle) return 0;
+    auto* controller = static_cast<audio::VirtualAudioDriverController*>(handle);
+    return controller->EnableMmcssScheduling(out_task_handle) ? 1 : 0;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_virtual_audio_driver_disable_mmcss(
+    MoonshineVirtualAudioDriverHandle handle,
+    void* task_handle
+) {
+    if (!handle) return 0;
+    auto* controller = static_cast<audio::VirtualAudioDriverController*>(handle);
+    return controller->DisableMmcssScheduling(task_handle) ? 1 : 0;
 }
 
 // ============================================================================

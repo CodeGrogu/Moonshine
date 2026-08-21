@@ -87,6 +87,16 @@ add_executable(test_mic_sink
 target_link_libraries(test_mic_sink PRIVATE Moonshine.Native)
 add_test(NAME test_mic_sink COMMAND test_mic_sink)
 
+add_executable(test_virtual_audio_driver
+    test_virtual_audio_driver.cpp
+    ${CMAKE_SOURCE_DIR}/src/Moonshine.Native/src/audio/virtual_audio_driver.cpp
+    ${CMAKE_SOURCE_DIR}/drivers/audio/minwave.cpp
+    ${CMAKE_SOURCE_DIR}/drivers/audio/mintopo.cpp
+    ${CMAKE_SOURCE_DIR}/drivers/audio/adapter.cpp
+)
+target_link_libraries(test_virtual_audio_driver PRIVATE Moonshine.Native $<$<BOOL:${WIN32}>:avrt>)
+add_test(NAME test_virtual_audio_driver COMMAND test_virtual_audio_driver)
+
 if(WIN32)
     add_custom_command(TARGET test_c_abi_export POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different

@@ -28,6 +28,7 @@
 - [WASAPI Loopback Audio](WASAPI-Loopback-Audio)
 - [Opus Audio Compression](Opus-Audio-Compression)
 - [Microphone Passthrough](Microphone-Passthrough-and-Virtual-Sink)
+- [Dedicated Virtual Audio Driver](Virtual-Audio-Driver)
 - [Virtual Input & Injection](Virtual-Input-Driver-Injection)
 - [GameStream HTTPS & RTSP Host Server](GameStream-HTTPS-RTSP-Host-Server)
 - [Authenticated Remote Control Plane](Authenticated-Remote-Control-Plane)
