@@ -19,7 +19,7 @@
 
 **Moonshine is one custom Windows application, written in C# and C++, for high-performance remote PC streaming and interaction.**
 
-A user installs the same application on a PC and selects how that installation operates:
+A user installs the same Moonshine application on a PC and selects how that installation operates:
 
 - **Host only** - the application exposes the local PC as a Moonshine streaming host.
 - **Client only** - the application connects to another Moonshine host as a client.
@@ -35,11 +35,22 @@ Moonshine is being designed as its **own platform, protocol, architecture, and i
 
 Role selection is an architectural resource boundary, not merely a UI setting.
 
-| Mode | Host role | Client role | Host listeners | Client connections | Host devices | Client devices |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Host only** | On | Off | On | Off | On | Off |
-| **Client only** | Off | On | Off | On | Off | On |
-| **Host + Client** | On | On | On | On | On | On |
+```text
+                         ONE MOONSHINE APPLICATION
+
+                     ┌───────────────────────────┐
+                     │       Runtime Role        │
+                     └─────────────┬─────────────┘
+                                   │
+                  ┌────────────────┼────────────────┐
+                  │                │                │
+                  ▼                ▼                ▼
+             HOST ONLY        CLIENT ONLY      HOST + CLIENT
+                  │                │                │
+                  ▼                ▼                ▼
+             Host role        Client role       Both roles
+              active            active            active
+```
 
 ### Host only
 
@@ -63,7 +74,9 @@ Host + Client mode enables both role sets in the same process.
 
 The roles remain independently owned and managed so that each can be started, stopped, faulted, and reconfigured without accidentally starting resources belonging to the other role.
 
-> **A disabled role should have no meaningful runtime footprint beyond the configuration required to select or re-enable that role.**
+The desired invariant is simple:
+
+> **A disabled role has no meaningful runtime footprint beyond the configuration required to select or re-enable that role.**
 
 That includes avoiding unnecessary CPU work, memory allocation, GPU contexts, audio devices, network listeners, sockets, timers, background threads, and driver/device initialisation.
 
@@ -75,22 +88,22 @@ That includes avoiding unnecessary CPU work, memory allocation, GPU contexts, au
 
 A Moonshine Host streams its PC environment to a Moonshine Client.
 
-The target media path is:
+The target pipeline includes:
 
 ```text
 Host PC
-  |
-  +-- Desktop / application capture
-  +-- Video encoding
-  +-- Host audio capture
-  |
-  v
+  │
+  ├── Desktop / application capture
+  ├── Video encoding
+  ├── Host audio capture
+  │
+  ▼
 Moonshine transport
-  |
-  v
+  │
+  ▼
 Client
-  +-- Video decode + rendering
-  +-- Audio decode + playback
+  ├── Video decode + rendering
+  └── Audio decode + playback
 ```
 
 The system is designed for low latency, high throughput, predictable timing, and efficient resource use rather than general-purpose media processing.
@@ -103,20 +116,20 @@ Moonshine also supports the intended reverse path:
 
 ```text
 Client microphone
-      |
-      v
+      │
+      ▼
 Client capture
-      |
-      v
+      │
+      ▼
 Moonshine microphone stream
-      |
-      v
+      │
+      ▼
 Host transport / decode
-      |
-      v
+      │
+      ▼
 Moonshine virtual microphone
-      |
-      v
+      │
+      ▼
 Windows applications
 ```
 
@@ -137,7 +150,7 @@ A driver is not being introduced merely because it is called a driver. Kernel or
 
 ### Remote Host Control
 
-A connected Client is not a passive receiver. It is intended to manage authorised Host settings through a dedicated authenticated control plane.
+A connected Client is not a passive receiver. It is intended to be able to manage authorised Host settings through a dedicated authenticated control plane.
 
 Examples include:
 
@@ -160,21 +173,20 @@ Moonshine is one application with three major backend planes.
 
 ```text
                          Moonshine Application
-                                  |
-              +-------------------+-------------------+
-              |                   |                   |
-              v                   v                   v
+                                  │
+              ┌───────────────────┼───────────────────┐
+              │                   │                   │
+              ▼                   ▼                   ▼
          Host Role           Client Role          Shared Core
-              |                   |                   |
-              +----------+--------+--------+----------+
-                         |                 |
-                         v                 v
-                    Media Plane       Control Plane
-                         |                 |
-                         +--------+--------+
-                                  |
-                                  v
-                             Device Plane
+              │                   │                   │
+              └──────────┬────────┴──────────┬────────┘
+                         │                   │
+                         ▼                   ▼
+                    Media Plane         Control Plane
+                         │                   │
+                         └─────────┬─────────┘
+                                   ▼
+                              Device Plane
 ```
 
 ### Media Plane
@@ -216,22 +228,22 @@ The goal is high end-to-end performance across the complete path:
 
 ```text
 capture
-  -> encode
-  -> packetise
-  -> transport
-  -> buffering / FEC
-  -> decode
-  -> render / playback
+  → encode
+  → packetise
+  → transport
+  → buffering / FEC
+  → decode
+  → render / playback
 ```
 
 and for the reverse microphone path:
 
 ```text
 microphone capture
-  -> encode
-  -> transport
-  -> decode
-  -> virtual microphone
+  → encode
+  → transport
+  → decode
+  → virtual microphone
 ```
 
 The backend should favour:
@@ -359,6 +371,22 @@ The platform focus allows Moonshine to optimise deeply for:
 - Modern NVIDIA, AMD, and Intel GPUs.
 
 Cross-platform support is not currently a primary goal. The project will prioritise a highly capable Windows implementation before considering other platforms.
+
+---
+
+## Runtime Resource Isolation
+
+The runtime mode is an explicit resource boundary.
+
+| Mode | Host role | Client role | Host listeners | Client connections | Host devices | Client devices |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Host only** | On | Off | On | Off | On | Off |
+| **Client only** | Off | On | Off | On | Off | On |
+| **Host + Client** | On | On | On | On | On | On |
+
+A disabled role must not initialise its listeners, sockets, capture sessions, decoders/encoders, audio endpoints, device interfaces, large media buffers, background workers, or other persistent role-specific resources.
+
+The intent is not merely to stop unused code paths from processing data. The inactive role should not meaningfully consume resources or expose network/device surfaces.
 
 ---
 
