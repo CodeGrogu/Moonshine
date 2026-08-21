@@ -17,11 +17,11 @@ This document tracks known platform limitations, environment requirements, and c
 <!-- VERIFIED: 2026-08-21, via `ctest --test-dir build/release-avx2 --build-config Release --output-on-failure --no-tests=error` on Windows 11 with MSVC C++23 -->
 ### Native C++23 Engine (Moonshine.Native)
 - **Status**: Verified in Developer Environment / CI.
-- **Test Targets**: 16 native CTest targets passed in the MSVC developer environment.
+- **Test Targets**: 17 native CTest targets passed in the MSVC developer environment.
 
 <!-- VERIFIED: 2026-08-21, via `scripts/verify_codebase.ps1` on Windows 11 -->
 ### Managed .NET 9 Solution
-- **Status**: Verified (213 unit and integration tests passed across `Moonshine.Host.Tests` (44), `Moonshine.Protocol.Tests` (61), `Moonshine.Interop.Tests` (55), `Moonshine.Core.Tests` (53)).
+- **Status**: Verified (221 unit and integration tests passed across `Moonshine.Protocol.Tests` (69), `Moonshine.Interop.Tests` (55), `Moonshine.Core.Tests` (53), `Moonshine.Host.Tests` (44)).
 
 ### NVIDIA NVENC Hardware Video Encoder
 - **Status**: Prototype / Fail-Closed.

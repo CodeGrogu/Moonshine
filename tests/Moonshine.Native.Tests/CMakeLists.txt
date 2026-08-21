@@ -109,6 +109,12 @@ add_executable(test_virtual_audio_ipc
 target_link_libraries(test_virtual_audio_ipc PRIVATE Moonshine.Native $<$<BOOL:${WIN32}>:avrt>)
 add_test(NAME test_virtual_audio_ipc COMMAND test_virtual_audio_ipc)
 
+add_executable(test_moonshine_protocol
+    test_moonshine_protocol.cpp
+)
+target_link_libraries(test_moonshine_protocol PRIVATE Moonshine.Native)
+add_test(NAME test_moonshine_protocol COMMAND test_moonshine_protocol)
+
 if(WIN32)
     add_custom_command(TARGET test_c_abi_export POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -116,3 +122,4 @@ if(WIN32)
             $<TARGET_FILE_DIR:test_c_abi_export>
     )
 endif()
+
