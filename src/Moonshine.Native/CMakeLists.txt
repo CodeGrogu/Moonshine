@@ -7,6 +7,7 @@ add_library(Moonshine.Native SHARED
     src/audio/wasapi_renderer.cpp
     src/audio/wasapi_loopback_capture.cpp
     src/audio/opus_audio_encoder.cpp
+    src/audio/mic_audio_sink.cpp
     src/capture/dxgi_desktop_duplicator.cpp
     src/capture/wgc_desktop_capture.cpp
     src/color/hdr_metadata_extractor.cpp

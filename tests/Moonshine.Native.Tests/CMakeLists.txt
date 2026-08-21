@@ -80,6 +80,13 @@ add_executable(test_opus_encoder
 target_link_libraries(test_opus_encoder PRIVATE Moonshine.Native)
 add_test(NAME test_opus_encoder COMMAND test_opus_encoder)
 
+add_executable(test_mic_sink 
+    test_mic_sink.cpp
+    ${CMAKE_SOURCE_DIR}/src/Moonshine.Native/src/audio/mic_audio_sink.cpp
+)
+target_link_libraries(test_mic_sink PRIVATE Moonshine.Native)
+add_test(NAME test_mic_sink COMMAND test_mic_sink)
+
 if(WIN32)
     add_custom_command(TARGET test_c_abi_export POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different

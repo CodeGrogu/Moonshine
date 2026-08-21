@@ -289,6 +289,63 @@ public static unsafe partial class MoonshineNativeMethods
     );
 
     // ========================================================================
+    // Low-Latency Client-to-Host Microphone Virtual Audio Sink APIs
+    // ========================================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_mic_sink_create")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial IntPtr MicSinkCreate(
+        uint sampleRate,
+        uint channels,
+        uint targetLatencyMs,
+        float gainMultiplier,
+        float noiseGateThresholdDb,
+        byte isMuted
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_mic_sink_destroy")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void MicSinkDestroy(IntPtr handle);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_mic_sink_push_opus_packet")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int MicSinkPushOpusPacket(
+        IntPtr handle,
+        byte* opusPayload,
+        uint payloadLen,
+        uint timestamp,
+        ushort sequenceNumber
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_mic_sink_pull_pcm")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int MicSinkPullPcm(
+        IntPtr handle,
+        float* outPcm,
+        uint maxSamples,
+        out uint outSamplesRead
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_mic_sink_set_gain")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void MicSinkSetGain(IntPtr handle, float gain);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_mic_sink_set_mute")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void MicSinkSetMute(IntPtr handle, byte isMuted);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_mic_sink_get_metrics")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void MicSinkGetMetrics(
+        IntPtr handle,
+        out ulong outPacketsReceived,
+        out ulong outSamplesRendered,
+        out uint outLossCount,
+        out uint outDriftCorrections,
+        out double outJitterMs
+    );
+
+    // ========================================================================
     // Zero-Copy Direct3D Desktop Capture APIs
     // ========================================================================
 
