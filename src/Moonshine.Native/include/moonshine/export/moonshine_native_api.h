@@ -139,7 +139,7 @@ MOONSHINE_API size_t MOONSHINE_CONV moonshine_spsc_size(MoonshineRingBufferHandl
 
 // ============================================================================
 // Lock-Free SPSC Slot Return Queue Management APIs
-// Single Producer (Native Stream Worker) / Single Consumer (Managed Ingestion Loop)
+// Single Producer (Stream Native Forward-Queue Consumer) / Single Consumer (Managed Ingestion Loop)
 // ============================================================================
 
 /**
@@ -156,8 +156,9 @@ MOONSHINE_API MoonshineRingBufferHandle MOONSHINE_CONV moonshine_slot_return_cre
 MOONSHINE_API void MOONSHINE_CONV moonshine_slot_return_destroy(MoonshineRingBufferHandle handle);
 
 /**
- * Enqueues a recycled slot index from the single native consumer thread.
- * Thread-safety: Strictly Single-Producer. Must only be invoked from one thread per queue.
+ * Enqueues a recycled slot index.
+ * Thread-safety: Each return ring has exactly one producer: the stream's dedicated native
+ * forward-queue consumer thread, which is also the sole native consumer of MoonshinePacketDesc for that stream.
  * @param handle Handle to the unmanaged return queue.
  * @param slot_index The recycled buffer slot index to return to the pool.
  * @return 1 on successful enqueue, 0 if queue is full or handle is invalid.
