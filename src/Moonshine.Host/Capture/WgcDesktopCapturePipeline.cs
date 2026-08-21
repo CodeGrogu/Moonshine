@@ -15,6 +15,7 @@ public sealed class WgcDesktopCapturePipeline : IDesktopCapturePipeline
     private uint _width;
     private uint _height;
     private uint _format = 87; // DXGI_FORMAT_B8G8R8A8_UNORM
+    private bool _isHdr;
     private bool _disposed;
     private readonly Lock _lock = new();
 
@@ -27,7 +28,7 @@ public sealed class WgcDesktopCapturePipeline : IDesktopCapturePipeline
     public uint Width => Volatile.Read(ref _width);
     public uint Height => Volatile.Read(ref _height);
     public uint Format => Volatile.Read(ref _format);
-    public bool IsHdr => false;
+    public bool IsHdr => Volatile.Read(ref _isHdr);
     public uint AdapterIndex => 0;
     public uint OutputIndex => 0;
     public uint TargetFps => _targetFps;
@@ -49,7 +50,7 @@ public sealed class WgcDesktopCapturePipeline : IDesktopCapturePipeline
                 Volatile.Read(ref _width),
                 Volatile.Read(ref _height),
                 Volatile.Read(ref _format),
-                false,
+                Volatile.Read(ref _isHdr),
                 avgUs
             );
         }
@@ -73,6 +74,11 @@ public sealed class WgcDesktopCapturePipeline : IDesktopCapturePipeline
             }
 
             _handle = MoonshineNativeMethods.CaptureCreateWgc(_hmonitor, _targetFps, out _width, out _height);
+            if (_handle != IntPtr.Zero)
+            {
+                _format = MoonshineNativeMethods.CaptureGetFormat(_handle);
+                _isHdr = MoonshineNativeMethods.CaptureIsHdr(_handle) != 0;
+            }
         }
     }
 

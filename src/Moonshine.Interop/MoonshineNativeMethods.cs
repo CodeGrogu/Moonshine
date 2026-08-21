@@ -566,6 +566,14 @@ public static unsafe partial class MoonshineNativeMethods
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int CaptureRecover(IntPtr handle);
 
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_capture_get_format")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial uint CaptureGetFormat(IntPtr handle);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_capture_is_hdr")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int CaptureIsHdr(IntPtr handle);
+
     [LibraryImport(LibraryName, EntryPoint = "moonshine_capture_get_adapter_count")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial uint CaptureGetAdapterCount();

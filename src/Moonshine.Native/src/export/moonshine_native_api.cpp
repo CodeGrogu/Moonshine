@@ -879,6 +879,18 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_capture_recover(MoonshineCaptureHandl
     return cap->recover() ? 1 : 0;
 }
 
+MOONSHINE_API uint32_t MOONSHINE_CONV moonshine_capture_get_format(MoonshineCaptureHandle handle) {
+    if (!handle) return 0;
+    auto* cap = static_cast<capture::IDesktopCapture*>(handle);
+    return cap->format();
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_capture_is_hdr(MoonshineCaptureHandle handle) {
+    if (!handle) return 0;
+    auto* cap = static_cast<capture::IDesktopCapture*>(handle);
+    return cap->is_hdr() ? 1 : 0;
+}
+
 MOONSHINE_API uint32_t MOONSHINE_CONV moonshine_capture_get_adapter_count(void) {
 #if defined(_WIN32)
     Microsoft::WRL::ComPtr<IDXGIFactory1> factory;

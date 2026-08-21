@@ -615,6 +615,8 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_capture_acquire_frame(
 );
 MOONSHINE_API void MOONSHINE_CONV moonshine_capture_release_frame(MoonshineCaptureHandle handle);
 MOONSHINE_API int MOONSHINE_CONV moonshine_capture_recover(MoonshineCaptureHandle handle);
+MOONSHINE_API uint32_t MOONSHINE_CONV moonshine_capture_get_format(MoonshineCaptureHandle handle);
+MOONSHINE_API int MOONSHINE_CONV moonshine_capture_is_hdr(MoonshineCaptureHandle handle);
 MOONSHINE_API uint32_t MOONSHINE_CONV moonshine_capture_get_adapter_count(void);
 MOONSHINE_API int MOONSHINE_CONV moonshine_capture_get_adapter_info(
     uint32_t adapter_index,

@@ -87,12 +87,8 @@ public sealed class DxgiDesktopCapturePipeline : IDesktopCapturePipeline
             _handle = MoonshineNativeMethods.CaptureCreateDxgi(_adapterIndex, _outputIndex, out _width, out _height);
             if (_handle != IntPtr.Zero)
             {
-                // Query display info to populate format and HDR metadata
-                if (MoonshineNativeMethods.CaptureGetDisplayInfo(_adapterIndex, _outputIndex, out var dispInfo) == 0)
-                {
-                    _isHdr = dispInfo.IsHdr != 0;
-                    _format = _isHdr ? 24u : 87u; // DXGI_FORMAT_R10G10B10A2_UNORM or DXGI_FORMAT_B8G8R8A8_UNORM
-                }
+                _format = MoonshineNativeMethods.CaptureGetFormat(_handle);
+                _isHdr = MoonshineNativeMethods.CaptureIsHdr(_handle) != 0;
             }
         }
     }
