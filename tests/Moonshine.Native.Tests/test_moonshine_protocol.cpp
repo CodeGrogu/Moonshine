@@ -16,6 +16,7 @@ using namespace moonshine::protocol;
 static void test_struct_sizes_and_alignment() {
     std::cout << "[+] Testing protocol struct sizes and memory alignments..." << std::endl;
 
+    static_assert(sizeof(MoonshineUuid128) == 16);
     static_assert(sizeof(MoonshinePacketHeader) == 32);
     static_assert(sizeof(MoonshineHelloPayload) == 32);
     static_assert(sizeof(MoonshineHelloResponsePayload) == 48);
@@ -30,6 +31,10 @@ static void test_struct_sizes_and_alignment() {
     static_assert(sizeof(MoonshineInputMousePayload) == 20);
     static_assert(sizeof(MoonshineInputGamepadPayload) == 24);
     static_assert(sizeof(MoonshineTelemetryReportPayload) == 32);
+    static_assert(sizeof(MoonshineHostCapabilitiesResponsePayload) == 32);
+    static_assert(sizeof(MoonshineHostConfigurationPayload) == 48);
+    static_assert(sizeof(MoonshineSetHostConfigurationResponsePayload) == 8);
+    static_assert(sizeof(MoonshineConfigurationChangedPayload) == 8);
 }
 
 static void test_header_serialization_and_validation() {
@@ -97,6 +102,25 @@ static void test_header_serialization_and_validation() {
     TEST_ASSERT(decoded.timestamp_us == original.timestamp_us);
 }
 
+static void test_uuid_conformance_and_layout() {
+    std::cout << "[+] Testing 128-bit UUID raw byte buffer and equality..." << std::endl;
+
+    MoonshineUuid128 uuid1{};
+    for (uint8_t i = 0; i < 16; ++i) {
+        uuid1.bytes[i] = static_cast<uint8_t>(i + 1);
+    }
+
+    MoonshineUuid128 uuid2{};
+    for (uint8_t i = 0; i < 16; ++i) {
+        uuid2.bytes[i] = static_cast<uint8_t>(i + 1);
+    }
+
+    TEST_ASSERT(uuid1 == uuid2);
+
+    uuid2.bytes[15] = 0xFF;
+    TEST_ASSERT(!(uuid1 == uuid2));
+}
+
 static void test_header_error_conditions() {
     std::cout << "[+] Testing header rejection on corruption, truncation, and version mismatch..." << std::endl;
 
@@ -151,6 +175,13 @@ static void test_all_message_family_types() {
     static_assert(static_cast<uint16_t>(MoonshineMessageType::InputMouse) == 0x0602);
     static_assert(static_cast<uint16_t>(MoonshineMessageType::InputGamepad) == 0x0603);
     static_assert(static_cast<uint16_t>(MoonshineMessageType::TelemetryReport) == 0x0701);
+    static_assert(static_cast<uint16_t>(MoonshineMessageType::GetHostCapabilities) == 0x0801);
+    static_assert(static_cast<uint16_t>(MoonshineMessageType::HostCapabilitiesResponse) == 0x0802);
+    static_assert(static_cast<uint16_t>(MoonshineMessageType::GetHostConfiguration) == 0x0803);
+    static_assert(static_cast<uint16_t>(MoonshineMessageType::HostConfigurationResponse) == 0x0804);
+    static_assert(static_cast<uint16_t>(MoonshineMessageType::SetHostConfiguration) == 0x0805);
+    static_assert(static_cast<uint16_t>(MoonshineMessageType::SetHostConfigurationResponse) == 0x0806);
+    static_assert(static_cast<uint16_t>(MoonshineMessageType::ConfigurationChanged) == 0x0807);
 }
 
 int main() {
@@ -160,6 +191,7 @@ int main() {
 
     test_struct_sizes_and_alignment();
     test_header_serialization_and_validation();
+    test_uuid_conformance_and_layout();
     test_header_error_conditions();
     test_all_message_family_types();
 

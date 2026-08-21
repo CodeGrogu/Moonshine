@@ -39,7 +39,16 @@ public enum MoonshineMessageType : ushort
     InputGamepad = 0x0603,
 
     // Telemetry
-    TelemetryReport = 0x0701
+    TelemetryReport = 0x0701,
+
+    // Host Management & Remote Configuration
+    GetHostCapabilities = 0x0801,
+    HostCapabilitiesResponse = 0x0802,
+    GetHostConfiguration = 0x0803,
+    HostConfigurationResponse = 0x0804,
+    SetHostConfiguration = 0x0805,
+    SetHostConfigurationResponse = 0x0806,
+    ConfigurationChanged = 0x0807
 }
 
 public enum MoonshineErrorCode : uint
@@ -55,7 +64,9 @@ public enum MoonshineErrorCode : uint
     StreamNotFound = 8,
     DuplicateSequence = 9,
     StaleTimestamp = 10,
-    UnsupportedCodec = 11
+    UnsupportedCodec = 11,
+    UnauthorizedConfiguration = 12,
+    InvalidConfigurationParameter = 13
 }
 
 [Flags]
@@ -106,6 +117,60 @@ public enum MoonshineColorFormat : byte
 
 #pragma warning disable CA1051 // Visible instance fields in blittable wire structs
 
+/// <summary>
+/// Canonical 16-byte raw UUID buffer (RFC 4122 Big-Endian wire representation).
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1, Size = 16)]
+public unsafe struct MoonshineUuid128 : IEquatable<MoonshineUuid128>
+{
+    public fixed byte RawBytes[16];
+
+    public MoonshineUuid128(ReadOnlySpan<byte> source)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(source.Length, 16, nameof(source));
+        fixed (byte* p = RawBytes)
+        {
+            source[..16].CopyTo(new Span<byte>(p, 16));
+        }
+    }
+
+    public MoonshineUuid128(Guid guid)
+    {
+        fixed (byte* p = RawBytes)
+        {
+            guid.TryWriteBytes(new Span<byte>(p, 16), bigEndian: true, out _);
+        }
+    }
+
+    public readonly Guid ToGuid()
+    {
+        fixed (byte* p = RawBytes)
+        {
+            return new Guid(new ReadOnlySpan<byte>(p, 16), bigEndian: true);
+        }
+    }
+
+    public readonly ReadOnlySpan<byte> AsSpan()
+    {
+        fixed (byte* p = RawBytes)
+        {
+            return new ReadOnlySpan<byte>(p, 16);
+        }
+    }
+
+    public readonly bool Equals(MoonshineUuid128 other) => AsSpan().SequenceEqual(other.AsSpan());
+    public override readonly bool Equals(object? obj) => obj is MoonshineUuid128 other && Equals(other);
+    public override readonly int GetHashCode()
+    {
+        fixed (byte* p = RawBytes)
+        {
+            return HashCode.Combine(p[0], p[1], p[2], p[3]);
+        }
+    }
+    public static bool operator ==(MoonshineUuid128 left, MoonshineUuid128 right) => left.Equals(right);
+    public static bool operator !=(MoonshineUuid128 left, MoonshineUuid128 right) => !left.Equals(right);
+}
+
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
 public readonly record struct MoonshinePacketHeader(
     uint Magic,
@@ -123,7 +188,7 @@ public struct MoonshineHelloPayload
     public ushort ClientVersionMinor;
     public MoonshineCapabilities CapabilitiesMask;
     public ulong ClientNonce;
-    public Guid ClientUuid;
+    public MoonshineUuid128 ClientUuid;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
@@ -134,7 +199,7 @@ public struct MoonshineHelloResponsePayload
     public MoonshineCapabilities NegotiatedCapabilities;
     public ulong AssignedSessionId;
     public ulong ServerNonce;
-    public Guid ChallengeSalt;
+    public MoonshineUuid128 ChallengeSalt;
     public uint SessionLeaseSeconds;
     public uint Reserved;
 }
@@ -288,6 +353,58 @@ public struct MoonshineTelemetryReportPayload
     public uint Reserved;
 }
 
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct MoonshineHostCapabilitiesResponsePayload
+{
+    public uint SupportedVideoCodecs;
+    public uint SupportedAudioCodecs;
+    public uint MaxEncodeWidth;
+    public uint MaxEncodeHeight;
+    public uint MaxEncodeFps;
+    public byte SupportsHdr10;
+    public byte SupportsVirtualAudio;
+    public byte SupportsMicBackchannel;
+    public byte Reserved;
+    public uint MaxBitrateKbps;
+    public uint Reserved2;
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct MoonshineHostConfigurationPayload
+{
+    public uint ConfigVersion;
+    public uint DisplayWidth;
+    public uint DisplayHeight;
+    public uint RefreshRateHz;
+    public uint TargetBitrateKbps;
+    public uint MaxBitrateKbps;
+    public MoonshineVideoCodec PreferredCodec;
+    public byte Hdr10Enabled;
+    public byte AudioChannels;
+    public byte AudioQualityMode;
+    public uint AudioBitrateKbps;
+    public ushort InputPollingRateHz;
+    public byte MicPassthroughEnabled;
+    public byte VirtualAudioDriverEnabled;
+    public uint Reserved1;
+    public uint Reserved2;
+    public uint Reserved3;
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct MoonshineSetHostConfigurationResponsePayload
+{
+    public MoonshineErrorCode StatusCode;
+    public uint AppliedConfigVersion;
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct MoonshineConfigurationChangedPayload
+{
+    public uint NewConfigVersion;
+    public uint ChangeReasonFlags;
+}
+
 #pragma warning restore CA1051
 
 /// <summary>
@@ -394,6 +511,38 @@ public static class MoonshineProtocolCodec
             PacketType = source[26],
             Flags = (MoonshineVideoAttributes)source[27],
             Reserved = BinaryPrimitives.ReadUInt32BigEndian(source[28..32])
+        };
+
+        return true;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool TryWriteHello(in MoonshineHelloPayload hello, Span<byte> destination)
+    {
+        if (destination.Length < 32) return false;
+
+        BinaryPrimitives.WriteUInt16BigEndian(destination[..2], hello.ClientVersionMajor);
+        BinaryPrimitives.WriteUInt16BigEndian(destination[2..4], hello.ClientVersionMinor);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[4..8], (uint)hello.CapabilitiesMask);
+        BinaryPrimitives.WriteUInt64BigEndian(destination[8..16], hello.ClientNonce);
+        hello.ClientUuid.AsSpan().CopyTo(destination[16..32]);
+
+        return true;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool TryReadHello(ReadOnlySpan<byte> source, out MoonshineHelloPayload hello)
+    {
+        hello = default;
+        if (source.Length < 32) return false;
+
+        hello = new MoonshineHelloPayload
+        {
+            ClientVersionMajor = BinaryPrimitives.ReadUInt16BigEndian(source[..2]),
+            ClientVersionMinor = BinaryPrimitives.ReadUInt16BigEndian(source[2..4]),
+            CapabilitiesMask = (MoonshineCapabilities)BinaryPrimitives.ReadUInt32BigEndian(source[4..8]),
+            ClientNonce = BinaryPrimitives.ReadUInt64BigEndian(source[8..16]),
+            ClientUuid = new MoonshineUuid128(source[16..32])
         };
 
         return true;

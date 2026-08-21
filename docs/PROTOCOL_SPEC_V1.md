@@ -4,20 +4,25 @@
 
 ## 1. Overview and Design Principles
 
-The **Moonshine Native Binary Protocol (MNBP v1)** is a high-performance, versioned, zero-allocation binary transport specification owned entirely by Moonshine. It establishes deterministic wire layouts for session control, media streaming, audio transmission, microphone backchannel, input injection, Quality of Service (QoS) feedback, and telemetry.
+The **Moonshine Native Binary Protocol (MNBP v1)** is a high-performance, versioned, zero-allocation binary transport wire contract owned entirely by Moonshine. It establishes deterministic wire layouts for session control, media streaming, audio transmission, microphone backchannel, input injection, Quality of Service (QoS) feedback, telemetry, and authenticated remote host management.
+
+### Architectural Classification
+> [!IMPORTANT]
+> MNBP v1 represents the **wire contract foundation** for the Moonshine ecosystem. It defines canonical message envelopes, endian serialization rules, struct boundaries, validation criteria, and error codes. Concrete network transport engines (QUIC/TCP control plane, UDP media plane, packetisation, and jitter scheduling) consume and produce these contracts across C++23 and .NET 9.
 
 ### Core Architectural Guarantees
-1. **Strict Endianness**: All binary fields are serialized in **Big-Endian** (Network Byte Order).
-2. **Fixed-Width & Packed Binary Layouts**: Every packet structure is packed with 1-byte alignment (`#pragma pack(push, 1)` in C++23, `[StructLayout(LayoutKind.Sequential, Pack = 1)]` in C#).
-3. **Zero Allocation**: Packet headers and payloads are parsed directly from continuous memory spans (`ReadOnlySpan<byte>` in C#, `const uint8_t*` in C++).
-4. **Codec Independence**: Media framing operates independently of specific video codecs (AV1, HEVC, H.264).
-5. **No Legacy Dependencies**: The protocol replaces all legacy RTSP, RTP, RTCP, GameStream, and Sunshine binary framing formats with first-party Moonshine contracts.
+1. **Strict Big-Endian Wire Encoding**: All multi-byte numeric fields are serialized in **Big-Endian** (Network Byte Order) through explicit field-by-field operations (`BinaryPrimitives` in C#, `std::byteswap` in C++23).
+2. **Canonical 16-Byte UUID Representation**: UUIDs and cryptographic salt tokens are encoded as raw 16-byte big-endian buffers (`MoonshineUuid128`), preventing .NET mixed-endian `Guid` memory layout disparities across native and managed boundaries.
+3. **Explicit Separation of Logical Structs and Wire Formats**: Network payloads are governed by canonical serialization functions rather than compiler struct padding assumptions.
+4. **Zero Heap Allocation in Codec Hot Paths**: All packet header and payload codecs operate directly upon `ReadOnlySpan<byte>` and `Span<byte>` buffers without managed heap allocations.
+5. **Codec Independence**: Media framing operates independently of specific video codecs (AV1, HEVC, H.264).
+6. **No Legacy Dependencies**: The protocol replaces all legacy RTSP, RTP, RTCP, GameStream, and Sunshine binary framing formats with first-party Moonshine contracts.
 
 ---
 
 ## 2. Common Packet Envelope
 
-Every datagram transmitted across control (TCP/QUIC/UDP) and media (UDP) channels starts with a mandatory **32-byte global packet header**.
+Every datagram transmitted across control and media channels starts with a mandatory **32-byte global packet header**.
 
 ```text
  0                   1                   2                   3
@@ -50,7 +55,7 @@ Every datagram transmitted across control (TCP/QUIC/UDP) and media (UDP) channel
 | `MessageType` | `uint16_t` | 6 | 2 | Distinct message family identifier. |
 | `PayloadSize` | `uint32_t` | 8 | 4 | Size of the trailing payload bytes (excluding the 32-byte header). |
 | `SequenceNumber` | `uint32_t` | 12 | 4 | Monotonically increasing message sequence number. |
-| `SessionId` | `uint64_t` | 16 | 8 | 64-bit cryptographically secure session token. |
+| `SessionId` | `uint64_t` | 16 | 8 | 64-bit session token associated with the authenticated peer. |
 | `TimestampUs` | `uint64_t` | 24 | 8 | Microsecond Unix epoch or relative monotonic stream timestamp. |
 
 ---
@@ -66,6 +71,7 @@ Every datagram transmitted across control (TCP/QUIC/UDP) and media (UDP) channel
 | **Feedback & QoS** | `0x0500` - `0x05FF` | Packet loss statistics, round-trip latency, jitter, IDR keyframe requests. |
 | **Input Injection** | `0x0600` - `0x06FF` | High-frequency keyboard, mouse, and gamepad input state transmission. |
 | **Telemetry** | `0x0700` - `0x07FF` | Latency breakdown reports, render statistics, and health metrics. |
+| **Host Management** | `0x0800` - `0x08FF` | Authenticated remote host configuration queries and mutations. |
 
 ---
 
@@ -77,9 +83,9 @@ Every datagram transmitted across control (TCP/QUIC/UDP) and media (UDP) channel
 Sent by Client to initiate protocol version and capability handshake:
 - `uint16_t client_version_major`
 - `uint16_t client_version_minor`
-- `uint32_t capabilities_mask` (Bit 0: AV1, Bit 1: HEVC, Bit 2: H264, Bit 3: HDR10, Bit 4: 7.1 Surround, Bit 5: 1000Hz Input, Bit 6: FEC Reed-Solomon)
+- `uint32_t capabilities_mask`
 - `uint64_t client_nonce`
-- `uint8_t client_uuid[16]`
+- `uint8_t client_uuid[16]` (RFC 4122 Big-Endian 128-bit UUID)
 
 #### `HelloResponse` (`0x0102`, 48 bytes payload)
 Sent by Host in response to `Hello`:
@@ -132,7 +138,7 @@ Codec-agnostic video transmission framing:
 - `uint64_t frame_index` (64-bit monotonic frame sequence)
 - `uint32_t packet_index` (0-indexed packet within frame)
 - `uint32_t total_packets` (Total packet count in frame)
-- `uint32_t fec_block_index` (Cauchy Reed-Solomon shard group)
+- `uint32_t fec_block_index` (FEC shard group index)
 - `uint16_t payload_size` (Size of bitstream slice following header)
 - `uint8_t packet_type` (0: Data Shard, 1: FEC Parity Shard)
 - `uint8_t flags` (Bit 0: Keyframe, Bit 1: FrameStart, Bit 2: FrameEnd, Bit 3: HDR10 Present)
@@ -232,6 +238,56 @@ Codec-agnostic video transmission framing:
 
 ---
 
+### 4.7 Host Management & Remote Configuration Payloads
+
+#### `GetHostCapabilities` (`0x0801`, 4 bytes payload)
+- `uint32_t query_mask`
+
+#### `HostCapabilitiesResponse` (`0x0802`, 32 bytes payload)
+- `uint32_t supported_video_codecs` (Bitmask: AV1, HEVC, H264)
+- `uint32_t supported_audio_codecs` (Bitmask: Opus, PCM16)
+- `uint32_t max_encode_width`
+- `uint32_t max_encode_height`
+- `uint32_t max_encode_fps`
+- `uint8_t supports_hdr10` (0/1)
+- `uint8_t supports_virtual_audio` (0/1)
+- `uint8_t supports_mic_backchannel` (0/1)
+- `uint8_t reserved`
+- `uint32_t max_bitrate_kbps`
+- `uint32_t reserved2`
+
+#### `GetHostConfiguration` (`0x0803`, 4 bytes payload)
+- `uint32_t config_scope`
+
+#### `HostConfigurationResponse` (`0x0804`, 48 bytes payload) & `SetHostConfiguration` (`0x0805`, 48 bytes payload)
+- `uint32_t config_version`
+- `uint32_t display_width`
+- `uint32_t display_height`
+- `uint32_t refresh_rate_hz`
+- `uint32_t target_bitrate_kbps`
+- `uint32_t max_bitrate_kbps`
+- `uint8_t preferred_codec` (1: AV1, 2: HEVC, 3: H264)
+- `uint8_t hdr10_enabled` (0/1)
+- `uint8_t audio_channels` (2, 6, 8)
+- `uint8_t audio_quality_mode`
+- `uint32_t audio_bitrate_kbps`
+- `uint16_t input_polling_rate_hz` (e.g. 1000)
+- `uint8_t mic_passthrough_enabled` (0/1)
+- `uint8_t virtual_audio_driver_enabled` (0/1)
+- `uint32_t reserved1`
+- `uint32_t reserved2`
+- `uint32_t reserved3`
+
+#### `SetHostConfigurationResponse` (`0x0806`, 8 bytes payload)
+- `uint32_t status_code` (0: Success, non-zero: ErrorCode)
+- `uint32_t applied_config_version`
+
+#### `ConfigurationChanged` (`0x0807`, 8 bytes payload)
+- `uint32_t new_config_version`
+- `uint32_t change_reason_flags`
+
+---
+
 ## 5. Error Codes & Validation Rules
 
 | Error Code | Numeric Value | Description |
@@ -248,3 +304,5 @@ Codec-agnostic video transmission framing:
 | `DuplicateSequence` | 9 | Sequence number already processed. |
 | `StaleTimestamp` | 10 | Packet timestamp is older than discard window. |
 | `UnsupportedCodec` | 11 | Requested video or audio codec unsupported by backend. |
+| `UnauthorizedConfiguration` | 12 | Remote peer lacks authorization to modify host settings. |
+| `InvalidConfigurationParameter` | 13 | Requested setting outside acceptable hardware boundaries. |

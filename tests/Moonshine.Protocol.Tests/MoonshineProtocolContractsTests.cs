@@ -10,6 +10,7 @@ public class MoonshineProtocolContractsTests
     [Fact]
     public void StructSizesAndLayouts_MatchExactExpectedBytes()
     {
+        Marshal.SizeOf<MoonshineUuid128>().Should().Be(16);
         Marshal.SizeOf<MoonshinePacketHeader>().Should().Be(32);
         Marshal.SizeOf<MoonshineHelloPayload>().Should().Be(32);
         Marshal.SizeOf<MoonshineHelloResponsePayload>().Should().Be(48);
@@ -24,6 +25,24 @@ public class MoonshineProtocolContractsTests
         Marshal.SizeOf<MoonshineInputMousePayload>().Should().Be(20);
         Marshal.SizeOf<MoonshineInputGamepadPayload>().Should().Be(24);
         Marshal.SizeOf<MoonshineTelemetryReportPayload>().Should().Be(32);
+        Marshal.SizeOf<MoonshineHostCapabilitiesResponsePayload>().Should().Be(32);
+        Marshal.SizeOf<MoonshineHostConfigurationPayload>().Should().Be(48);
+        Marshal.SizeOf<MoonshineSetHostConfigurationResponsePayload>().Should().Be(8);
+        Marshal.SizeOf<MoonshineConfigurationChangedPayload>().Should().Be(8);
+    }
+
+    [Fact]
+    public void MoonshineUuid128_BigEndianRoundtrip_MatchesExactRawBytes()
+    {
+        byte[] rawBytes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        var uuid = new MoonshineUuid128(rawBytes);
+
+        uuid.AsSpan().ToArray().Should().Equal(rawBytes);
+
+        Guid guid = uuid.ToGuid();
+        var reconstructed = new MoonshineUuid128(guid);
+        reconstructed.Should().Be(uuid);
+        reconstructed.AsSpan().ToArray().Should().Equal(rawBytes);
     }
 
     [Fact]
@@ -164,6 +183,39 @@ public class MoonshineProtocolContractsTests
     }
 
     [Fact]
+    public void HelloCodec_ExplicitSerialization_RoundtripsIdentically()
+    {
+        byte[] rawUuid = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160];
+        var original = new MoonshineHelloPayload
+        {
+            ClientVersionMajor = 1,
+            ClientVersionMinor = 0,
+            CapabilitiesMask = MoonshineCapabilities.Av1 | MoonshineCapabilities.Hdr10 | MoonshineCapabilities.Surround71,
+            ClientNonce = 0xABCDEF0123456789UL,
+            ClientUuid = new MoonshineUuid128(rawUuid)
+        };
+
+        byte[] buffer = new byte[32];
+        bool writeSuccess = MoonshineProtocolCodec.TryWriteHello(original, buffer);
+        writeSuccess.Should().BeTrue();
+
+        // Validate big-endian wire encoding
+        buffer[0].Should().Be(0x00);
+        buffer[1].Should().Be(0x01); // Major = 1
+        buffer[2].Should().Be(0x00);
+        buffer[3].Should().Be(0x00); // Minor = 0
+
+        bool readSuccess = MoonshineProtocolCodec.TryReadHello(buffer, out MoonshineHelloPayload decoded);
+        readSuccess.Should().BeTrue();
+
+        decoded.ClientVersionMajor.Should().Be(original.ClientVersionMajor);
+        decoded.ClientVersionMinor.Should().Be(original.ClientVersionMinor);
+        decoded.CapabilitiesMask.Should().Be(original.CapabilitiesMask);
+        decoded.ClientNonce.Should().Be(original.ClientNonce);
+        decoded.ClientUuid.Should().Be(original.ClientUuid);
+    }
+
+    [Fact]
     public void AllMessageFamilyEnums_HaveExactExpectedWireCodes()
     {
         ((ushort)MoonshineMessageType.Hello).Should().Be(0x0101);
@@ -182,5 +234,12 @@ public class MoonshineProtocolContractsTests
         ((ushort)MoonshineMessageType.InputMouse).Should().Be(0x0602);
         ((ushort)MoonshineMessageType.InputGamepad).Should().Be(0x0603);
         ((ushort)MoonshineMessageType.TelemetryReport).Should().Be(0x0701);
+        ((ushort)MoonshineMessageType.GetHostCapabilities).Should().Be(0x0801);
+        ((ushort)MoonshineMessageType.HostCapabilitiesResponse).Should().Be(0x0802);
+        ((ushort)MoonshineMessageType.GetHostConfiguration).Should().Be(0x0803);
+        ((ushort)MoonshineMessageType.HostConfigurationResponse).Should().Be(0x0804);
+        ((ushort)MoonshineMessageType.SetHostConfiguration).Should().Be(0x0805);
+        ((ushort)MoonshineMessageType.SetHostConfigurationResponse).Should().Be(0x0806);
+        ((ushort)MoonshineMessageType.ConfigurationChanged).Should().Be(0x0807);
     }
 }

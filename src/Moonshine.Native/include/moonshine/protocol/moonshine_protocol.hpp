@@ -39,7 +39,16 @@ enum class MoonshineMessageType : uint16_t {
     InputGamepad = 0x0603,
 
     // Telemetry
-    TelemetryReport = 0x0701
+    TelemetryReport = 0x0701,
+
+    // Host Management & Remote Configuration
+    GetHostCapabilities = 0x0801,
+    HostCapabilitiesResponse = 0x0802,
+    GetHostConfiguration = 0x0803,
+    HostConfigurationResponse = 0x0804,
+    SetHostConfiguration = 0x0805,
+    SetHostConfigurationResponse = 0x0806,
+    ConfigurationChanged = 0x0807
 };
 
 enum class MoonshineErrorCode : uint32_t {
@@ -54,10 +63,23 @@ enum class MoonshineErrorCode : uint32_t {
     StreamNotFound = 8,
     DuplicateSequence = 9,
     StaleTimestamp = 10,
-    UnsupportedCodec = 11
+    UnsupportedCodec = 11,
+    UnauthorizedConfiguration = 12,
+    InvalidConfigurationParameter = 13
 };
 
 #pragma pack(push, 1)
+
+/**
+ * @brief Canonical 128-bit UUID (RFC 4122 Big-Endian byte buffer).
+ */
+struct MoonshineUuid128 {
+    uint8_t bytes[16];
+
+    bool operator==(const MoonshineUuid128& other) const noexcept {
+        return std::memcmp(bytes, other.bytes, 16) == 0;
+    }
+};
 
 /**
  * @brief Global 32-byte packet envelope header.
@@ -80,7 +102,7 @@ struct MoonshineHelloPayload {
     uint16_t client_version_minor;
     uint32_t capabilities_mask;
     uint64_t client_nonce;
-    uint8_t client_uuid[16];
+    MoonshineUuid128 client_uuid;
 };
 
 /**
@@ -92,7 +114,7 @@ struct MoonshineHelloResponsePayload {
     uint32_t negotiated_capabilities;
     uint64_t assigned_session_id;
     uint64_t server_nonce;
-    uint8_t challenge_salt[16];
+    MoonshineUuid128 challenge_salt;
     uint32_t session_lease_seconds;
     uint32_t reserved;
 };
@@ -257,9 +279,66 @@ struct MoonshineTelemetryReportPayload {
     uint32_t reserved;
 };
 
+/**
+ * @brief Host capabilities query response payload (32 bytes).
+ */
+struct MoonshineHostCapabilitiesResponsePayload {
+    uint32_t supported_video_codecs;
+    uint32_t supported_audio_codecs;
+    uint32_t max_encode_width;
+    uint32_t max_encode_height;
+    uint32_t max_encode_fps;
+    uint8_t supports_hdr10;
+    uint8_t supports_virtual_audio;
+    uint8_t supports_mic_backchannel;
+    uint8_t reserved;
+    uint32_t max_bitrate_kbps;
+    uint32_t reserved2;
+};
+
+/**
+ * @brief Host configuration query response / set payload (48 bytes).
+ */
+struct MoonshineHostConfigurationPayload {
+    uint32_t config_version;
+    uint32_t display_width;
+    uint32_t display_height;
+    uint32_t refresh_rate_hz;
+    uint32_t target_bitrate_kbps;
+    uint32_t max_bitrate_kbps;
+    uint8_t preferred_codec;
+    uint8_t hdr10_enabled;
+    uint8_t audio_channels;
+    uint8_t audio_quality_mode;
+    uint32_t audio_bitrate_kbps;
+    uint16_t input_polling_rate_hz;
+    uint8_t mic_passthrough_enabled;
+    uint8_t virtual_audio_driver_enabled;
+    uint32_t reserved1;
+    uint32_t reserved2;
+    uint32_t reserved3;
+};
+
+/**
+ * @brief SetHostConfigurationResponse payload (8 bytes).
+ */
+struct MoonshineSetHostConfigurationResponsePayload {
+    uint32_t status_code;
+    uint32_t applied_config_version;
+};
+
+/**
+ * @brief ConfigurationChanged payload (8 bytes).
+ */
+struct MoonshineConfigurationChangedPayload {
+    uint32_t new_config_version;
+    uint32_t change_reason_flags;
+};
+
 #pragma pack(pop)
 
-// Static compile-time binary layout validation
+// Compile-time static assertions ensuring exact binary layout sizes
+static_assert(sizeof(MoonshineUuid128) == 16, "MoonshineUuid128 must be exactly 16 bytes");
 static_assert(sizeof(MoonshinePacketHeader) == 32, "MoonshinePacketHeader size must be exactly 32 bytes");
 static_assert(sizeof(MoonshineHelloPayload) == 32, "MoonshineHelloPayload size must be exactly 32 bytes");
 static_assert(sizeof(MoonshineHelloResponsePayload) == 48, "MoonshineHelloResponsePayload size must be exactly 48 bytes");
@@ -274,6 +353,10 @@ static_assert(sizeof(MoonshineInputKeyboardPayload) == 12, "MoonshineInputKeyboa
 static_assert(sizeof(MoonshineInputMousePayload) == 20, "MoonshineInputMousePayload size must be exactly 20 bytes");
 static_assert(sizeof(MoonshineInputGamepadPayload) == 24, "MoonshineInputGamepadPayload size must be exactly 24 bytes");
 static_assert(sizeof(MoonshineTelemetryReportPayload) == 32, "MoonshineTelemetryReportPayload size must be exactly 32 bytes");
+static_assert(sizeof(MoonshineHostCapabilitiesResponsePayload) == 32, "MoonshineHostCapabilitiesResponsePayload size must be exactly 32 bytes");
+static_assert(sizeof(MoonshineHostConfigurationPayload) == 48, "MoonshineHostConfigurationPayload size must be exactly 48 bytes");
+static_assert(sizeof(MoonshineSetHostConfigurationResponsePayload) == 8, "MoonshineSetHostConfigurationResponsePayload size must be exactly 8 bytes");
+static_assert(sizeof(MoonshineConfigurationChangedPayload) == 8, "MoonshineConfigurationChangedPayload size must be exactly 8 bytes");
 
 // Helper for Big-Endian wire conversion
 template <typename T>
