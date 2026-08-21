@@ -108,7 +108,6 @@ public:
 
     static bool HasAvx2Support() noexcept;
     static bool HasAvx512Support() noexcept;
-    static bool HasGfniSupport() noexcept;
 
     static uint8_t GfMultiplyScalar(uint8_t a, uint8_t b) noexcept;
     static uint8_t GfInverseScalar(uint8_t a) noexcept;

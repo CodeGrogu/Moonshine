@@ -41,3 +41,7 @@ This document tracks known platform limitations, environment requirements, and c
 
 ### Dedicated Virtual Audio Driver (WaveRT Miniport)
 - **Status**: Verified (C-ABI bridge, PortCls WaveRT driver package, and Shared Memory IPC pipeline passing in software test harnesses). Real-device PnP deployment requires WHQL attestation or Windows Test-Signing mode.
+
+### GameStream/Sunshine Video Packet Interoperability
+- **Status**: Prototype. The RTP ingestion path now parses the documented raw packet layout: RTP, four reserved bytes, and the 16-byte `NV_VIDEO_PACKET` header. It preserves the actual stream packet index and keeps packets out of `JitterBuffer` until a protocol-aware frame/FEC assembly stage derives packet counts.
+- **Outstanding Proof**: Capture and replay a real unencrypted Sunshine or GameStream video datagram, then validate frame/FEC assembly against Moonlight before classifying this path as Interop-verified.

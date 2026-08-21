@@ -210,13 +210,20 @@ bool VirtualAudioIpcChannel::Initialize(
             m_syncEvent = CreateEventExW(&sa, localEventName, 0, EVENT_ALL_ACCESS);
         }
 
-        // Retroactive DACL enforcement on existing objects (e.g. if ERROR_ALREADY_EXISTS)
-        if (m_fileMapping && m_syncEvent && sa.lpSecurityDescriptor) {
+        // Retroactive DACL enforcement on existing objects (e.g. if ERROR_ALREADY_EXISTS).
+        // Failure is fail-closed: an owner must never continue with a potentially weak named object.
+        if (sa.lpSecurityDescriptor) {
             PACL pDacl = nullptr;
             BOOL daclPresent = FALSE;
             BOOL daclDefaulted = FALSE;
-            if (GetSecurityDescriptorDacl(sa.lpSecurityDescriptor, &daclPresent, &pDacl, &daclDefaulted) && daclPresent && pDacl) {
-                SetSecurityInfo(
+            if (!GetSecurityDescriptorDacl(sa.lpSecurityDescriptor, &daclPresent, &pDacl, &daclDefaulted) || !daclPresent || !pDacl) {
+                FreeSecurityDescriptor(&sa);
+                Close();
+                SetLastError(ERROR_ACCESS_DENIED);
+                return false;
+            }
+
+            if (m_fileMapping && SetSecurityInfo(
                     m_fileMapping,
                     SE_KERNEL_OBJECT,
                     DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
@@ -224,8 +231,13 @@ bool VirtualAudioIpcChannel::Initialize(
                     nullptr,
                     pDacl,
                     nullptr
-                );
-                SetSecurityInfo(
+                ) != ERROR_SUCCESS) {
+                FreeSecurityDescriptor(&sa);
+                Close();
+                SetLastError(ERROR_ACCESS_DENIED);
+                return false;
+            }
+            if (m_syncEvent && SetSecurityInfo(
                     m_syncEvent,
                     SE_KERNEL_OBJECT,
                     DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
@@ -233,7 +245,11 @@ bool VirtualAudioIpcChannel::Initialize(
                     nullptr,
                     pDacl,
                     nullptr
-                );
+                ) != ERROR_SUCCESS) {
+                FreeSecurityDescriptor(&sa);
+                Close();
+                SetLastError(ERROR_ACCESS_DENIED);
+                return false;
             }
         }
 

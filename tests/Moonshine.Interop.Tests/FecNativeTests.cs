@@ -10,8 +10,8 @@ public class FecNativeTests
     public void FecGetSimdArchitecture_ReturnsValidInstructionSet()
     {
         uint arch = MoonshineNativeMethods.FecGetSimdArchitecture();
-        // 0: Scalar, 1: AVX2, 2: AVX512, 3: GFNI + AVX512
-        arch.Should().BeInRange(0, 3);
+        // 0: Scalar, 1: AVX2, 2: AVX512
+        arch.Should().BeInRange(0, 2);
     }
 
     [Fact]

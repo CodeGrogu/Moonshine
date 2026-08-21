@@ -81,7 +81,7 @@ The table below provides a technically accurate comparison between the multi-pla
 | **Video Decoding & Presentation** | Routes video through FFmpeg (`libavcodec`) wrappers (D3D11VA, VAAPI, VideoToolbox) onto Qt/SDL window surfaces | Direct3D 11/12 video decoding surfaces presenting directly into native DXGI flip-model swapchains (`DXGI_SWAP_EFFECT_FLIP_DISCARD`) |
 | **Input Ingestion & Dispatch** | Processes input events through SDL2 event polling loops and periodic timer callbacks | Direct Win32 `WM_INPUT` (Raw Input) handler bypassing SDL message queues for 1000Hz polling |
 | **Buffer & Memory Ingestion** | Uses internal C packet buffers with pool reuse through queue boundaries | Contiguous pinned native memory arenas (`PinnedBufferPool`) with zero-allocation `Span<byte>` parsing |
-| **FEC Galois Field Arithmetic** | Scalar 256-byte exponent/logarithm lookup tables in sequential loops | Multi-tiered SIMD kernels: AVX2 4-bit nibble decomposition (`_mm256_shuffle_epi8`) and AVX-512 GFNI (`_mm512_gf2p8mul_epi8`) |
+| **FEC Galois Field Arithmetic** | Scalar 256-byte exponent/logarithm lookup tables in sequential loops | Multi-tiered SIMD nibble-decomposition kernels: AVX2 (`_mm256_shuffle_epi8`) and AVX-512 (`_mm512_shuffle_epi8`) |
 | **Thread Synchronisation** | Traditional POSIX / C++ standard mutexes and condition variables | Cacheline-padded (`alignas(64)`), lock-free Single-Producer Single-Consumer (SPSC) atomic ring buffers |
 | **Audio Presentation** | Audio rendering through SDL2 callback buffers | Direct WASAPI Exclusive mode rendering, bypassing Windows Audio Engine mixer latency |
 

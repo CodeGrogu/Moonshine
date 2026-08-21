@@ -10,7 +10,7 @@ public unsafe class StructLayoutTests
     [Fact]
     public void MoonshinePacketDesc_HasExactExpectedSizeAndLayout()
     {
-        // 4 (Seq) + 4 (Frame) + 2 (PacketIdx) + 2 (TotalPackets) + 2 (PayloadSize) + 1 (Type) + 1 (Flags) + 4 (SlotIdx) + 4 (Reserved) + 8 (Ptr) = 32 bytes
+        // 4 (Seq) + 4 (Frame) + 2 (PacketIdx) + 2 (TotalPackets) + 2 (PayloadSize) + 1 (Type) + 1 (Flags) + 4 (SlotIdx) + 4 (StreamPacketIdx) + 8 (Ptr) = 32 bytes
         int size = sizeof(MoonshinePacketDesc);
         size.Should().Be(32);
         Marshal.SizeOf<MoonshinePacketDesc>().Should().Be(32);
@@ -24,7 +24,7 @@ public unsafe class StructLayoutTests
         Marshal.OffsetOf<MoonshinePacketDesc>(nameof(MoonshinePacketDesc.PacketType)).ToInt32().Should().Be(14);
         Marshal.OffsetOf<MoonshinePacketDesc>(nameof(MoonshinePacketDesc.Flags)).ToInt32().Should().Be(15);
         Marshal.OffsetOf<MoonshinePacketDesc>(nameof(MoonshinePacketDesc.BufferSlotIndex)).ToInt32().Should().Be(16);
-        Marshal.OffsetOf<MoonshinePacketDesc>(nameof(MoonshinePacketDesc.Reserved)).ToInt32().Should().Be(20);
+        Marshal.OffsetOf<MoonshinePacketDesc>(nameof(MoonshinePacketDesc.StreamPacketIndex)).ToInt32().Should().Be(20);
         Marshal.OffsetOf<MoonshinePacketDesc>(nameof(MoonshinePacketDesc.PayloadPtr)).ToInt32().Should().Be(24);
     }
 
@@ -44,6 +44,7 @@ public unsafe class StructLayoutTests
             PacketType = 0x0A,
             Flags = 0x0B,
             BufferSlotIndex = 0x0000002A, // 42
+            StreamPacketIndex = 0x00A1B2C3,
             PayloadPtr = samplePayloadPtr
         };
 
@@ -86,6 +87,12 @@ public unsafe class StructLayoutTests
         rawBytes[17].Should().Be(0x00);
         rawBytes[18].Should().Be(0x00);
         rawBytes[19].Should().Be(0x00);
+
+        // Verify uint32 StreamPacketIndex
+        rawBytes[20].Should().Be(0xC3);
+        rawBytes[21].Should().Be(0xB2);
+        rawBytes[22].Should().Be(0xA1);
+        rawBytes[23].Should().Be(0x00);
 
         // Verify uint64 PayloadPtr at offset 24
         ulong expectedPtrVal = (ulong)samplePayloadPtr;

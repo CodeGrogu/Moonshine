@@ -78,10 +78,21 @@ public class UdpSocketPipelineTests
 
         try
         {
+            IntPtr returnQueue = IntPtr.Zero;
+            int returnedSlots = 0;
             using var pipeline = new UdpSocketPipeline(
                 localPort: 0,
-                nativeSpscHandle: spscHandle
+                nativeSpscHandle: spscHandle,
+                nativeConsumerStopAndJoin: () =>
+                {
+                    while (MoonshineNativeMethods.SpscDequeue(spscHandle, out var packet) != 0)
+                    {
+                        MoonshineNativeMethods.SlotReturnEnqueue(returnQueue, packet.BufferSlotIndex).Should().Be(1);
+                        Interlocked.Increment(ref returnedSlots);
+                    }
+                }
             );
+            returnQueue = pipeline.ReturnQueueHandle;
 
             byte[] rawPacket = new byte[100];
             rawPacket[0] = 0x80;
@@ -94,10 +105,9 @@ public class UdpSocketPipelineTests
             nuint size = MoonshineNativeMethods.SpscSize(spscHandle);
             size.Should().Be(1);
 
-            int dequeueResult = MoonshineNativeMethods.SpscDequeue(spscHandle, out var dequeuedPacket);
-            dequeueResult.Should().Be(1);
-            dequeuedPacket.SequenceNumber.Should().Be(5);
-            dequeuedPacket.PayloadSize.Should().Be(100 - 12);
+            // The owner-side shutdown barrier drains the native queue and returns the backing slot.
+            pipeline.Dispose();
+            returnedSlots.Should().Be(1);
         }
         finally
         {
@@ -171,7 +181,8 @@ public class UdpSocketPipelineTests
             using var pipeline = new UdpSocketPipeline(
                 localPort: 0,
                 nativeSpscHandle: spscHandle,
-                poolSlotCount: poolCapacity
+                poolSlotCount: poolCapacity,
+                nativeConsumerStopAndJoin: () => { }
             );
 
             IntPtr returnQueue = pipeline.ReturnQueueHandle;
@@ -263,7 +274,8 @@ public class UdpSocketPipelineTests
             using var pipeline = new UdpSocketPipeline(
                 localPort: 0,
                 nativeSpscHandle: spscHandle,
-                poolSlotCount: poolCapacity
+                poolSlotCount: poolCapacity,
+                nativeConsumerStopAndJoin: () => { }
             );
 
             byte[] rawPacket = new byte[64];
@@ -354,7 +366,8 @@ public class UdpSocketPipelineTests
             using var pipeline = new UdpSocketPipeline(
                 localPort: 0,
                 nativeSpscHandle: spscHandle,
-                poolSlotCount: poolCapacity
+                poolSlotCount: poolCapacity,
+                nativeConsumerStopAndJoin: () => { }
             );
 
             IntPtr returnQueue = pipeline.ReturnQueueHandle;
@@ -439,11 +452,12 @@ public class UdpSocketPipelineTests
             {
                 receivedDesc = desc;
                 callbackFired = true;
-            }
+            },
+            parseGameStreamVideoHeaders: true
         );
 
-        // 12-byte RTP header + 12-byte NvVideoHeader + 100-byte payload = 124 bytes
-        byte[] rawPacket = new byte[124];
+        // 12-byte RTP header + 4-byte reserved area + 16-byte NV_VIDEO_PACKET + 100-byte payload = 132 bytes
+        byte[] rawPacket = new byte[132];
         rawPacket[0] = 0x80; // V=2
         rawPacket[1] = 98; // HEVC
         rawPacket[2] = 0x00; // Seq = 1
@@ -453,26 +467,20 @@ public class UdpSocketPipelineTests
         rawPacket[6] = 0x03;
         rawPacket[7] = 0xE8;
 
-        // NvVideoHeader at offset 12
-        // FrameIndex = 500
-        BitConverter.TryWriteBytes(rawPacket.AsSpan(12, 4), (uint)500);
-        // PacketIndex = 2
-        BitConverter.TryWriteBytes(rawPacket.AsSpan(16, 4), (uint)2);
-        // TotalPackets = 4
-        BitConverter.TryWriteBytes(rawPacket.AsSpan(20, 2), (ushort)4);
-        // Flags = 0x05 (Keyframe | StartOfFrame)
-        rawPacket[22] = 0x05;
-        rawPacket[23] = 0x00;
-
-        rawPacket[24] = 0xAA; // First video payload byte
+        // Four reserved bytes follow RTP. NV_VIDEO_PACKET begins at offset 16.
+        BitConverter.TryWriteBytes(rawPacket.AsSpan(16, 4), 0x00000200u); // Stream packet index = 2
+        BitConverter.TryWriteBytes(rawPacket.AsSpan(20, 4), 500u);        // Frame index = 500
+        rawPacket[24] = 0x06;                                             // Start | End
+        rawPacket[32] = 0xAA; // First video payload byte
 
         pipeline.ProcessDatagram(rawPacket);
 
         callbackFired.Should().BeTrue();
         receivedDesc.FrameIndex.Should().Be(500);
         receivedDesc.PacketIndex.Should().Be(2);
-        receivedDesc.TotalPackets.Should().Be(4);
-        receivedDesc.Flags.Should().Be(0x05);
+        receivedDesc.StreamPacketIndex.Should().Be(2);
+        receivedDesc.TotalPackets.Should().Be(0);
+        receivedDesc.Flags.Should().Be(0x03);
         receivedDesc.PayloadSize.Should().Be(100);
         (*receivedDesc.PayloadPtr).Should().Be(0xAA);
     }
@@ -486,13 +494,17 @@ public class UdpSocketPipelineTests
 
         try
         {
+            IntPtr returnQueue = IntPtr.Zero;
+            Thread? consumerThread = null;
+            int returnedSlots = 0;
             var pipeline = new UdpSocketPipeline(
                 localPort: 0,
                 nativeSpscHandle: spscHandle,
-                poolSlotCount: poolCapacity
+                poolSlotCount: poolCapacity,
+                nativeConsumerStopAndJoin: () => consumerThread!.Join()
             );
 
-            IntPtr returnQueue = pipeline.ReturnQueueHandle;
+            returnQueue = pipeline.ReturnQueueHandle;
 
             // Ingest 10 datagrams
             for (int i = 0; i < 10; i++)
@@ -508,31 +520,21 @@ public class UdpSocketPipelineTests
             pipeline.BufferPool.InFlightCount.Should().Be(10);
 
             // Simulate dedicated native consumer thread draining and recycling with delay
-            var consumerThread = new Thread(() =>
+            consumerThread = new Thread(() =>
             {
                 Thread.Sleep(20);
                 while (MoonshineNativeMethods.SpscDequeue(spscHandle, out var desc) != 0)
                 {
                     int ret = MoonshineNativeMethods.SlotReturnEnqueue(returnQueue, desc.BufferSlotIndex);
                     ret.Should().Be(1);
+                    Interlocked.Increment(ref returnedSlots);
                 }
             });
             consumerThread.Start();
 
-            // Explicit consumer lifecycle join barrier before teardown
-            consumerThread.Join();
-
-            // Drain return queue into pool
-            while (pipeline.BufferPool.InFlightCount > 0)
-            {
-                pipeline.BufferPool.TryRent(out int slot, out _, out _);
-                if (slot >= 0) pipeline.BufferPool.ReturnRented(slot);
-            }
-
-            // Quiescence assertion: all slots accounted for, none in-flight or rented
-            pipeline.BufferPool.AssertQuiescent();
-
+            // Dispose owns the stop-and-join barrier, return-ring drain, and quiescence assertion.
             pipeline.Dispose();
+            returnedSlots.Should().Be(10);
         }
         finally
         {

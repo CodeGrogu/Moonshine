@@ -46,7 +46,7 @@ typedef struct MoonshinePacketDesc {
     uint8_t  packet_type;        // offset 14, size 1 (0: Data, 1: Parity)
     uint8_t  flags;              // offset 15, size 1 (Bit 0: Start, Bit 1: End, Bit 2: Keyframe)
     int32_t  buffer_slot_index;  // offset 16, size 4 (MOONSHINE_NO_BUFFER_SLOT = -1 if unbacked)
-    uint8_t  reserved[4];        // offset 20, size 4 (brings total to 32 bytes)
+    uint32_t stream_packet_index;// offset 20, size 4 (GameStream SPI, zero for non-GameStream packets)
     const uint8_t* payload_ptr;  // offset 24, size 8
 } MoonshinePacketDesc;
 
@@ -163,7 +163,7 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_vector_xor(
 
 /**
  * @brief Queries the runtime SIMD instruction set architecture utilized for Galois Field FEC.
- * @return 0: Scalar, 1: AVX2, 2: AVX-512, 3: GFNI + AVX-512.
+ * @return 0: Scalar, 1: AVX2, 2: AVX-512.
  */
 MOONSHINE_API uint32_t MOONSHINE_CONV moonshine_fec_get_simd_architecture(void);
 

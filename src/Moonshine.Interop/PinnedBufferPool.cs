@@ -125,22 +125,7 @@ public sealed unsafe class PinnedBufferPool : IDisposable
                 return false;
             }
 
-            // Drain all recycled slots from the unmanaged return ring
-            if (_returnRingHandle != IntPtr.Zero)
-            {
-                while (MoonshineNativeMethods.SlotReturnDequeue(_returnRingHandle, out int recycledSlot) != 0)
-                {
-                    if (recycledSlot >= 0 && recycledSlot < _slotCount)
-                    {
-                        if (_slotStates[recycledSlot] == SlotState.InFlight)
-                        {
-                            _slotStates[recycledSlot] = SlotState.Free;
-                            _freeIndices[_head] = recycledSlot;
-                            _head++;
-                        }
-                    }
-                }
-            }
+            DrainReturnedSlotsUnderLock();
 
             if (_head <= 0)
             {
@@ -156,6 +141,36 @@ public sealed unsafe class PinnedBufferPool : IDisposable
             pointer = _slabMemory + ((nuint)slotIndex * (nuint)_slotSize);
             span = new Span<byte>(pointer, _slotSize);
             return true;
+        }
+    }
+
+    /// <summary>
+    /// Drains slots returned by the native consumer. The consumer must have been stopped and joined before this is called during teardown.
+    /// </summary>
+    public void DrainReturnedSlots()
+    {
+        lock (_lock)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            DrainReturnedSlotsUnderLock();
+        }
+    }
+
+    private void DrainReturnedSlotsUnderLock()
+    {
+        if (_returnRingHandle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        while (MoonshineNativeMethods.SlotReturnDequeue(_returnRingHandle, out int recycledSlot) != 0)
+        {
+            if (recycledSlot >= 0 && recycledSlot < _slotCount && _slotStates[recycledSlot] == SlotState.InFlight)
+            {
+                _slotStates[recycledSlot] = SlotState.Free;
+                _freeIndices[_head] = recycledSlot;
+                _head++;
+            }
         }
     }
 
@@ -263,7 +278,14 @@ public sealed unsafe class PinnedBufferPool : IDisposable
         {
             if (_head != _slotCount)
             {
-                throw new InvalidOperationException($"Buffer pool is not quiescent: head ({_head}) != slotCount ({_slotCount}). FreeCount={FreeCount}, RentedCount={RentedCount}, InFlightCount={InFlightCount}.");
+                int rented = 0;
+                int inFlight = 0;
+                for (int i = 0; i < _slotCount; i++)
+                {
+                    if (_slotStates[i] == SlotState.Rented) rented++;
+                    else if (_slotStates[i] == SlotState.InFlight) inFlight++;
+                }
+                throw new InvalidOperationException($"Buffer pool is not quiescent: head ({_head}) != slotCount ({_slotCount}). FreeCount={_head}, RentedCount={rented}, InFlightCount={inFlight}.");
             }
 
             for (int i = 0; i < _slotCount; i++)

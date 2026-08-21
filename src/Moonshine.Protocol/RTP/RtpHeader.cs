@@ -41,7 +41,64 @@ public readonly record struct RtpHeader
         }
 
         header = MemoryMarshal.Read<RtpHeader>(source);
-        payload = source[Size..];
+        if (header.Version != 2)
+        {
+            header = default;
+            payload = default;
+            return false;
+        }
+
+        int offset = Size + (header.CsrcCount * 4);
+        if (offset > source.Length)
+        {
+            header = default;
+            payload = default;
+            return false;
+        }
+
+        if (header.HasExtension)
+        {
+            if (source.Length - offset < 4)
+            {
+                header = default;
+                payload = default;
+                return false;
+            }
+
+            int extensionLength = BinaryPrimitives.ReadUInt16BigEndian(source[(offset + 2)..]) * 4;
+            offset += 4;
+            if (extensionLength > source.Length - offset)
+            {
+                header = default;
+                payload = default;
+                return false;
+            }
+
+            offset += extensionLength;
+        }
+
+        int payloadLength = source.Length - offset;
+        if (header.HasPadding)
+        {
+            if (payloadLength == 0)
+            {
+                header = default;
+                payload = default;
+                return false;
+            }
+
+            int paddingLength = source[^1];
+            if (paddingLength == 0 || paddingLength > payloadLength)
+            {
+                header = default;
+                payload = default;
+                return false;
+            }
+
+            payloadLength -= paddingLength;
+        }
+
+        payload = source.Slice(offset, payloadLength);
         return true;
     }
 }

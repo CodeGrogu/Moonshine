@@ -68,16 +68,6 @@ bool ReedSolomonSimd::HasAvx512Support() noexcept {
 #endif
 }
 
-bool ReedSolomonSimd::HasGfniSupport() noexcept {
-#if defined(_MSC_VER)
-    return CheckCpuFeature(7, 0, 2, 8); // ECX bit 8: GFNI
-#elif defined(__GNUC__) || defined(__clang__)
-    return __builtin_cpu_supports("gfni");
-#else
-    return false;
-#endif
-}
-
 SimdArchitecture ReedSolomonSimd::GetDetectedArchitecture() noexcept {
     if (HasAvx512Support()) return SimdArchitecture::Avx512;
     if (HasAvx2Support()) return SimdArchitecture::Avx2;

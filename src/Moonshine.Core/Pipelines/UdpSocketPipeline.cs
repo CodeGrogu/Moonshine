@@ -24,6 +24,9 @@ public sealed class UdpSocketPipeline : IAsyncDisposable, IDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly IntPtr _nativeSpscHandle;
     private readonly Action<MoonshinePacketDesc>? _packetCallback;
+    private readonly Action<MoonshinePacketDesc>? _rawPacketCallback;
+    private readonly Action? _nativeConsumerStopAndJoin;
+    private readonly bool _parseGameStreamVideoHeaders;
     private RtpSequenceUnwrapper _unwrapper;
     private ulong _expectedNextSeq;
     private bool _firstPacket = true;
@@ -33,6 +36,7 @@ public sealed class UdpSocketPipeline : IAsyncDisposable, IDisposable
     private ulong _bytesReceived;
     private ulong _packetsDropped;
     private ulong _sequenceDiscontinuities;
+    private int _disposeSignalled;
 
     public int Port { get; }
     public PinnedBufferPool BufferPool => _bufferPool;
@@ -49,10 +53,21 @@ public sealed class UdpSocketPipeline : IAsyncDisposable, IDisposable
         int socketBufferSize = 8 * 1024 * 1024,
         IntPtr nativeSpscHandle = default,
         Action<MoonshinePacketDesc>? packetCallback = null,
-        int poolSlotCount = 2048)
+        int poolSlotCount = 2048,
+        Action? nativeConsumerStopAndJoin = null,
+        Action<MoonshinePacketDesc>? rawPacketCallback = null,
+        bool parseGameStreamVideoHeaders = false)
     {
+        if (nativeSpscHandle != IntPtr.Zero && nativeConsumerStopAndJoin is null)
+        {
+            throw new ArgumentException("A native SPSC pipeline requires a stop-and-join barrier that returns every owned slot before disposal.", nameof(nativeConsumerStopAndJoin));
+        }
+
         _nativeSpscHandle = nativeSpscHandle;
         _packetCallback = packetCallback;
+        _rawPacketCallback = rawPacketCallback;
+        _nativeConsumerStopAndJoin = nativeConsumerStopAndJoin;
+        _parseGameStreamVideoHeaders = parseGameStreamVideoHeaders;
         _bufferPool = new PinnedBufferPool(poolSlotCount, 2048);
 
         _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp)
@@ -160,12 +175,17 @@ public sealed class UdpSocketPipeline : IAsyncDisposable, IDisposable
         byte flags = (byte)(rtpHeader.Marker ? 2 : 0); // Bit 1: End of frame
         ReadOnlySpan<byte> actualPayload = payload;
 
-        if (isVideo && NvVideoHeader.TryParse(payload, out NvVideoHeader nvVideoHeader, out ReadOnlySpan<byte> videoPayload))
+        uint streamPacketIndex = 0;
+        if (isVideo && _parseGameStreamVideoHeaders && payload.Length >= 4 + NvVideoHeader.Size &&
+            NvVideoHeader.TryParse(payload[4..], out NvVideoHeader nvVideoHeader, out ReadOnlySpan<byte> videoPayload))
         {
             frameIndex = nvVideoHeader.FrameIndex;
-            packetIndex = (ushort)nvVideoHeader.PacketIndex;
-            totalPackets = nvVideoHeader.TotalPackets;
-            flags = nvVideoHeader.Flags;
+            streamPacketIndex = nvVideoHeader.StreamPacketIndex;
+            packetIndex = (ushort)streamPacketIndex;
+            // A real NV_VIDEO_PACKET does not carry a total-packet count. It must remain on the raw path
+            // until a protocol-aware frame/FEC assembly stage derives a complete frame description.
+            flags = (byte)((nvVideoHeader.IsStartOfFrame ? 0x01 : 0x00) |
+                           (nvVideoHeader.IsEndOfFrame ? 0x02 : 0x00));
             actualPayload = videoPayload;
         }
 
@@ -181,6 +201,7 @@ public sealed class UdpSocketPipeline : IAsyncDisposable, IDisposable
             PacketType = (byte)(isVideo ? 0 : 1),
             Flags = flags,
             BufferSlotIndex = slotIndex,
+            StreamPacketIndex = streamPacketIndex,
             PayloadPtr = slabPtr
         };
 
@@ -202,7 +223,16 @@ public sealed class UdpSocketPipeline : IAsyncDisposable, IDisposable
         try
         {
             // Invoke managed callback if registered
-            _packetCallback?.Invoke(desc);
+            // Packets without a derived total count are raw protocol packets. They must never be sent
+            // to JitterBuffer, which rejects TotalPackets == 0 by contract.
+            if (desc.TotalPackets == 0)
+            {
+                (_rawPacketCallback ?? _packetCallback)?.Invoke(desc);
+            }
+            else
+            {
+                _packetCallback?.Invoke(desc);
+            }
         }
         finally
         {
@@ -216,6 +246,11 @@ public sealed class UdpSocketPipeline : IAsyncDisposable, IDisposable
 
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposeSignalled, 1) != 0)
+        {
+            return;
+        }
+
         _cts.Cancel();
         _socket.Close();
 
@@ -233,11 +268,7 @@ public sealed class UdpSocketPipeline : IAsyncDisposable, IDisposable
 
         _socket.Dispose();
 
-        // Drain unmanaged return ring to reclaim recycled slots returned during teardown
-        if (_bufferPool.ReturnQueueHandle != IntPtr.Zero)
-        {
-            while (MoonshineNativeMethods.SlotReturnDequeue(_bufferPool.ReturnQueueHandle, out _) != 0) { }
-        }
+        StopNativeConsumerAndVerifyQuiescence();
 
         _bufferPool.Dispose();
         _cts.Dispose();
@@ -245,6 +276,11 @@ public sealed class UdpSocketPipeline : IAsyncDisposable, IDisposable
 
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposeSignalled, 1) != 0)
+        {
+            return;
+        }
+
         _cts.Cancel();
         _socket.Close();
 
@@ -262,13 +298,23 @@ public sealed class UdpSocketPipeline : IAsyncDisposable, IDisposable
 
         _socket.Dispose();
 
-        // Drain unmanaged return ring to reclaim recycled slots returned during teardown
-        if (_bufferPool.ReturnQueueHandle != IntPtr.Zero)
-        {
-            while (MoonshineNativeMethods.SlotReturnDequeue(_bufferPool.ReturnQueueHandle, out _) != 0) { }
-        }
+        StopNativeConsumerAndVerifyQuiescence();
 
         _bufferPool.Dispose();
         _cts.Dispose();
+    }
+
+    private void StopNativeConsumerAndVerifyQuiescence()
+    {
+        if (_nativeSpscHandle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        // The supplied operation must stop the consumer, join it, and enqueue every outstanding slot
+        // on ReturnQueueHandle. Only then is it safe to recycle slots or free the unmanaged slab.
+        _nativeConsumerStopAndJoin!();
+        _bufferPool.DrainReturnedSlots();
+        _bufferPool.AssertQuiescent();
     }
 }

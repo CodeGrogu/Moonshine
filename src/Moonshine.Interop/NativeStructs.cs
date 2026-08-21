@@ -18,7 +18,8 @@ public unsafe struct MoonshinePacketDesc
     public byte PacketType; // 0: Data, 1: Parity (FEC)
     public byte Flags;      // Bit 0: Start, Bit 1: End, Bit 2: Keyframe
     public int BufferSlotIndex;
-    public fixed byte Reserved[4];
+    /// <summary>Full 24-bit GameStream stream packet index, or zero for non-GameStream packets.</summary>
+    public uint StreamPacketIndex;
     public byte* PayloadPtr;
 }
 
@@ -141,4 +142,3 @@ public struct MoonshineEncodedPacketDesc
     public byte TemporalId;
     public byte Reserved;
 }
-

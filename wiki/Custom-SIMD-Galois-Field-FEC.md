@@ -1,6 +1,6 @@
 # Custom SIMD Galois Field GF(2^8) Reed-Solomon Forward Error Correction
 
-Moonshine implements a custom-engineered, multi-tiered SIMD Galois Field $GF(2^8)$ Reed-Solomon Forward Error Correction (FEC) engine supporting Intel GFNI (Galois Field New Instructions), AVX-512BW, AVX2, and 64-bit scalar execution paths.
+Moonshine implements a custom-engineered, multi-tiered SIMD Galois Field $GF(2^8)$ Reed-Solomon Forward Error Correction (FEC) engine supporting AVX-512BW, AVX2, and 64-bit scalar execution paths.
 
 ---
 
@@ -28,27 +28,17 @@ $$\alpha \cdot \beta = \exp\Big((\log(\alpha) + \log(\beta)) \pmod{255}\Big)$$
        ┌────────────────────┼────────────────────┐
        ▼                    ▼                    ▼
 ┌───────────────┐    ┌───────────────┐    ┌───────────────┐
-│ Intel GFNI +  │    │  AVX-512BW /  │    │  Scalar /     │
-│ AVX-512 (ZMM) │    │  AVX2 (YMM)   │    │  64-bit Tail  │
-│ 64 Bytes/inst │    │ Nibble Table  │    │ Word Fallback │
+│ AVX-512BW     │    │  AVX2         │    │  Scalar /     │
+│ Nibble Table  │    │  Nibble Table │    │  64-bit Tail  │
+│ 64 Bytes/step │    │  32 Bytes/step│    │ Word Fallback │
 └───────────────┘    └───────────────┘    └───────────────┘
 ```
 
-### Tier 1: Intel GFNI + AVX-512 (64 Bytes Per Clock)
-On Intel Ice Lake, Alder Lake / Raptor Lake, Sapphire Rapids, and AMD Zen 4 / Zen 5 CPUs with `GFNI` and `AVX512F`:
-- Utilizes `_mm512_gf2p8mul_epi8` for tableless single-cycle parallel multiplication of 64 bytes in 512-bit ZMM registers.
-- Accumulates parity shards with `_mm512_xor_si512`.
+### Tier 1: AVX-512BW 4-Bit Nibble Decomposition (64 Bytes Per Step)
+On CPUs with `AVX512F` and `AVX512BW`, multiplication uses replicated 4-bit lookup tables with `_mm512_shuffle_epi8`, then XORs the low and high nibble results. No GFNI instruction is advertised or executed.
 
-```cpp
-__m512i v_coeff = _mm512_set1_epi8(coeff);
-__m512i v_src   = _mm512_loadu_si512(src + i);
-__m512i v_dest  = _mm512_loadu_si512(dest + i);
-__m512i v_prod  = _mm512_gf2p8mul_epi8(v_src, v_coeff);
-_mm512_storeu_si512(dest + i, _mm512_xor_si512(v_dest, v_prod));
-```
-
-### Tier 2: AVX2 4-Bit Nibble Decomposition (32 Bytes Per Clock)
-On AVX2 hardware without GFNI, each byte $b$ is decomposed into low nibble $b_L = b \ \& \ \text{0x0F}$ and high nibble $b_H = (b \gg 4) \ \& \ \text{0x0F}$:
+### Tier 2: AVX2 4-Bit Nibble Decomposition (32 Bytes Per Step)
+On AVX2 hardware, each byte $b$ is decomposed into low nibble $b_L = b \ \& \ \text{0x0F}$ and high nibble $b_H = (b \gg 4) \ \& \ \text{0x0F}$:
 $$b \cdot c = (b_L \cdot c) \oplus (b_H \cdot c)$$
 
 - Lookups are executed simultaneously across 32 bytes using `_mm256_shuffle_epi8` (`vpshufb`).
@@ -62,6 +52,5 @@ At runtime, the engine queries CPUID leaf 7:
 - **AVX2**: `EBX` bit 5
 - **AVX-512F**: `EBX` bit 16
 - **AVX-512BW**: `EBX` bit 30
-- **GFNI**: `ECX` bit 8
 
 The active instruction set can be queried via `moonshine_fec_get_simd_architecture()`.

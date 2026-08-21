@@ -202,6 +202,9 @@ void VerifyKernelObjectDacl(HANDLE handle, const char* objectName) {
     bool foundSystem = false;
     bool foundAdmins = false;
     bool foundCurrentUser = false;
+    DWORD expectedFullAccessMask = std::strcmp(objectName, "FileMapping (Shared Memory)") == 0
+        ? SECTION_ALL_ACCESS
+        : EVENT_ALL_ACCESS;
 
     REQUIRE(pDacl->AceCount == 3);
 
@@ -223,16 +226,16 @@ void VerifyKernelObjectDacl(HANDLE handle, const char* objectName) {
         REQUIRE(!EqualSid(aceSid, pSidUsers));
         REQUIRE(!EqualSid(aceSid, pSidAppPackages));
 
-        // Check authorized identities & verify exact GENERIC_ALL access mask
+        // Windows expands the SDDL GA token into the exact full-control mask for the kernel object type.
         if (EqualSid(aceSid, pSidSystem)) {
             foundSystem = true;
-            REQUIRE(((allowedAce->Mask & GENERIC_ALL) == GENERIC_ALL) || (allowedAce->Mask != 0));
+            REQUIRE(allowedAce->Mask == expectedFullAccessMask);
         } else if (EqualSid(aceSid, pSidAdmins)) {
             foundAdmins = true;
-            REQUIRE(((allowedAce->Mask & GENERIC_ALL) == GENERIC_ALL) || (allowedAce->Mask != 0));
+            REQUIRE(allowedAce->Mask == expectedFullAccessMask);
         } else if (EqualSid(aceSid, pSidCurrentUser)) {
             foundCurrentUser = true;
-            REQUIRE(((allowedAce->Mask & GENERIC_ALL) == GENERIC_ALL) || (allowedAce->Mask != 0));
+            REQUIRE(allowedAce->Mask == expectedFullAccessMask);
         } else {
             // No unrecognized identities allowed in strict Current User + SYSTEM + Builtin Administrators policy
             std::cerr << "Unexpected SID detected in kernel object DACL at ACE " << i << std::endl;
