@@ -1,25 +1,31 @@
+using Moonshine.Core.Runtime;
 using Moonshine.Host;
 
 namespace Moonshine.App;
 
-[Flags]
-public enum ApplicationRole
-{
-    None = 0,
-    Host = 1,
-    Client = 2,
-    HostAndClient = Host | Client
-}
-
 public readonly record struct ApplicationStartResult(bool IsStarted, string Message);
 
 /// <summary>
-/// Single Windows application composition root. Role selection is independent, but streaming
-/// activation remains unavailable until Moonshine-native control and media transports exist.
+/// Single Windows application composition root. Coordinates the unified executable's runtime lifecycle,
+/// delegating role activations to the <see cref="IRuntimeCoordinator"/> while preserving fail-closed baseline.
 /// </summary>
 public sealed class MoonshineApplication : IDisposable
 {
-    private readonly MoonshineHostCoordinator _host = new();
+    private readonly IRuntimeCoordinator _coordinator;
+
+    public MoonshineApplication()
+        : this(new MoonshineRuntimeCoordinator(
+            hostServiceFactory: () => new MoonshineHostCoordinator(),
+            clientServiceFactory: () => new MoonshineClientCoordinator()))
+    {
+    }
+
+    public MoonshineApplication(IRuntimeCoordinator coordinator)
+    {
+        _coordinator = coordinator;
+    }
+
+    public IRuntimeCoordinator Coordinator => _coordinator;
 
     public static bool TryParseRole(string[] arguments, out ApplicationRole role)
     {
@@ -41,15 +47,11 @@ public sealed class MoonshineApplication : IDisposable
 
     public ApplicationStartResult Start(ApplicationRole role)
     {
-        if ((role & ApplicationRole.Host) != 0)
-        {
-            _host.Enable();
-        }
-
+        RoleTransitionResult result = _coordinator.StartAsync(role).AsTask().GetAwaiter().GetResult();
         return new ApplicationStartResult(
-            IsStarted: false,
-            "Streaming is unsupported: Moonshine-native session control, transport, decode, encode, and presentation paths are not implemented. No compatibility protocol or fabricated hardware path was started.");
+            IsStarted: result.State == RuntimeState.Running,
+            result.Message ?? "Streaming is unsupported: Moonshine-native session control, transport, decode, encode, and presentation paths are not implemented. No compatibility protocol or fabricated hardware path was started.");
     }
 
-    public void Dispose() => _host.Dispose();
+    public void Dispose() => _coordinator.Dispose();
 }

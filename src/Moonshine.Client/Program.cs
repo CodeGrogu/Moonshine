@@ -1,4 +1,5 @@
 using Moonshine.App;
+using Moonshine.Core.Runtime;
 
 if (!MoonshineApplication.TryParseRole(args, out ApplicationRole role))
 {
@@ -8,6 +9,6 @@ if (!MoonshineApplication.TryParseRole(args, out ApplicationRole role))
 
 using var application = new MoonshineApplication();
 ApplicationStartResult result = application.Start(role);
-Console.WriteLine($"Moonshine role: {role}");
+Console.WriteLine($"Moonshine role: {role.FormatRole()}");
 Console.WriteLine(result.Message);
 return result.IsStarted ? 0 : 1;
