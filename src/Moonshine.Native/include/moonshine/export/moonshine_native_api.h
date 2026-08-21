@@ -139,12 +139,45 @@ MOONSHINE_API size_t MOONSHINE_CONV moonshine_spsc_size(MoonshineRingBufferHandl
 
 // ============================================================================
 // Lock-Free SPSC Slot Return Queue Management APIs
+// Single Producer (Native Stream Worker) / Single Consumer (Managed Ingestion Loop)
 // ============================================================================
 
+/**
+ * Creates an unmanaged lock-free SPSC ring buffer for slot index recycling.
+ * @param capacity Maximum number of slot indices the return ring can buffer.
+ * @return Handle to the unmanaged return queue, or nullptr on allocation failure.
+ */
 MOONSHINE_API MoonshineRingBufferHandle MOONSHINE_CONV moonshine_slot_return_create(size_t capacity);
+
+/**
+ * Destroys an unmanaged slot return queue and frees allocated memory.
+ * @param handle Handle to the unmanaged return queue. Safe no-op if nullptr.
+ */
 MOONSHINE_API void MOONSHINE_CONV moonshine_slot_return_destroy(MoonshineRingBufferHandle handle);
+
+/**
+ * Enqueues a recycled slot index from the single native consumer thread.
+ * Thread-safety: Strictly Single-Producer. Must only be invoked from one thread per queue.
+ * @param handle Handle to the unmanaged return queue.
+ * @param slot_index The recycled buffer slot index to return to the pool.
+ * @return 1 on successful enqueue, 0 if queue is full or handle is invalid.
+ */
 MOONSHINE_API int MOONSHINE_CONV moonshine_slot_return_enqueue(MoonshineRingBufferHandle handle, int32_t slot_index);
+
+/**
+ * Dequeues a recycled slot index on the single managed ingestion thread (TryRent).
+ * Thread-safety: Strictly Single-Consumer. Must only be invoked from one thread per queue.
+ * @param handle Handle to the unmanaged return queue.
+ * @param out_slot_index Pointer to receive the dequeued slot index.
+ * @return 1 on successful dequeue, 0 if queue is empty or handle/pointer is invalid.
+ */
 MOONSHINE_API int MOONSHINE_CONV moonshine_slot_return_dequeue(MoonshineRingBufferHandle handle, int32_t* out_slot_index);
+
+/**
+ * Returns the current count of elements pending in the slot return queue.
+ * @param handle Handle to the unmanaged return queue.
+ * @return Current number of queued slot indices, or 0 if handle is invalid.
+ */
 MOONSHINE_API size_t MOONSHINE_CONV moonshine_slot_return_size(MoonshineRingBufferHandle handle);
 
 // ============================================================================

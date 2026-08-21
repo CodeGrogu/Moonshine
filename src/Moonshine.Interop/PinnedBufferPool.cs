@@ -16,6 +16,10 @@ public enum SlotState : byte
 /// High-performance contiguous native memory slab pool for zero-allocation UDP packet buffers.
 /// Maintains cacheline-aligned (64-byte) unmanaged memory pages to eliminate GC heap fragmentation.
 /// Incorporates an unmanaged SPSC return queue for lock-free cross-boundary slot reclamation.
+/// Thread Topology:
+/// - Single Native Producer: The dedicated native worker thread for the associated stream enqueues recycled slot indices.
+/// - Single Managed Consumer: TryRent() drains recycled slot indices on the managed ingestion thread.
+/// - Stream Isolation: Each UDP pipeline (Video, Audio, Mic) instantiates its own dedicated PinnedBufferPool and return queue.
 /// </summary>
 public sealed unsafe class PinnedBufferPool : IDisposable
 {
