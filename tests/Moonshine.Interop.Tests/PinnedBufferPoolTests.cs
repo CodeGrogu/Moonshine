@@ -48,4 +48,18 @@ public class PinnedBufferPoolTests
         pool.Dispose();
         pool.Dispose(); // Idempotent
     }
+
+    [Fact]
+    public unsafe void AssertQuiescent_WhenSlotsRentedOrInFlight_ThrowsInvalidOperationException()
+    {
+        using var pool = new PinnedBufferPool(slotCount: 4, slotSize: 256);
+        pool.AssertQuiescent(); // Initially clean
+
+        pool.TryRent(out int slot, out _, out _).Should().BeTrue();
+        Action act = () => pool.AssertQuiescent();
+        act.Should().Throw<InvalidOperationException>();
+
+        pool.Return(slot);
+        pool.AssertQuiescent(); // Clean again after return
+    }
 }

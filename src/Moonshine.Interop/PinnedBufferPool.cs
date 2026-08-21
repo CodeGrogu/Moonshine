@@ -102,6 +102,12 @@ public sealed unsafe class PinnedBufferPool : IDisposable
 
         // Instantiate unmanaged lock-free SPSC return queue
         _returnRingHandle = MoonshineNativeMethods.SlotReturnCreate((nuint)slotCount);
+        if (_returnRingHandle == IntPtr.Zero)
+        {
+            NativeMemory.Free(_slabMemory);
+            _slabMemory = null;
+            throw new InvalidOperationException("Failed to allocate unmanaged SPSC slot return ring.");
+        }
     }
 
     /// <summary>
@@ -243,6 +249,30 @@ public sealed unsafe class PinnedBufferPool : IDisposable
                 else if (_slotStates[i] == SlotState.InFlight) inFlight++;
             }
             return (free + rented + inFlight) == _slotCount;
+        }
+    }
+
+    /// <summary>
+    /// Mechanically asserts that the buffer pool is quiescent: no slots are rented or in-flight,
+    /// and all slots are returned and accounted for in the free list.
+    /// Throws InvalidOperationException if the pool is not fully quiescent.
+    /// </summary>
+    public void AssertQuiescent()
+    {
+        lock (_lock)
+        {
+            if (_head != _slotCount)
+            {
+                throw new InvalidOperationException($"Buffer pool is not quiescent: head ({_head}) != slotCount ({_slotCount}). FreeCount={FreeCount}, RentedCount={RentedCount}, InFlightCount={InFlightCount}.");
+            }
+
+            for (int i = 0; i < _slotCount; i++)
+            {
+                if (_slotStates[i] != SlotState.Free)
+                {
+                    throw new InvalidOperationException($"Buffer pool slot {i} is in state {_slotStates[i]} instead of Free during quiescence check.");
+                }
+            }
         }
     }
 

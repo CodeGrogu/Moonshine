@@ -30,6 +30,12 @@ extern "C" {
 
 /**
  * @brief Blittable descriptor representing a raw video packet for FEC and reassembly (32 bytes).
+ * 
+ * Packed ABI Specification:
+ * - Packing: Pack = 1 (#pragma pack(push, 1))
+ * - Size: exactly 32 bytes (sizeof == 32)
+ * - Alignment: struct alignment is 1 (alignof == 1)
+ * - Pointer Layout: payload_ptr is located at byte offset 24 (8-byte address-aligned within the struct)
  */
 typedef struct MoonshinePacketDesc {
     uint32_t sequence_number;    // offset 0,  size 4

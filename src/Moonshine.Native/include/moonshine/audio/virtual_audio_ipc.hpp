@@ -131,6 +131,7 @@ private:
     bool m_isHostServer{true};
     uint32_t m_sampleRate{48000};
     uint32_t m_channels{2};
+    uint32_t m_disconnectedRenderUnderruns{0};
 #ifdef _WIN32
     HANDLE m_mmcssHandle{nullptr};
     DWORD m_mmcssTaskIndex{0};

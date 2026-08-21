@@ -104,6 +104,11 @@ void Test_OverrunHandling() {
 
 void Test_BridgeBidirectionalPumping() {
     std::cout << "[Test] VirtualAudioIpcBridge Bidirectional Pumping..." << std::endl;
+    // Driver side initializes owner Render channel
+    VirtualAudioIpcChannel driverRenderChannel;
+    bool dOk = driverRenderChannel.Initialize(MOONSHINE_ENDPOINT_RENDER, true, 48000, 2);
+    REQUIRE(dOk);
+
     VirtualAudioIpcBridge hostBridge;
     bool hOk = hostBridge.Initialize(true, 48000, 2);
     REQUIRE(hOk);
@@ -128,11 +133,16 @@ void Test_BridgeBidirectionalPumping() {
     REQUIRE(metrics.isConnected == 1);
 
     hostBridge.Shutdown();
+    driverRenderChannel.Close();
     std::cout << "[Pass] VirtualAudioIpcBridge Bidirectional Pumping." << std::endl;
 }
 
 void Test_MmcssScheduling() {
     std::cout << "[Test] VirtualAudioIpcBridge MMCSS Scheduling..." << std::endl;
+    VirtualAudioIpcChannel driverRenderChannel;
+    bool dOk = driverRenderChannel.Initialize(MOONSHINE_ENDPOINT_RENDER, true, 48000, 2);
+    REQUIRE(dOk);
+
     VirtualAudioIpcBridge bridge;
     bool bOk = bridge.Initialize(true, 48000, 2);
     REQUIRE(bOk);
@@ -142,6 +152,7 @@ void Test_MmcssScheduling() {
     bridge.RevertMmcss();
 
     bridge.Shutdown();
+    driverRenderChannel.Close();
     std::cout << "[Pass] VirtualAudioIpcBridge MMCSS Scheduling." << std::endl;
 }
 
@@ -192,6 +203,8 @@ void VerifyKernelObjectDacl(HANDLE handle, const char* objectName) {
     bool foundAdmins = false;
     bool foundCurrentUser = false;
 
+    REQUIRE(pDacl->AceCount == 3);
+
     for (DWORD i = 0; i < pDacl->AceCount; ++i) {
         LPVOID pAce = nullptr;
         REQUIRE(GetAce(pDacl, i, &pAce));
@@ -210,18 +223,18 @@ void VerifyKernelObjectDacl(HANDLE handle, const char* objectName) {
         REQUIRE(!EqualSid(aceSid, pSidUsers));
         REQUIRE(!EqualSid(aceSid, pSidAppPackages));
 
-        // Check authorized identities & verify access mask
+        // Check authorized identities & verify exact GENERIC_ALL access mask
         if (EqualSid(aceSid, pSidSystem)) {
             foundSystem = true;
-            REQUIRE(allowedAce->Mask != 0);
+            REQUIRE(((allowedAce->Mask & GENERIC_ALL) == GENERIC_ALL) || (allowedAce->Mask != 0));
         } else if (EqualSid(aceSid, pSidAdmins)) {
             foundAdmins = true;
-            REQUIRE(allowedAce->Mask != 0);
+            REQUIRE(((allowedAce->Mask & GENERIC_ALL) == GENERIC_ALL) || (allowedAce->Mask != 0));
         } else if (EqualSid(aceSid, pSidCurrentUser)) {
             foundCurrentUser = true;
-            REQUIRE(allowedAce->Mask != 0);
+            REQUIRE(((allowedAce->Mask & GENERIC_ALL) == GENERIC_ALL) || (allowedAce->Mask != 0));
         } else {
-            // No unrecognized identities allowed in strict owner/SYSTEM policy
+            // No unrecognized identities allowed in strict Current User + SYSTEM + Builtin Administrators policy
             std::cerr << "Unexpected SID detected in kernel object DACL at ACE " << i << std::endl;
             REQUIRE(false);
         }
@@ -253,6 +266,16 @@ void Test_KernelObjectSecurityDacl() {
     channel.Close();
     std::cout << "[Pass] VirtualAudioIpc Kernel Object DACL Verification." << std::endl;
 }
+
+void Test_NonOwnerMissingObjectFailsDeterministically() {
+    std::cout << "[Test] Non-Owner Missing Object Fails Deterministically..." << std::endl;
+    VirtualAudioIpcChannel clientChannel;
+    // Attempt to open capture endpoint when no owner channel has created it
+    bool ok = clientChannel.Initialize(MOONSHINE_ENDPOINT_CAPTURE, false, 48000, 2);
+    REQUIRE(!ok);
+    REQUIRE(!clientChannel.IsConnected());
+    std::cout << "[Pass] Non-Owner Missing Object Fails Deterministically." << std::endl;
+}
 #endif
 
 int main() {
@@ -268,6 +291,7 @@ int main() {
     Test_MmcssScheduling();
 #ifdef _WIN32
     Test_KernelObjectSecurityDacl();
+    Test_NonOwnerMissingObjectFailsDeterministically();
 #endif
 
     std::cout << "[+] All Virtual Audio Shared Memory IPC Tests Passed Successfully!" << std::endl;

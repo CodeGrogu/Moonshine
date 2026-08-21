@@ -153,17 +153,33 @@ public sealed class UdpSocketPipeline : IAsyncDisposable, IDisposable
             return;
         }
 
-        payload.CopyTo(slabSpan);
+        bool isVideo = rtpHeader.PayloadId == 96 || rtpHeader.PayloadId == 98 || rtpHeader.PayloadId == 100;
+        uint frameIndex = rtpHeader.Timestamp;
+        ushort packetIndex = (ushort)(rtpHeader.SequenceNumber & 0xFFFF);
+        ushort totalPackets = 0; // Explicitly 0 for raw/non-framed datagrams
+        byte flags = (byte)(rtpHeader.Marker ? 2 : 0); // Bit 1: End of frame
+        ReadOnlySpan<byte> actualPayload = payload;
+
+        if (isVideo && NvVideoHeader.TryParse(payload, out NvVideoHeader nvVideoHeader, out ReadOnlySpan<byte> videoPayload))
+        {
+            frameIndex = nvVideoHeader.FrameIndex;
+            packetIndex = (ushort)nvVideoHeader.PacketIndex;
+            totalPackets = nvVideoHeader.TotalPackets;
+            flags = nvVideoHeader.Flags;
+            actualPayload = videoPayload;
+        }
+
+        actualPayload.CopyTo(slabSpan);
 
         var desc = new MoonshinePacketDesc
         {
             SequenceNumber = (uint)unwrapSeq,
-            FrameIndex = rtpHeader.Timestamp,
-            PacketIndex = (ushort)(rtpHeader.SequenceNumber & 0xFFFF),
-            TotalPackets = 0,
-            PayloadSize = (ushort)payload.Length,
-            PacketType = (byte)(rtpHeader.PayloadId == 98 || rtpHeader.PayloadId == 96 || rtpHeader.PayloadId == 100 ? 0 : 1),
-            Flags = (byte)(rtpHeader.Marker ? 2 : 0), // Bit 1: End of frame
+            FrameIndex = frameIndex,
+            PacketIndex = packetIndex,
+            TotalPackets = totalPackets,
+            PayloadSize = (ushort)actualPayload.Length,
+            PacketType = (byte)(isVideo ? 0 : 1),
+            Flags = flags,
             BufferSlotIndex = slotIndex,
             PayloadPtr = slabPtr
         };
@@ -183,13 +199,18 @@ public sealed class UdpSocketPipeline : IAsyncDisposable, IDisposable
             }
         }
 
-        // Invoke managed callback if registered
-        _packetCallback?.Invoke(desc);
-
-        // Return slot directly if no native queue holds reference
-        if (_nativeSpscHandle == IntPtr.Zero)
+        try
         {
-            _bufferPool.ReturnRented(slotIndex);
+            // Invoke managed callback if registered
+            _packetCallback?.Invoke(desc);
+        }
+        finally
+        {
+            // Return slot directly if no native queue holds reference
+            if (_nativeSpscHandle == IntPtr.Zero)
+            {
+                _bufferPool.ReturnRented(slotIndex);
+            }
         }
     }
 
@@ -211,6 +232,13 @@ public sealed class UdpSocketPipeline : IAsyncDisposable, IDisposable
         }
 
         _socket.Dispose();
+
+        // Drain unmanaged return ring to reclaim recycled slots returned during teardown
+        if (_bufferPool.ReturnQueueHandle != IntPtr.Zero)
+        {
+            while (MoonshineNativeMethods.SlotReturnDequeue(_bufferPool.ReturnQueueHandle, out _) != 0) { }
+        }
+
         _bufferPool.Dispose();
         _cts.Dispose();
     }
@@ -219,7 +247,27 @@ public sealed class UdpSocketPipeline : IAsyncDisposable, IDisposable
     {
         _cts.Cancel();
         _socket.Close();
+
+        if (_rxTask != null)
+        {
+            try
+            {
+                _rxTask.GetAwaiter().GetResult();
+            }
+            catch
+            {
+                // Suppress cancellation exceptions during teardown
+            }
+        }
+
         _socket.Dispose();
+
+        // Drain unmanaged return ring to reclaim recycled slots returned during teardown
+        if (_bufferPool.ReturnQueueHandle != IntPtr.Zero)
+        {
+            while (MoonshineNativeMethods.SlotReturnDequeue(_bufferPool.ReturnQueueHandle, out _) != 0) { }
+        }
+
         _bufferPool.Dispose();
         _cts.Dispose();
     }

@@ -79,7 +79,6 @@ bool ReedSolomonSimd::HasGfniSupport() noexcept {
 }
 
 SimdArchitecture ReedSolomonSimd::GetDetectedArchitecture() noexcept {
-    if (HasGfniSupport() && HasAvx512Support()) return SimdArchitecture::GfniAvx512;
     if (HasAvx512Support()) return SimdArchitecture::Avx512;
     if (HasAvx2Support()) return SimdArchitecture::Avx2;
     return SimdArchitecture::Scalar;

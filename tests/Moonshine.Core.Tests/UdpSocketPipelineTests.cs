@@ -419,6 +419,120 @@ public class UdpSocketPipelineTests
             pipeline.BufferPool.RentedCount.Should().Be(0);
             pipeline.BufferPool.InFlightCount.Should().Be(0);
             pipeline.BufferPool.ValidateInvariant().Should().BeTrue();
+            pipeline.BufferPool.AssertQuiescent();
+        }
+        finally
+        {
+            MoonshineNativeMethods.SpscDestroy(spscHandle);
+        }
+    }
+
+    [Fact]
+    public unsafe void UdpSocketPipeline_ProcessDatagram_WithNvVideoHeader_PopulatesExactFramingMetadata()
+    {
+        MoonshinePacketDesc receivedDesc = default;
+        bool callbackFired = false;
+
+        using var pipeline = new UdpSocketPipeline(
+            localPort: 0,
+            packetCallback: desc =>
+            {
+                receivedDesc = desc;
+                callbackFired = true;
+            }
+        );
+
+        // 12-byte RTP header + 12-byte NvVideoHeader + 100-byte payload = 124 bytes
+        byte[] rawPacket = new byte[124];
+        rawPacket[0] = 0x80; // V=2
+        rawPacket[1] = 98; // HEVC
+        rawPacket[2] = 0x00; // Seq = 1
+        rawPacket[3] = 0x01;
+        rawPacket[4] = 0x00; // Timestamp = 1000
+        rawPacket[5] = 0x00;
+        rawPacket[6] = 0x03;
+        rawPacket[7] = 0xE8;
+
+        // NvVideoHeader at offset 12
+        // FrameIndex = 500
+        BitConverter.TryWriteBytes(rawPacket.AsSpan(12, 4), (uint)500);
+        // PacketIndex = 2
+        BitConverter.TryWriteBytes(rawPacket.AsSpan(16, 4), (uint)2);
+        // TotalPackets = 4
+        BitConverter.TryWriteBytes(rawPacket.AsSpan(20, 2), (ushort)4);
+        // Flags = 0x05 (Keyframe | StartOfFrame)
+        rawPacket[22] = 0x05;
+        rawPacket[23] = 0x00;
+
+        rawPacket[24] = 0xAA; // First video payload byte
+
+        pipeline.ProcessDatagram(rawPacket);
+
+        callbackFired.Should().BeTrue();
+        receivedDesc.FrameIndex.Should().Be(500);
+        receivedDesc.PacketIndex.Should().Be(2);
+        receivedDesc.TotalPackets.Should().Be(4);
+        receivedDesc.Flags.Should().Be(0x05);
+        receivedDesc.PayloadSize.Should().Be(100);
+        (*receivedDesc.PayloadPtr).Should().Be(0xAA);
+    }
+
+    [Fact]
+    public unsafe void UdpSocketPipeline_DelayedNativeConsumerShutdown_SafelyRecyclesSlots()
+    {
+        const int poolCapacity = 32;
+        IntPtr spscHandle = MoonshineNativeMethods.SpscCreate((nuint)poolCapacity);
+        spscHandle.Should().NotBe(IntPtr.Zero);
+
+        try
+        {
+            var pipeline = new UdpSocketPipeline(
+                localPort: 0,
+                nativeSpscHandle: spscHandle,
+                poolSlotCount: poolCapacity
+            );
+
+            IntPtr returnQueue = pipeline.ReturnQueueHandle;
+
+            // Ingest 10 datagrams
+            for (int i = 0; i < 10; i++)
+            {
+                byte[] rawPacket = new byte[100];
+                rawPacket[0] = 0x80;
+                rawPacket[1] = 98;
+                rawPacket[2] = 0x00;
+                rawPacket[3] = (byte)i;
+                pipeline.ProcessDatagram(rawPacket);
+            }
+
+            pipeline.BufferPool.InFlightCount.Should().Be(10);
+
+            // Simulate dedicated native consumer thread draining and recycling with delay
+            var consumerThread = new Thread(() =>
+            {
+                Thread.Sleep(20);
+                while (MoonshineNativeMethods.SpscDequeue(spscHandle, out var desc) != 0)
+                {
+                    int ret = MoonshineNativeMethods.SlotReturnEnqueue(returnQueue, desc.BufferSlotIndex);
+                    ret.Should().Be(1);
+                }
+            });
+            consumerThread.Start();
+
+            // Explicit consumer lifecycle join barrier before teardown
+            consumerThread.Join();
+
+            // Drain return queue into pool
+            while (pipeline.BufferPool.InFlightCount > 0)
+            {
+                pipeline.BufferPool.TryRent(out int slot, out _, out _);
+                if (slot >= 0) pipeline.BufferPool.ReturnRented(slot);
+            }
+
+            // Quiescence assertion: all slots accounted for, none in-flight or rented
+            pipeline.BufferPool.AssertQuiescent();
+
+            pipeline.Dispose();
         }
         finally
         {

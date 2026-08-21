@@ -5,6 +5,7 @@
 #include <cmath>
 
 #ifdef _WIN32
+#include <aclapi.h>
 #include <sddl.h>
 #pragma comment(lib, "advapi32.lib")
 #pragma comment(lib, "avrt.lib")
@@ -178,9 +179,10 @@ bool VirtualAudioIpcChannel::Initialize(
         : MOONSHINE_SHARED_EVENT_CAPTURE_NAME;
     const wchar_t* localEventName = globalEventName + 7;
 
-    SECURITY_ATTRIBUTES sa{};
     if (isOwner) {
+        SECURITY_ATTRIBUTES sa{};
         if (!SetupSecurityDescriptor(&sa)) {
+            SetLastError(ERROR_ACCESS_DENIED);
             return false;
         }
 
@@ -208,6 +210,33 @@ bool VirtualAudioIpcChannel::Initialize(
             m_syncEvent = CreateEventExW(&sa, localEventName, 0, EVENT_ALL_ACCESS);
         }
 
+        // Retroactive DACL enforcement on existing objects (e.g. if ERROR_ALREADY_EXISTS)
+        if (m_fileMapping && m_syncEvent && sa.lpSecurityDescriptor) {
+            PACL pDacl = nullptr;
+            BOOL daclPresent = FALSE;
+            BOOL daclDefaulted = FALSE;
+            if (GetSecurityDescriptorDacl(sa.lpSecurityDescriptor, &daclPresent, &pDacl, &daclDefaulted) && daclPresent && pDacl) {
+                SetSecurityInfo(
+                    m_fileMapping,
+                    SE_KERNEL_OBJECT,
+                    DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+                    nullptr,
+                    nullptr,
+                    pDacl,
+                    nullptr
+                );
+                SetSecurityInfo(
+                    m_syncEvent,
+                    SE_KERNEL_OBJECT,
+                    DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+                    nullptr,
+                    nullptr,
+                    pDacl,
+                    nullptr
+                );
+            }
+        }
+
         FreeSecurityDescriptor(&sa);
 
         if (!m_fileMapping || !m_syncEvent) {
@@ -215,6 +244,7 @@ bool VirtualAudioIpcChannel::Initialize(
             return false;
         }
     } else {
+        // Non-owner strictly opens existing objects with explicit error handling
         m_fileMapping = OpenFileMappingW(FILE_MAP_ALL_ACCESS, FALSE, globalMemName);
         if (!m_fileMapping) {
             m_fileMapping = OpenFileMappingW(FILE_MAP_ALL_ACCESS, FALSE, localMemName);
@@ -225,37 +255,14 @@ bool VirtualAudioIpcChannel::Initialize(
             m_syncEvent = OpenEventW(EVENT_ALL_ACCESS, FALSE, localEventName);
         }
 
-        // If shared memory does not exist, initialize fallback mapping
-        if (!m_fileMapping) {
-            m_fileMapping = CreateFileMappingW(
-                INVALID_HANDLE_VALUE,
-                &sa,
-                PAGE_READWRITE,
-                0,
-                static_cast<DWORD>(totalMappingSize),
-                globalMemName
-            );
-            if (!m_fileMapping) {
-                m_fileMapping = CreateFileMappingW(
-                    INVALID_HANDLE_VALUE,
-                    &sa,
-                    PAGE_READWRITE,
-                    0,
-                    static_cast<DWORD>(totalMappingSize),
-                    localMemName
-                );
+        if (!m_fileMapping || !m_syncEvent) {
+            DWORD err = GetLastError();
+            if (err == ERROR_SUCCESS) {
+                SetLastError(ERROR_FILE_NOT_FOUND);
             }
+            Close();
+            return false;
         }
-        if (!m_syncEvent) {
-            m_syncEvent = CreateEventExW(&sa, globalEventName, 0, EVENT_ALL_ACCESS);
-            if (!m_syncEvent) {
-                m_syncEvent = CreateEventExW(&sa, localEventName, 0, EVENT_ALL_ACCESS);
-            }
-        }
-    }
-
-    if (sa.lpSecurityDescriptor) {
-        LocalFree(sa.lpSecurityDescriptor);
     }
 
     if (m_fileMapping) {
@@ -501,21 +508,32 @@ bool VirtualAudioIpcBridge::Initialize(
         MOONSHINE_AUDIO_RING_BUFFER_FRAMES
     );
 
-    return renderOk && captureOk;
+    return renderOk || captureOk;
 }
 
 void VirtualAudioIpcBridge::Shutdown() {
     RevertMmcss();
     m_renderChannel.Close();
     m_captureChannel.Close();
+    m_disconnectedRenderUnderruns = 0;
 }
 
 bool VirtualAudioIpcBridge::IsConnected() const noexcept {
-    return m_renderChannel.IsConnected() && m_captureChannel.IsConnected();
+    return m_renderChannel.IsConnected() || m_captureChannel.IsConnected();
 }
 
 size_t VirtualAudioIpcBridge::WriteCapturePcm(const float* pcmSamples, size_t sampleCount) {
     if (!pcmSamples || sampleCount == 0) return 0;
+    if (!m_captureChannel.IsConnected()) {
+        m_captureChannel.Initialize(
+            MOONSHINE_ENDPOINT_CAPTURE,
+            m_isHostServer,
+            m_sampleRate,
+            m_channels,
+            MOONSHINE_FORMAT_FLOAT_32,
+            MOONSHINE_AUDIO_RING_BUFFER_FRAMES
+        );
+    }
     size_t byteCount = sampleCount * sizeof(float);
     size_t bytesWritten = m_captureChannel.WritePcm(pcmSamples, byteCount);
     return bytesWritten / sizeof(float);
@@ -523,6 +541,21 @@ size_t VirtualAudioIpcBridge::WriteCapturePcm(const float* pcmSamples, size_t sa
 
 size_t VirtualAudioIpcBridge::ReadRenderPcm(float* outPcmSamples, size_t maxSamples, bool waitEvent, uint32_t timeoutMs) {
     if (!outPcmSamples || maxSamples == 0) return 0;
+    if (!m_renderChannel.IsConnected()) {
+        m_renderChannel.Initialize(
+            MOONSHINE_ENDPOINT_RENDER,
+            !m_isHostServer,
+            m_sampleRate,
+            m_channels,
+            MOONSHINE_FORMAT_FLOAT_32,
+            MOONSHINE_AUDIO_RING_BUFFER_FRAMES
+        );
+    }
+    if (!m_renderChannel.IsConnected()) {
+        m_disconnectedRenderUnderruns++;
+        std::memset(outPcmSamples, 0, maxSamples * sizeof(float));
+        return 0;
+    }
     size_t byteCount = maxSamples * sizeof(float);
     size_t bytesRead = m_renderChannel.ReadPcm(outPcmSamples, byteCount, waitEvent, timeoutMs);
     return bytesRead / sizeof(float);
@@ -535,7 +568,7 @@ bool VirtualAudioIpcBridge::WaitRenderEvent(uint32_t timeoutMs) {
 VirtualAudioIpcMetrics VirtualAudioIpcBridge::GetMetrics() const noexcept {
     VirtualAudioIpcMetrics metrics{};
     metrics.renderPacketsRead = m_renderChannel.GetPacketCount();
-    metrics.renderUnderruns = m_renderChannel.GetUnderrunCount();
+    metrics.renderUnderruns = m_renderChannel.GetUnderrunCount() + m_disconnectedRenderUnderruns;
     metrics.renderOverruns = m_renderChannel.GetOverrunCount();
     metrics.capturePacketsWritten = m_captureChannel.GetPacketCount();
     metrics.captureUnderruns = m_captureChannel.GetUnderrunCount();

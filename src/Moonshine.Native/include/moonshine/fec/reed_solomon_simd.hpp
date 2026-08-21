@@ -10,8 +10,7 @@ namespace moonshine::fec {
 enum class SimdArchitecture : uint32_t {
     Scalar = 0,
     Avx2 = 1,
-    Avx512 = 2,
-    GfniAvx512 = 3
+    Avx512 = 2
 };
 
 constexpr int kMaxDataShards = 64;
@@ -23,10 +22,9 @@ constexpr int kMaxTotalShards = 96;
  * 
  * Polynomial: x^8 + x^4 + x^3 + x^2 + 1 (0x11D / 0x1D).
  * Features multi-tiered SIMD acceleration:
- * 1. Intel GFNI + AVX-512 (64 bytes/cycle tableless single-cycle multiplication)
- * 2. AVX-512BW (64 bytes/cycle 4-bit nibble decomposition)
- * 3. AVX2 (32 bytes/cycle 4-bit nibble decomposition)
- * 4. 64-bit word / scalar fallback
+ * 1. AVX-512BW (64 bytes/cycle 4-bit nibble decomposition)
+ * 2. AVX2 (32 bytes/cycle 4-bit nibble decomposition)
+ * 3. 64-bit word / scalar fallback
  */
 class ReedSolomonSimd {
 public:

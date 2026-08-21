@@ -19,9 +19,9 @@ This document tracks known platform limitations, environment requirements, and c
 - **Status**: Verified in Developer Environment / CI.
 - **Test Targets**: 16 native CTest targets passed in the MSVC developer environment.
 
-<!-- VERIFIED: 2026-08-21, via `tools/dotnet_sdk/dotnet.exe test Moonshine.sln -c Release --no-build --no-restore --arch x64` on Windows 11 -->
+<!-- VERIFIED: 2026-08-21, via `scripts/verify_codebase.ps1` on Windows 11 -->
 ### Managed .NET 9 Solution
-- **Status**: Verified (238 unit tests passed across `Moonshine.Interop.Tests`, `Moonshine.Host.Tests`, `Moonshine.Protocol.Tests`, `Moonshine.Core.Tests`).
+- **Status**: Verified (254 unit tests passed across `Moonshine.Interop.Tests` (71), `Moonshine.Host.Tests` (71), `Moonshine.Protocol.Tests` (61), `Moonshine.Core.Tests` (51)).
 
 ### NVIDIA NVENC Hardware Video Encoder
 - **Status**: Simulated / Prototype.
