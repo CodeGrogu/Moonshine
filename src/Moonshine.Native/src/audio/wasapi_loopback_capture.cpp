@@ -33,10 +33,10 @@ bool WasapiLoopbackCapture::initialize() {
     cleanup();
 
     // Calculate buffer chunk size: e.g. 5ms @ 48kHz = 240 samples per channel
-    uint32_t samples_per_channel = (_sample_rate * _buffer_duration_ms) / 1000;
+    uint32_t samples_per_channel = static_cast<uint32_t>((static_cast<uint64_t>(_sample_rate) * _buffer_duration_ms) / 1000);
     if (samples_per_channel == 0) samples_per_channel = 240;
 
-    _staging_buffer.resize(samples_per_channel * _channels);
+    _staging_buffer.resize(static_cast<size_t>(samples_per_channel) * static_cast<size_t>(_channels));
     std::fill(_staging_buffer.begin(), _staging_buffer.end(), 0.0f);
 
     _initialized = true;
