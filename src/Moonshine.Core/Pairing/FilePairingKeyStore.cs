@@ -32,9 +32,32 @@ public sealed class FilePairingKeyStore : IPairingKeyStore, IDisposable
         );
 
         Directory.CreateDirectory(_storageDirectory);
+        CleanupStaleTempFiles(_storageDirectory);
         _clientCertPath = Path.Combine(_storageDirectory, "client.crt");
         _clientKeyPath = Path.Combine(_storageDirectory, "client.key");
         _serversJsonPath = Path.Combine(_storageDirectory, "servers.json");
+    }
+
+    private static void CleanupStaleTempFiles(string directory)
+    {
+        try
+        {
+            foreach (string file in Directory.EnumerateFiles(directory, "*.tmp.*"))
+            {
+                try
+                {
+                    File.Delete(file);
+                }
+                catch
+                {
+                    // Suppress transient lock errors during background cleanup
+                }
+            }
+        }
+        catch
+        {
+            // Suppress directory enumeration failures
+        }
     }
 
     public async Task<string?> GetClientCertificatePemAsync(CancellationToken ct = default)
