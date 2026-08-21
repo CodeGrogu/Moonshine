@@ -42,15 +42,29 @@ public sealed class FilePairingKeyStore : IPairingKeyStore, IDisposable
     {
         try
         {
+            string fullDirPath = Path.GetFullPath(directory);
+            DateTime thresholdUtc = DateTime.UtcNow.Subtract(TimeSpan.FromMinutes(5));
+
             foreach (string file in Directory.EnumerateFiles(directory, "*.tmp.*"))
             {
                 try
                 {
-                    File.Delete(file);
+                    string fullFilePath = Path.GetFullPath(file);
+                    // Ensure the file is strictly contained within the intended keystore directory namespace
+                    if (!fullFilePath.StartsWith(fullDirPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    // Prune only files exceeding the conservative age threshold to protect concurrent active writes
+                    if (File.GetLastWriteTimeUtc(file) < thresholdUtc)
+                    {
+                        File.Delete(file);
+                    }
                 }
                 catch
                 {
-                    // Suppress transient lock errors during background cleanup
+                    // Suppress transient lock or access errors during background cleanup
                 }
             }
         }
