@@ -11,10 +11,11 @@ public enum PairingCeremonyStatus
     Success = 0,
     InvalidPin = 1,
     ProofMismatch = 2,
-    Expired = 3,
-    TrustConflict = 4,
-    InvalidPayload = 5,
-    RateLimited = 6
+    InvalidSignature = 3,
+    Expired = 4,
+    TrustConflict = 5,
+    InvalidPayload = 6,
+    RateLimited = 7
 }
 
 public readonly record struct HostPairingSession(
@@ -23,15 +24,18 @@ public readonly record struct HostPairingSession(
     ulong HostNonce,
     string HostDeviceId,
     string HostFriendlyName,
+    string HostPublicKeyPem,
     string HostFingerprintSha256,
     DateTimeOffset CreatedUtc);
 
 public readonly record struct ClientPairingRequest(
     string ClientDeviceId,
     string ClientFriendlyName,
+    string ClientPublicKeyPem,
     string ClientFingerprintSha256,
     ulong ClientNonce,
-    byte[] ClientProof);
+    byte[] ClientPinAuthToken,
+    byte[] ClientSignature);
 
 public readonly record struct HostPairingResponse(
     PairingCeremonyStatus Status,
@@ -39,8 +43,10 @@ public readonly record struct HostPairingResponse(
     ulong HostNonce,
     string HostDeviceId,
     string HostFriendlyName,
+    string HostPublicKeyPem,
     string HostFingerprintSha256,
-    byte[]? HostProof);
+    byte[]? HostPinAuthToken,
+    byte[]? HostSignature);
 
 public readonly record struct NativePairingResult(
     PairingCeremonyStatus Status,
@@ -48,17 +54,17 @@ public readonly record struct NativePairingResult(
     PeerIdentity? PairedPeer);
 
 /// <summary>
-/// First-party Moonshine cryptographic pairing engine orchestrating mutual PBKDF2-HMAC-SHA256
-/// trust establishment between Host and Client with explicit certificate/key fingerprint pinning.
+/// First-party Moonshine pairing ceremony orchestrator combining human-authorised ephemeral PIN
+/// authorisation tokens with asymmetric ECDSA NIST P-256 cryptographic proof-of-possession.
 /// </summary>
 public sealed class MoonshineNativePairingEngine
 {
     private const int Pbkdf2Iterations = 10000;
     private const int SaltSizeBytes = 16;
-    private const int PinDigits = 6;
     private readonly IPeerTrustStore _trustStore;
     private readonly Lock _lock = new();
     private HostPairingSession? _activeHostSession;
+    private MoonshineIdentityKeyPair? _hostKeyPair;
 
     public MoonshineNativePairingEngine(IPeerTrustStore trustStore)
     {
@@ -66,16 +72,17 @@ public sealed class MoonshineNativePairingEngine
     }
 
     /// <summary>
-    /// Host starts an authenticated pairing session by generating an ephemeral PIN and cryptographic salt.
+    /// Host starts an authenticated pairing ceremony with its long-term identity key pair,
+    /// generating an ephemeral 6-digit PIN and cryptographic salt for human verification.
     /// </summary>
     public HostPairingSession HostInitiatePairing(
+        MoonshineIdentityKeyPair hostKeyPair,
         string hostDeviceId,
-        string hostFriendlyName,
-        string hostFingerprintSha256)
+        string hostFriendlyName)
     {
+        ArgumentNullException.ThrowIfNull(hostKeyPair);
         ArgumentException.ThrowIfNullOrWhiteSpace(hostDeviceId);
         ArgumentException.ThrowIfNullOrWhiteSpace(hostFriendlyName);
-        ArgumentException.ThrowIfNullOrWhiteSpace(hostFingerprintSha256);
 
         int rawPin = RandomNumberGenerator.GetInt32(100000, 1000000);
         string pin = rawPin.ToString("D6", CultureInfo.InvariantCulture);
@@ -93,32 +100,36 @@ public sealed class MoonshineNativePairingEngine
             HostNonce: hostNonce,
             HostDeviceId: hostDeviceId,
             HostFriendlyName: hostFriendlyName,
-            HostFingerprintSha256: hostFingerprintSha256,
+            HostPublicKeyPem: hostKeyPair.PublicKeyPem,
+            HostFingerprintSha256: hostKeyPair.PublicKeyFingerprintSha256,
             CreatedUtc: DateTimeOffset.UtcNow);
 
         lock (_lock)
         {
             _activeHostSession = session;
+            _hostKeyPair = hostKeyPair;
         }
 
         return session;
     }
 
     /// <summary>
-    /// Client computes pairing proof from entered PIN and received Host salt and nonce.
+    /// Client computes pairing request using its long-term identity key, the displayed PIN, and host parameters.
     /// </summary>
     public static (ClientPairingRequest Request, byte[] DerivedKey) ClientCreatePairingRequest(
+        MoonshineIdentityKeyPair clientKeyPair,
         string pin,
         ReadOnlySpan<byte> hostSalt,
         ulong hostNonce,
+        string hostPublicKeyPem,
         string clientDeviceId,
-        string clientFriendlyName,
-        string clientFingerprintSha256)
+        string clientFriendlyName)
     {
+        ArgumentNullException.ThrowIfNull(clientKeyPair);
         ArgumentException.ThrowIfNullOrWhiteSpace(pin);
+        ArgumentException.ThrowIfNullOrWhiteSpace(hostPublicKeyPem);
         ArgumentException.ThrowIfNullOrWhiteSpace(clientDeviceId);
         ArgumentException.ThrowIfNullOrWhiteSpace(clientFriendlyName);
-        ArgumentException.ThrowIfNullOrWhiteSpace(clientFingerprintSha256);
 
         byte[] derivedKey = Rfc2898DeriveBytes.Pbkdf2(
             password: pin,
@@ -131,25 +142,32 @@ public sealed class MoonshineNativePairingEngine
         RandomNumberGenerator.Fill(clientNonceBytes);
         ulong clientNonce = System.Buffers.Binary.BinaryPrimitives.ReadUInt64BigEndian(clientNonceBytes);
 
-        byte[] proof = ComputeProof(
+        // 1. PIN Authorisation Token (proves knowledge of ephemeral PIN displayed to user)
+        byte[] pinAuthToken = ComputePinAuthToken(
             derivedKey,
-            "Moonshine-Pairing-ClientProof",
+            "Moonshine-Ceremony-ClientAuth",
             clientNonce,
             hostNonce,
-            clientFingerprintSha256);
+            clientKeyPair.PublicKeyFingerprintSha256);
+
+        // 2. Cryptographic Proof-of-Possession Signature (proves possession of client's private key)
+        byte[] transcript = BuildTranscriptBytes(clientNonce, hostNonce, clientKeyPair.PublicKeyPem, hostPublicKeyPem);
+        byte[] signature = clientKeyPair.SignData(transcript);
 
         var request = new ClientPairingRequest(
             ClientDeviceId: clientDeviceId,
             ClientFriendlyName: clientFriendlyName,
-            ClientFingerprintSha256: clientFingerprintSha256,
+            ClientPublicKeyPem: clientKeyPair.PublicKeyPem,
+            ClientFingerprintSha256: clientKeyPair.PublicKeyFingerprintSha256,
             ClientNonce: clientNonce,
-            ClientProof: proof);
+            ClientPinAuthToken: pinAuthToken,
+            ClientSignature: signature);
 
         return (request, derivedKey);
     }
 
     /// <summary>
-    /// Host verifies client's pairing proof, records trusted client identity, and returns mutual host proof.
+    /// Host verifies client's PIN authorization token and asymmetric proof-of-possession signature.
     /// </summary>
     public async ValueTask<HostPairingResponse> HostProcessPairingRequestAsync(
         ClientPairingRequest request,
@@ -158,13 +176,15 @@ public sealed class MoonshineNativePairingEngine
         CancellationToken ct = default)
     {
         HostPairingSession session;
+        MoonshineIdentityKeyPair hostKeyPair;
         lock (_lock)
         {
-            if (_activeHostSession is null)
+            if (_activeHostSession is null || _hostKeyPair is null)
             {
-                return new HostPairingResponse(PairingCeremonyStatus.Expired, "No active pairing session on host.", 0, "", "", "", null);
+                return new HostPairingResponse(PairingCeremonyStatus.Expired, "No active pairing session on host.", 0, "", "", "", "", null, null);
             }
             session = _activeHostSession.Value;
+            hostKeyPair = _hostKeyPair;
         }
 
         // Expire ceremony after 60 seconds
@@ -173,11 +193,12 @@ public sealed class MoonshineNativePairingEngine
             lock (_lock)
             {
                 _activeHostSession = null;
+                _hostKeyPair = null;
             }
-            return new HostPairingResponse(PairingCeremonyStatus.Expired, "Host pairing ceremony expired.", 0, "", "", "", null);
+            return new HostPairingResponse(PairingCeremonyStatus.Expired, "Host pairing ceremony expired.", 0, "", "", "", "", null, null);
         }
 
-        // Derive verification key from host's active PIN & Salt
+        // 1. Verify PIN Authorisation Token
         byte[] derivedKey = Rfc2898DeriveBytes.Pbkdf2(
             password: session.Pin,
             salt: session.Salt,
@@ -185,25 +206,34 @@ public sealed class MoonshineNativePairingEngine
             hashAlgorithm: HashAlgorithmName.SHA256,
             outputLength: 32);
 
-        byte[] expectedClientProof = ComputeProof(
+        byte[] expectedClientAuthToken = ComputePinAuthToken(
             derivedKey,
-            "Moonshine-Pairing-ClientProof",
+            "Moonshine-Ceremony-ClientAuth",
             request.ClientNonce,
             session.HostNonce,
             request.ClientFingerprintSha256);
 
-        if (!CryptographicOperations.FixedTimeEquals(expectedClientProof, request.ClientProof))
+        if (!CryptographicOperations.FixedTimeEquals(expectedClientAuthToken, request.ClientPinAuthToken))
         {
-            return new HostPairingResponse(PairingCeremonyStatus.ProofMismatch, "Client pairing proof mismatch or invalid PIN.", 0, "", "", "", null);
+            return new HostPairingResponse(PairingCeremonyStatus.ProofMismatch, "Client pairing PIN authorisation token mismatch.", 0, "", "", "", "", null, null);
         }
 
-        // Register client in trust store
+        // 2. Verify Cryptographic Proof-of-Possession Signature
+        byte[] transcript = BuildTranscriptBytes(request.ClientNonce, session.HostNonce, request.ClientPublicKeyPem, session.HostPublicKeyPem);
+        bool isSignatureValid = MoonshineIdentityKeyPair.VerifySignature(request.ClientPublicKeyPem, transcript, request.ClientSignature);
+        if (!isSignatureValid)
+        {
+            return new HostPairingResponse(PairingCeremonyStatus.InvalidSignature, "Client asymmetric proof-of-possession signature verification failed.", 0, "", "", "", "", null, null);
+        }
+
+        // 3. Register client identity into Host Trust Store
+        string computedFingerprint = MoonshineIdentityKeyPair.ComputeFingerprintFromPem(request.ClientPublicKeyPem);
         var clientIdentity = new PeerIdentity(
             DeviceId: request.ClientDeviceId,
             FriendlyName: request.ClientFriendlyName,
             Role: ApplicationRole.Client,
-            PublicKeyFingerprintSha256: request.ClientFingerprintSha256,
-            CertificatePem: null,
+            PublicKeyFingerprintSha256: computedFingerprint,
+            CertificatePem: request.ClientPublicKeyPem,
             AuthorisationLevel: clientAuthorisationLevel,
             CreatedUtc: DateTimeOffset.UtcNow,
             LastAuthenticatedUtc: DateTimeOffset.UtcNow,
@@ -218,22 +248,25 @@ public sealed class MoonshineNativePairingEngine
         {
             return new HostPairingResponse(
                 PairingCeremonyStatus.TrustConflict,
-                "Client public key fingerprint conflict. Explicit re-authorisation required.",
-                0, "", "", "", null);
+                "Client public key fingerprint conflict. Explicit user re-authorisation required to replace trust.",
+                0, "", "", "", "", null, null);
         }
 
-        // Generate mutual Host proof
-        byte[] hostProof = ComputeProof(
+        // 4. Generate Host PIN token and asymmetric proof-of-possession signature
+        byte[] hostPinAuthToken = ComputePinAuthToken(
             derivedKey,
-            "Moonshine-Pairing-HostProof",
+            "Moonshine-Ceremony-HostAuth",
             request.ClientNonce,
             session.HostNonce,
             session.HostFingerprintSha256);
+
+        byte[] hostSignature = hostKeyPair.SignData(transcript);
 
         // Wipe active session on successful pairing
         lock (_lock)
         {
             _activeHostSession = null;
+            _hostKeyPair = null;
         }
 
         return new HostPairingResponse(
@@ -242,45 +275,61 @@ public sealed class MoonshineNativePairingEngine
             HostNonce: session.HostNonce,
             HostDeviceId: session.HostDeviceId,
             HostFriendlyName: session.HostFriendlyName,
+            HostPublicKeyPem: session.HostPublicKeyPem,
             HostFingerprintSha256: session.HostFingerprintSha256,
-            HostProof: hostProof);
+            HostPinAuthToken: hostPinAuthToken,
+            HostSignature: hostSignature);
     }
 
     /// <summary>
-    /// Client processes Host's pairing response, verifies Host's mutual proof, and records trusted Host identity.
+    /// Client verifies Host's PIN authorization token and asymmetric proof-of-possession signature,
+    /// recording the trusted Host public key and fingerprint in the client's trust store.
     /// </summary>
     public async ValueTask<NativePairingResult> ClientFinalizePairingAsync(
         HostPairingResponse hostResponse,
+        MoonshineIdentityKeyPair clientKeyPair,
         ulong clientNonce,
         byte[] derivedKey,
         bool forceReplaceTrust = false,
         CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(clientKeyPair);
         ArgumentNullException.ThrowIfNull(derivedKey);
 
-        if (hostResponse.Status != PairingCeremonyStatus.Success || hostResponse.HostProof is null)
+        if (hostResponse.Status != PairingCeremonyStatus.Success || hostResponse.HostPinAuthToken is null || hostResponse.HostSignature is null)
         {
             return new NativePairingResult(hostResponse.Status, hostResponse.Message, null);
         }
 
-        byte[] expectedHostProof = ComputeProof(
+        // 1. Verify Host PIN token
+        byte[] expectedHostAuthToken = ComputePinAuthToken(
             derivedKey,
-            "Moonshine-Pairing-HostProof",
+            "Moonshine-Ceremony-HostAuth",
             clientNonce,
             hostResponse.HostNonce,
             hostResponse.HostFingerprintSha256);
 
-        if (!CryptographicOperations.FixedTimeEquals(expectedHostProof, hostResponse.HostProof))
+        if (!CryptographicOperations.FixedTimeEquals(expectedHostAuthToken, hostResponse.HostPinAuthToken))
         {
-            return new NativePairingResult(PairingCeremonyStatus.ProofMismatch, "Host mutual proof verification failed.", null);
+            return new NativePairingResult(PairingCeremonyStatus.ProofMismatch, "Host PIN authorization token mismatch.", null);
         }
 
+        // 2. Verify Host Proof-of-Possession Signature
+        byte[] transcript = BuildTranscriptBytes(clientNonce, hostResponse.HostNonce, clientKeyPair.PublicKeyPem, hostResponse.HostPublicKeyPem);
+        bool isSignatureValid = MoonshineIdentityKeyPair.VerifySignature(hostResponse.HostPublicKeyPem, transcript, hostResponse.HostSignature);
+        if (!isSignatureValid)
+        {
+            return new NativePairingResult(PairingCeremonyStatus.InvalidSignature, "Host asymmetric proof-of-possession signature verification failed.", null);
+        }
+
+        // 3. Register Host identity in Client Trust Store
+        string computedHostFingerprint = MoonshineIdentityKeyPair.ComputeFingerprintFromPem(hostResponse.HostPublicKeyPem);
         var hostIdentity = new PeerIdentity(
             DeviceId: hostResponse.HostDeviceId,
             FriendlyName: hostResponse.HostFriendlyName,
             Role: ApplicationRole.Host,
-            PublicKeyFingerprintSha256: hostResponse.HostFingerprintSha256,
-            CertificatePem: null,
+            PublicKeyFingerprintSha256: computedHostFingerprint,
+            CertificatePem: hostResponse.HostPublicKeyPem,
             AuthorisationLevel: AuthorisationLevel.Administrator,
             CreatedUtc: DateTimeOffset.UtcNow,
             LastAuthenticatedUtc: DateTimeOffset.UtcNow,
@@ -299,10 +348,10 @@ public sealed class MoonshineNativePairingEngine
                 null);
         }
 
-        return new NativePairingResult(PairingCeremonyStatus.Success, "Pairing completed and mutual trust established.", hostIdentity);
+        return new NativePairingResult(PairingCeremonyStatus.Success, "Pairing completed and mutual asymmetric trust established.", hostIdentity);
     }
 
-    private static byte[] ComputeProof(
+    private static byte[] ComputePinAuthToken(
         byte[] key,
         string label,
         ulong clientNonce,
@@ -319,5 +368,23 @@ public sealed class MoonshineNativePairingEngine
         fingerprintBytes.CopyTo(message[(labelBytes.Length + 16)..]);
 
         return HMACSHA256.HashData(key, message);
+    }
+
+    private static byte[] BuildTranscriptBytes(
+        ulong clientNonce,
+        ulong hostNonce,
+        string clientPublicKeyPem,
+        string hostPublicKeyPem)
+    {
+        byte[] clientPemBytes = Encoding.UTF8.GetBytes(clientPublicKeyPem);
+        byte[] hostPemBytes = Encoding.UTF8.GetBytes(hostPublicKeyPem);
+
+        byte[] transcript = new byte[16 + clientPemBytes.Length + hostPemBytes.Length];
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt64BigEndian(transcript.AsSpan(0, 8), clientNonce);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt64BigEndian(transcript.AsSpan(8, 8), hostNonce);
+        Buffer.BlockCopy(clientPemBytes, 0, transcript, 16, clientPemBytes.Length);
+        Buffer.BlockCopy(hostPemBytes, 0, transcript, 16 + clientPemBytes.Length, hostPemBytes.Length);
+
+        return transcript;
     }
 }
