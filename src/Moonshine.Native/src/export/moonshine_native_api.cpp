@@ -8,6 +8,7 @@
 #include "moonshine/video/dxgi_swapchain.hpp"
 #include "moonshine/audio/wasapi_renderer.hpp"
 #include "moonshine/audio/wasapi_loopback_capture.hpp"
+#include "moonshine/audio/opus_audio_encoder.hpp"
 #include "moonshine/capture/dxgi_desktop_duplicator.hpp"
 #include "moonshine/capture/wgc_desktop_capture.hpp"
 #include "moonshine/color/hdr_metadata_extractor.hpp"
@@ -310,6 +311,116 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_audio_capture_get_metrics(
     if (out_samples_captured) *out_samples_captured = metrics.total_samples_captured;
     if (out_underruns) *out_underruns = metrics.underruns;
     if (out_overruns) *out_overruns = metrics.overruns;
+}
+
+// ============================================================================
+// Low-Latency Multi-Channel Opus Audio Encoder APIs
+// ============================================================================
+
+MOONSHINE_API MoonshineOpusEncoderHandle MOONSHINE_CONV moonshine_opus_encoder_create(
+    uint32_t sample_rate,
+    uint32_t channels,
+    uint32_t bitrate,
+    uint32_t frame_duration_ms,
+    uint32_t complexity,
+    int32_t use_vbr
+) {
+    audio::OpusEncoderConfig config{};
+    config.sample_rate = sample_rate;
+    config.channels = channels;
+    config.bitrate = bitrate;
+    config.frame_duration_ms = frame_duration_ms;
+    config.complexity = complexity;
+    config.use_vbr = (use_vbr != 0);
+    config.application = audio::OpusApplication::RestrictedLowDelay;
+
+    auto* encoder = new audio::OpusAudioEncoder(config);
+    if (!encoder->is_initialized()) {
+        delete encoder;
+        return nullptr;
+    }
+    return static_cast<MoonshineOpusEncoderHandle>(encoder);
+}
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_opus_encoder_destroy(
+    MoonshineOpusEncoderHandle handle
+) {
+    if (!handle) return;
+    auto* encoder = static_cast<audio::OpusAudioEncoder*>(handle);
+    delete encoder;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_opus_encoder_encode_float(
+    MoonshineOpusEncoderHandle handle,
+    const float* pcm_samples,
+    uint32_t frame_samples,
+    uint8_t* out_payload,
+    uint32_t max_payload_bytes,
+    uint32_t* out_payload_bytes
+) {
+    if (!handle || !pcm_samples || !out_payload || !out_payload_bytes) return 0;
+    auto* encoder = static_cast<audio::OpusAudioEncoder*>(handle);
+    uint32_t bytes_written = 0;
+    if (!encoder->encode_float(pcm_samples, frame_samples, out_payload, max_payload_bytes, bytes_written)) {
+        return 0;
+    }
+    *out_payload_bytes = bytes_written;
+    return 1;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_opus_encoder_encode_pcm16(
+    MoonshineOpusEncoderHandle handle,
+    const int16_t* pcm_samples,
+    uint32_t frame_samples,
+    uint8_t* out_payload,
+    uint32_t max_payload_bytes,
+    uint32_t* out_payload_bytes
+) {
+    if (!handle || !pcm_samples || !out_payload || !out_payload_bytes) return 0;
+    auto* encoder = static_cast<audio::OpusAudioEncoder*>(handle);
+    uint32_t bytes_written = 0;
+    if (!encoder->encode_pcm16(pcm_samples, frame_samples, out_payload, max_payload_bytes, bytes_written)) {
+        return 0;
+    }
+    *out_payload_bytes = bytes_written;
+    return 1;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_opus_encoder_set_bitrate(
+    MoonshineOpusEncoderHandle handle,
+    uint32_t bitrate
+) {
+    if (!handle) return 0;
+    auto* encoder = static_cast<audio::OpusAudioEncoder*>(handle);
+    return encoder->set_bitrate(bitrate) ? 1 : 0;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_opus_encoder_set_complexity(
+    MoonshineOpusEncoderHandle handle,
+    uint32_t complexity
+) {
+    if (!handle) return 0;
+    auto* encoder = static_cast<audio::OpusAudioEncoder*>(handle);
+    return encoder->set_complexity(complexity) ? 1 : 0;
+}
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_opus_encoder_get_metrics(
+    MoonshineOpusEncoderHandle handle,
+    uint64_t* out_frames_encoded,
+    uint64_t* out_bytes_encoded,
+    double* out_avg_encode_time_us,
+    uint32_t* out_bitrate,
+    uint32_t* out_streams_count
+) {
+    if (!handle) return;
+    auto* encoder = static_cast<audio::OpusAudioEncoder*>(handle);
+    audio::OpusEncoderMetrics metrics{};
+    encoder->get_metrics(metrics);
+    if (out_frames_encoded) *out_frames_encoded = metrics.total_frames_encoded;
+    if (out_bytes_encoded) *out_bytes_encoded = metrics.total_bytes_encoded;
+    if (out_avg_encode_time_us) *out_avg_encode_time_us = metrics.avg_encode_time_us;
+    if (out_bitrate) *out_bitrate = metrics.current_bitrate;
+    if (out_streams_count) *out_streams_count = metrics.streams_count;
 }
 
 // ============================================================================

@@ -229,6 +229,66 @@ public static unsafe partial class MoonshineNativeMethods
     );
 
     // ========================================================================
+    // Low-Latency Multi-Channel Opus Audio Encoder APIs
+    // ========================================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_opus_encoder_create")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial IntPtr OpusEncoderCreate(
+        uint sampleRate,
+        uint channels,
+        uint bitrate,
+        uint frameDurationMs,
+        uint complexity,
+        int useVbr
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_opus_encoder_destroy")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void OpusEncoderDestroy(IntPtr handle);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_opus_encoder_encode_float")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int OpusEncoderEncodeFloat(
+        IntPtr handle,
+        float* pcmSamples,
+        uint frameSamples,
+        byte* outPayload,
+        uint maxPayloadBytes,
+        out uint outPayloadBytes
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_opus_encoder_encode_pcm16")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int OpusEncoderEncodePcm16(
+        IntPtr handle,
+        short* pcmSamples,
+        uint frameSamples,
+        byte* outPayload,
+        uint maxPayloadBytes,
+        out uint outPayloadBytes
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_opus_encoder_set_bitrate")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int OpusEncoderSetBitrate(IntPtr handle, uint bitrate);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_opus_encoder_set_complexity")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int OpusEncoderSetComplexity(IntPtr handle, uint complexity);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_opus_encoder_get_metrics")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void OpusEncoderGetMetrics(
+        IntPtr handle,
+        out ulong outFramesEncoded,
+        out ulong outBytesEncoded,
+        out double outAvgEncodeTimeUs,
+        out uint outBitrate,
+        out uint outStreamsCount
+    );
+
+    // ========================================================================
     // Zero-Copy Direct3D Desktop Capture APIs
     // ========================================================================
 

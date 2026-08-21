@@ -227,6 +227,62 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_audio_capture_get_metrics(
 );
 
 // ============================================================================
+// Low-Latency Multi-Channel Opus Audio Encoder APIs
+// ============================================================================
+
+typedef void* MoonshineOpusEncoderHandle;
+
+MOONSHINE_API MoonshineOpusEncoderHandle MOONSHINE_CONV moonshine_opus_encoder_create(
+    uint32_t sample_rate,
+    uint32_t channels,
+    uint32_t bitrate,
+    uint32_t frame_duration_ms,
+    uint32_t complexity,
+    int32_t use_vbr
+);
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_opus_encoder_destroy(
+    MoonshineOpusEncoderHandle handle
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_opus_encoder_encode_float(
+    MoonshineOpusEncoderHandle handle,
+    const float* pcm_samples,
+    uint32_t frame_samples,
+    uint8_t* out_payload,
+    uint32_t max_payload_bytes,
+    uint32_t* out_payload_bytes
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_opus_encoder_encode_pcm16(
+    MoonshineOpusEncoderHandle handle,
+    const int16_t* pcm_samples,
+    uint32_t frame_samples,
+    uint8_t* out_payload,
+    uint32_t max_payload_bytes,
+    uint32_t* out_payload_bytes
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_opus_encoder_set_bitrate(
+    MoonshineOpusEncoderHandle handle,
+    uint32_t bitrate
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_opus_encoder_set_complexity(
+    MoonshineOpusEncoderHandle handle,
+    uint32_t complexity
+);
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_opus_encoder_get_metrics(
+    MoonshineOpusEncoderHandle handle,
+    uint64_t* out_frames_encoded,
+    uint64_t* out_bytes_encoded,
+    double* out_avg_encode_time_us,
+    uint32_t* out_bitrate,
+    uint32_t* out_streams_count
+);
+
+// ============================================================================
 // Zero-Copy Direct3D Desktop Capture APIs
 // ============================================================================
 

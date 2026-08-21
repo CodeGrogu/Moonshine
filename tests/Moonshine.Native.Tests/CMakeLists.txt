@@ -68,9 +68,17 @@ add_test(NAME test_qsv_pipeline COMMAND test_qsv_pipeline)
 
 add_executable(test_wasapi_capture 
     test_wasapi_capture.cpp
+    ${CMAKE_SOURCE_DIR}/src/Moonshine.Native/src/audio/wasapi_loopback_capture.cpp
 )
 target_link_libraries(test_wasapi_capture PRIVATE Moonshine.Native)
 add_test(NAME test_wasapi_capture COMMAND test_wasapi_capture)
+
+add_executable(test_opus_encoder 
+    test_opus_encoder.cpp
+    ${CMAKE_SOURCE_DIR}/src/Moonshine.Native/src/audio/opus_audio_encoder.cpp
+)
+target_link_libraries(test_opus_encoder PRIVATE Moonshine.Native)
+add_test(NAME test_opus_encoder COMMAND test_opus_encoder)
 
 if(WIN32)
     add_custom_command(TARGET test_c_abi_export POST_BUILD
