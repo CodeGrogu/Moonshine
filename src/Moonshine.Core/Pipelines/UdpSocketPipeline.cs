@@ -102,6 +102,7 @@ public sealed class UdpSocketPipeline : IAsyncDisposable, IDisposable
             {
                 if (token.IsCancellationRequested) break;
             }
+            // ALLOWED_EXCEPTION: Socket abort and cancellation during background receiver loop teardown
             catch (Exception)
             {
                 if (token.IsCancellationRequested) break;

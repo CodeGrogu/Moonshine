@@ -40,6 +40,7 @@ Moonshine is a next-generation, ultra-low-latency game streaming client engineer
 - **[Authenticated Remote Control Plane](Authenticated-Remote-Control-Plane)**: Secure client-to-host RPC, dynamic display mode adaptation, and zero-overhead coordinator.
 
 ### Workflows, Testing and Performance
+- [[Engineering Standards|Engineering-Standards]]: Solo + AI development methodology, proof-of-work gates, and toolchain verification.
 - [[CI and GitHub Workflows|Continuous-Integration-and-Workflows]]: Multi-OS CI matrix, ASan/TSan sanitizers, AOT trimming verification, and security audits.
 - [[Exhaustive Testing Strategy|Exhaustive-Testing-Strategy]]: Unit testing matrix across native SIMD, concurrency, and managed protocols.
 - [[Benchmarking and Performance Audit|Benchmarking-and-Performance-Audit]]: Micro-benchmarks, BenchmarkDotNet methodology, allocation verification, and profiling workflows.

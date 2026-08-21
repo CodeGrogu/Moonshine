@@ -76,8 +76,8 @@ public class HostVirtualMicSinkPipelineTests
         pipeline.Dispose();
 
         pipeline.IsInitialized.Should().BeFalse();
-        byte[] dummy = new byte[16];
-        Action act = () => pipeline.TryPushOpusPacket(dummy, 0, 0);
+        byte[] testPayload = new byte[16];
+        Action act = () => pipeline.TryPushOpusPacket(testPayload, 0, 0);
         act.Should().Throw<ObjectDisposedException>();
     }
 }

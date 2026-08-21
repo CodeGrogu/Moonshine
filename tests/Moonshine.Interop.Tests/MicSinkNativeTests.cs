@@ -19,15 +19,15 @@ public class MicSinkNativeTests
         );
         handle.Should().NotBe(IntPtr.Zero);
 
-        byte[] dummyOpus = new byte[64];
-        Array.Fill(dummyOpus, (byte)150);
+        byte[] opusPayload = new byte[64];
+        Array.Fill(opusPayload, (byte)150);
 
-        fixed (byte* pPayload = dummyOpus)
+        fixed (byte* pPayload = opusPayload)
         {
             int pushRes = MoonshineNativeMethods.MicSinkPushOpusPacket(
                 handle,
                 pPayload,
-                (uint)dummyOpus.Length,
+                (uint)opusPayload.Length,
                 timestamp: 480,
                 sequenceNumber: 1
             );
@@ -72,12 +72,12 @@ public class MicSinkNativeTests
         MoonshineNativeMethods.MicSinkSetGain(handle, 2.0f);
         MoonshineNativeMethods.MicSinkSetMute(handle, 1);
 
-        byte[] dummyOpus = new byte[64];
-        Array.Fill(dummyOpus, (byte)200);
+        byte[] opusPayload = new byte[64];
+        Array.Fill(opusPayload, (byte)200);
 
-        fixed (byte* pPayload = dummyOpus)
+        fixed (byte* pPayload = opusPayload)
         {
-            int pushRes = MoonshineNativeMethods.MicSinkPushOpusPacket(handle, pPayload, (uint)dummyOpus.Length, 480, 2);
+            int pushRes = MoonshineNativeMethods.MicSinkPushOpusPacket(handle, pPayload, (uint)opusPayload.Length, 480, 2);
             pushRes.Should().Be(1);
         }
 
