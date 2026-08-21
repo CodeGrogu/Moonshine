@@ -1,18 +1,34 @@
 # ==============================================================================
 # Moonshine Toolchain & Environment Verification Probe (Step -1)
 # ==============================================================================
-# Verifies that MSVC C++23 compiler, linker, standard library headers, and
-# Windows SDK are properly configured on PATH and environment variables.
+# Verifies the Windows 11, MSVC C++23, CMake, CTest, Ninja, and .NET 9
+# toolchain required by Moonshine.
 # ==============================================================================
 
 [CmdletBinding()]
 param()
 
 $ErrorActionPreference = "Stop"
+$repoRoot = (Get-Item $PSScriptRoot).Parent.FullName
+$localDotNetExe = Join-Path $repoRoot "tools\dotnet_sdk\dotnet.exe"
+$dotnetExe = if (Test-Path $localDotNetExe) {
+    $localDotNetExe
+} elseif (Get-Command dotnet -ErrorAction SilentlyContinue) {
+    (Get-Command dotnet).Source
+} else {
+    $null
+}
 
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "Moonshine Toolchain & Environment Verification" -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
+
+$os = Get-CimInstance -ClassName Win32_OperatingSystem
+if ($os.Version -notmatch '^10\.0\.' -or [int]$os.BuildNumber -lt 22000) {
+    Write-Error "[!] Moonshine requires Windows 11 version 21H2 (build 22000) or later. Detected: $($os.Caption) build $($os.BuildNumber)."
+    exit 1
+}
+Write-Host "[+] Windows 11 requirement verified: $($os.Caption) build $($os.BuildNumber)." -ForegroundColor Green
 
 # 1. Check if cl.exe is on PATH; if not, attempt auto-initialisation of developer shell
 if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
@@ -71,13 +87,15 @@ $testExe = Join-Path $tempDir "moonshine_env_probe.exe"
 
 $probeSource = @"
 #include <cstdint>
+#include <expected>
 #include <iostream>
 #include <vector>
 #include <string>
 
 int main() {
     uint32_t magic = 0x4D4F4F4E; // MOON
-    std::cout << "MOONSHINE_TOOLCHAIN_OK_" << magic << std::endl;
+    std::expected<uint32_t, int> value = magic;
+    std::cout << "MOONSHINE_CPP23_OK_" << value.value() << std::endl;
     return 0;
 }
 "@
@@ -90,7 +108,7 @@ try {
     }
 
     # Execute cl.exe to compile and link
-    $clOutput = & cl.exe /nologo /EHsc /std:c++20 $testCpp /Fe:$testExe 2>&1
+    $clOutput = & cl.exe /nologo /EHsc /std:c++latest $testCpp /Fe:$testExe 2>&1
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path $testExe)) {
         Write-Host $clOutput -ForegroundColor Red
         Write-Error "[!] MSVC toolchain failed to compile standard C++ program. Standard headers (<iostream>, <cstdint>) could not be resolved. Please verify INCLUDE / LIB environment variables."
@@ -99,12 +117,12 @@ try {
 
     # Execute the compiled binary to confirm successful execution
     $runOutput = & $testExe
-    if ($runOutput -notmatch "MOONSHINE_TOOLCHAIN_OK_1297043278") {
+    if ($runOutput -notmatch "MOONSHINE_CPP23_OK_1297043278") {
         Write-Error "[!] Probe binary execution failed or returned invalid output: $runOutput"
         exit 1
     }
 
-    Write-Host "[+] Environment OK: MSVC C++23 toolchain, standard headers, and linker verified." -ForegroundColor Green
+    Write-Host "[+] MSVC C++23 language support, standard headers, and linker verified." -ForegroundColor Green
 }
 finally {
     if (Test-Path $testCpp) { Remove-Item -Force $testCpp -ErrorAction SilentlyContinue }
@@ -112,5 +130,35 @@ finally {
     $objFile = [System.IO.Path]::ChangeExtension($testCpp, ".obj")
     if (Test-Path $objFile) { Remove-Item -Force $objFile -ErrorAction SilentlyContinue }
 }
+
+foreach ($tool in @("cmake", "ctest", "ninja")) {
+    if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
+        Write-Error "[!] Required Windows verification tool '$tool' was not found on PATH."
+        exit 1
+    }
+}
+
+$cmakeVersion = (& cmake --version | Select-Object -First 1)
+if ($cmakeVersion -notmatch 'version\s+(\d+)\.(\d+)') {
+    Write-Error "[!] Unable to determine CMake version: $cmakeVersion"
+    exit 1
+}
+if (([int]$matches[1] -lt 3) -or (([int]$matches[1] -eq 3) -and ([int]$matches[2] -lt 25))) {
+    Write-Error "[!] Moonshine requires CMake 3.25 or later. Detected: $cmakeVersion"
+    exit 1
+}
+
+if (-not $dotnetExe) {
+    Write-Error "[!] Required .NET 9 SDK was not found. Install it using the pinned global.json version."
+    exit 1
+}
+
+$dotnetVersion = (& $dotnetExe --version).Trim()
+if ($dotnetVersion -notmatch '^9\.') {
+    Write-Error "[!] Moonshine requires a .NET 9 SDK. Detected: $dotnetVersion"
+    exit 1
+}
+
+Write-Host "[+] Standard Windows test tools verified: $cmakeVersion, Ninja, CTest, repository .NET SDK $dotnetVersion." -ForegroundColor Green
 
 exit 0

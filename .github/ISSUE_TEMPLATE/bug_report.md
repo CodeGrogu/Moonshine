@@ -10,7 +10,7 @@ assignees: ''
 A clear and concise description of what the bug is.
 
 **Hardware & OS Environment:**
-- OS: [e.g. Windows 11 23H2 / Ubuntu 24.04]
+- Windows 11 version and build: [e.g. Windows 11 23H2, build 22631]
 - Client GPU: [e.g. NVIDIA RTX 4080 / Intel Arc A770 / AMD Radeon 7900XTX]
 - Host Software: [e.g. Sunshine 0.23.1 / GeForce Experience 3.28]
 - Display Resolution & Refresh: [e.g. 3840x2160 @ 120Hz HDR]

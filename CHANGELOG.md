@@ -1,4 +1,4 @@
-# 📝 Changelog
+# Changelog
 
 All notable changes to **Moonshine** will be documented in this file.
 

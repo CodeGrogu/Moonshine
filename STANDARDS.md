@@ -56,7 +56,7 @@ Scaffolding and stubs are permissible during early development only when explici
 
 ### Rule 6: Centralised Secret Storage and TLS Discipline
 To eliminate credential leak risks structurally:
-- All credential and private key writes must route through `Moonshine.Core.Security.SecureFileStore`, which sets restrictive filesystem ACLs (0600 on POSIX, Owner-only on Windows). Never use raw `File.WriteAllText` on sensitive paths.
+- All credential and private key writes must route through `Moonshine.Core.Security.SecureFileStore`, which sets owner-only Windows ACLs. Never use raw `File.WriteAllText` on sensitive paths.
 - All GameStream self-signed certificate validation must route through the central `CertificateValidation.AcceptSelfSignedGameStreamCert` handler rather than inline lambdas.
 
 ### Rule 7: External Counterpart Interoperability
@@ -86,6 +86,7 @@ Documentation, performance numbers, and test counts are engineering claims, not 
 - The default human response to any completion claim is "show me the proof."
 - The AI agent must provide concrete command outputs, test execution evidence, and adversarial critiques before claiming completion.
 - Periodically execute full repository audits using `.agents/skills/moonshine-adversarial-audit` to detect accumulated stubs, simulated code paths, or stale documentation claims.
+- Moonshine supports Windows 11 version 21H2 (build 22000) or later on x64 only. The required native test stack is MSVC C++23, CMake, Ninja, and CTest. The required managed test stack is .NET 9 and xUnit through `dotnet test`.
 
 ---
 

@@ -22,19 +22,20 @@ powershell -ExecutionPolicy Bypass -File .\scripts\verify_codebase.ps1
 
 ### Verification Layers
 1. **Toolchain & Environment Verification (`scripts/verify_environment.ps1`)**:
-   - Auto-initialises MSVC environment variables if running in plain PowerShell.
-   - Compiles and executes a scratch C++ probe verifying standard library header resolution (`<cstdint>`, `<iostream>`).
+   - Requires Windows 11 version 21H2 (build 22000) or later.
+   - Auto-initialises the MSVC environment if running in plain PowerShell.
+   - Compiles and executes a C++23 probe using MSVC, then verifies CMake, Ninja, CTest, and .NET 9.
 2. **Preflight Sweep (`scripts/preflight.ps1`)**:
    - Mechanically scans for unannotated stubs (`// STUB:` with >= 15 char justification).
    - Prohibits hardcoded private keys or tokens.
    - Forbids swallowed exceptions (`catch (Exception)` without `// ALLOWED_EXCEPTION:`).
    - Prevents inline unapproved TLS validation callbacks.
-   - Rejects unprovenanced metric claims lacking `<!-- VERIFIED: -->` tags.
+   - Rejects unprovenanced test-count claims and non-Windows platform references.
 3. **Physical Artifact Verification**:
-   - Tests physical presence of output binaries (`build\bin\Moonshine.Native.dll` and `src\Moonshine.Host\bin\Release\net9.0\Moonshine.Host.dll`).
+   - Tests physical presence of Windows binaries (`build\release-avx2\bin\Moonshine.Native.dll` and the Windows-targeted `Moonshine.Host.dll`).
 4. **Native & Managed Test Suites**:
    - Runs 16 native C++23 CTest test suites.
-   - Runs 239 managed xUnit tests across all 4 test projects.
+   - Runs 238 managed .NET 9 xUnit tests across all four test projects.
 
 ---
 

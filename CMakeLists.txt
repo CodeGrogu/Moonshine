@@ -1,4 +1,9 @@
 cmake_minimum_required(VERSION 3.25)
+
+if(NOT WIN32)
+    message(FATAL_ERROR "Moonshine supports Windows 11 only. Configure this project with a Windows MSVC toolchain.")
+endif()
+
 project(Moonshine VERSION 1.0.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 23)
@@ -16,50 +21,35 @@ option(MOONSHINE_ENABLE_AVX512 "Enable AVX-512 and GFNI SIMD optimizations" OFF)
 option(MOONSHINE_BUILD_TESTS "Build native test suite" ON)
 option(MOONSHINE_BUILD_BENCHMARKS "Build native micro-benchmarks" ON)
 
-# Global Compiler Flags for Maximum Performance
-if(MSVC)
-    add_compile_options(
-        /W4
-        /WX
-        /wd4324
-        /wd4702
-        /permissive-
-        /Zc:__cplusplus
-        /utf-8
-        /Oi
-        /Ot
-        /favor:blend
-    )
-    if(MOONSHINE_ENABLE_AVX2)
-        add_compile_options(/arch:AVX2)
-        add_compile_definitions(MOONSHINE_HAS_AVX2=1)
-    endif()
-    if(MOONSHINE_ENABLE_AVX512)
-        add_compile_options(/arch:AVX512)
-        add_compile_definitions(MOONSHINE_HAS_AVX512=1)
-    endif()
-    # Link-time Code Generation / Whole Program Optimization for Release
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /GL /O2 /Gy")
-    set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} /LTCG /OPT:REF /OPT:ICF")
-else()
-    add_compile_options(
-        -Wall
-        -Wextra
-        -Werror
-        -pedantic
-        -O3
-        -fPIC
-    )
-    if(MOONSHINE_ENABLE_AVX2)
-        add_compile_options(-mavx2 -mfma)
-        add_compile_definitions(MOONSHINE_HAS_AVX2=1)
-    endif()
-    if(MOONSHINE_ENABLE_AVX512)
-        add_compile_options(-mavx512f -mavx512bw -mavx512dq -mgfni)
-        add_compile_definitions(MOONSHINE_HAS_AVX512=1)
-    endif()
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -flto")
+if(NOT MSVC)
+    message(FATAL_ERROR "Moonshine requires Microsoft Visual C++ on Windows 11.")
 endif()
+
+# Global MSVC flags for the Windows 11 native engine.
+add_compile_options(
+    /W4
+    /WX
+    /wd4324
+    /wd4702
+    /permissive-
+    /Zc:__cplusplus
+    /utf-8
+    /Oi
+    /Ot
+    /favor:blend
+)
+if(MOONSHINE_ENABLE_AVX2)
+    add_compile_options(/arch:AVX2)
+    add_compile_definitions(MOONSHINE_HAS_AVX2=1)
+endif()
+if(MOONSHINE_ENABLE_AVX512)
+    add_compile_options(/arch:AVX512)
+    add_compile_definitions(MOONSHINE_HAS_AVX512=1)
+endif()
+
+# Link-time Code Generation / Whole Program Optimisation for Release.
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /GL /O2 /Gy")
+set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} /LTCG /OPT:REF /OPT:ICF")
 
 # Include Subdirectories
 add_subdirectory(src/Moonshine.Native)

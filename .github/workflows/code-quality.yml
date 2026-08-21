@@ -9,7 +9,7 @@ on:
 jobs:
   format-and-lint:
     name: Code Formatting & British English Audit
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4

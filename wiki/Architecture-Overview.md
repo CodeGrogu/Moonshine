@@ -61,7 +61,7 @@ The managed layer handles all high-level asynchronous workflows, state machines,
 
 ## 2. Native Layer: Acceleration and Data Plane (C++23)
 
-The native engine is compiled as a shared library (`Moonshine.Native.dll` on Windows, `.so` on Linux) with strict cache alignment and SIMD acceleration:
+The native engine is compiled as the Windows dynamic library `Moonshine.Native.dll` with strict cache alignment and SIMD acceleration:
 - `reed_solomon_simd`: Implements vectorised Galois Field GF(2^8) multiplication and XOR matrix transformations via AVX2 and AVX-512.
 - `spsc_ring_buffer`: Lock-free single-producer single-consumer circular queue padded to 64 bytes (`alignas(64)`) to eliminate multi-core cacheline contention.
 - `jitter_buffer`: Predictive frame reassembly buffer tracking frame indices and sequence numbers without dynamic memory allocations.

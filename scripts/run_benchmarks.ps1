@@ -15,21 +15,19 @@ Write-Host "==========================================================" -Foregro
 Write-Host "Moonshine Performance Benchmarking Suite" -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
 
-# Locate DotNet SDK
-$DotNetExe = if (Test-Path "$RootDir\tools\dotnet_sdk\dotnet.exe") {
-    "$RootDir\tools\dotnet_sdk\dotnet.exe"
+$LocalDotNetExe = Join-Path $RootDir "tools\dotnet_sdk\dotnet.exe"
+$DotNetExe = if (Test-Path $LocalDotNetExe) {
+    $LocalDotNetExe
 } elseif (Get-Command dotnet -ErrorAction SilentlyContinue) {
-    "dotnet"
+    (Get-Command dotnet).Source
 } else {
-    $null
+    throw ".NET 9 SDK is absent. Install the version pinned in global.json."
 }
 
 # Ensure native binaries are built first
 & "$ScriptDir\build.ps1" -Configuration Release -SkipTests
+if ($LASTEXITCODE -ne 0) { throw "Windows 11 build prerequisite failed." }
 
 Write-Host "`n[*] Running Micro-Benchmarks (Filter: $Filter)..." -ForegroundColor Yellow
-if ($DotNetExe) {
-    & $DotNetExe run --project "$RootDir\src\Moonshine.Benchmarks\Moonshine.Benchmarks.csproj" -c Release -- --job short --filter $Filter
-} else {
-    Write-Host "[!] Note: .NET SDK runner will execute once dotnet is active in PATH." -ForegroundColor Yellow
-}
+& $DotNetExe run --project "$RootDir\src\Moonshine.Benchmarks\Moonshine.Benchmarks.csproj" -c Release --no-restore -- --job short --filter $Filter
+if ($LASTEXITCODE -ne 0) { throw "BenchmarkDotNet execution failed." }

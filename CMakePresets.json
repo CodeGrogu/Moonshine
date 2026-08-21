@@ -36,17 +36,6 @@
         "MOONSHINE_ENABLE_AVX2": "ON",
         "MOONSHINE_BUILD_TESTS": "ON"
       }
-    },
-    {
-      "name": "linux-release-avx2",
-      "displayName": "Linux Release (AVX2 Optimized)",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/linux-release",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "MOONSHINE_ENABLE_AVX2": "ON",
-        "MOONSHINE_BUILD_TESTS": "ON"
-      }
     }
   ],
   "buildPresets": [

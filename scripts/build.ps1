@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Builds the complete Moonshine stack: Native C++23 (CMake + Ninja + MSVC) and .NET 9 Managed projects.
+    Builds and tests Moonshine on Windows 11 using MSVC C++23/CMake/CTest and .NET 9/xUnit.
 #>
 [CmdletBinding()]
 param(
@@ -12,93 +12,67 @@ param(
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RootDir = Split-Path -Parent $ScriptDir
-$BuildDir = Join-Path $RootDir "build"
-
-Write-Host "==========================================================" -ForegroundColor Cyan
-Write-Host "Moonshine Unified Build Engine [$Configuration]" -ForegroundColor Cyan
-Write-Host "==========================================================" -ForegroundColor Cyan
-
-# Locate Build Tools
-$VcvarsBat = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
-$CMakeExe = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
-$NinjaExe = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe"
-$CTestExe = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\ctest.exe"
-
-# Locate DotNet SDK
-$DotNetExe = if (Test-Path "$RootDir\tools\dotnet_sdk\dotnet.exe") {
-    "$RootDir\tools\dotnet_sdk\dotnet.exe"
+$LocalDotNetExe = Join-Path $RootDir "tools\dotnet_sdk\dotnet.exe"
+$DotNetExe = if (Test-Path $LocalDotNetExe) {
+    $LocalDotNetExe
 } elseif (Get-Command dotnet -ErrorAction SilentlyContinue) {
-    "dotnet"
+    (Get-Command dotnet).Source
 } else {
     $null
 }
+$ConfigurePreset = if ($Configuration -eq "Release") { "windows-release-avx2" } else { "windows-debug" }
+$BuildDir = if ($Configuration -eq "Release") { Join-Path $RootDir "build\release-avx2" } else { Join-Path $RootDir "build\debug" }
 
-# 1. Build Native C++ Library
-Write-Host "`n[1/4] Building Moonshine.Native C++23 Library..." -ForegroundColor Yellow
-$cmakeConfigCmd = "call `"$VcvarsBat`" && `"$CMakeExe`" -B `"$BuildDir`" -S `"$RootDir`" -G `"Ninja`" -DCMAKE_MAKE_PROGRAM=`"$NinjaExe`" -DCMAKE_BUILD_TYPE=$Configuration -DMOONSHINE_ENABLE_AVX2=ON -DMOONSHINE_BUILD_TESTS=ON"
-cmd.exe /c $cmakeConfigCmd
+Write-Host "==========================================================" -ForegroundColor Cyan
+Write-Host "Moonshine Windows 11 Build and Test [$Configuration]" -ForegroundColor Cyan
+Write-Host "==========================================================" -ForegroundColor Cyan
+
+& "$ScriptDir\verify_environment.ps1"
+if ($LASTEXITCODE -ne 0) { throw "Windows 11 toolchain verification failed." }
+if (-not $DotNetExe) { throw ".NET 9 SDK is absent. Install the version pinned in global.json." }
+
+Write-Host "`n[1/4] Configuring and building the MSVC C++23 native engine..." -ForegroundColor Yellow
+& cmake --preset $ConfigurePreset
 if ($LASTEXITCODE -ne 0) { throw "CMake configuration failed." }
-
-$cmakeBuildCmd = "call `"$VcvarsBat`" && `"$CMakeExe`" --build `"$BuildDir`" --config $Configuration --parallel"
-cmd.exe /c $cmakeBuildCmd
+& cmake --build $BuildDir --config $Configuration --parallel
 if ($LASTEXITCODE -ne 0) { throw "Native compilation failed." }
 
-# Physical Artifact Check: Moonshine.Native.dll
-$nativeDll = if (Test-Path "$BuildDir\bin\Moonshine.Native.dll") {
-    "$BuildDir\bin\Moonshine.Native.dll"
-} elseif (Test-Path "$BuildDir\src\Moonshine.Native\Moonshine.Native.dll") {
-    "$BuildDir\src\Moonshine.Native\Moonshine.Native.dll"
-} else {
-    $null
+$nativeDll = Join-Path $BuildDir "bin\Moonshine.Native.dll"
+if (-not (Test-Path $nativeDll)) {
+    throw "Native build reported success but Moonshine.Native.dll is absent: $nativeDll"
 }
-if (-not $nativeDll) {
-    throw "Native build reported success but output artifact Moonshine.Native.dll does not exist on disk."
-}
-Write-Host "[+] Verified native artifact exists: $nativeDll" -ForegroundColor Green
+Write-Host "[+] Native Windows artifact verified: $nativeDll" -ForegroundColor Green
 
-# 2. Run Native Tests
 if (-not $SkipTests) {
-    Write-Host "`n[2/4] Executing Native CTest Suite..." -ForegroundColor Yellow
-    $nativeDllDir = Split-Path -Parent $nativeDll
-    $ctestCmd = "call `"$VcvarsBat`" && set PATH=$nativeDllDir;%PATH% && `"$CTestExe`" --test-dir `"$BuildDir`" --output-on-failure -C $Configuration"
-    cmd.exe /c $ctestCmd
-    if ($LASTEXITCODE -ne 0) { throw "Native tests failed." }
+    Write-Host "`n[2/4] Running CTest native test suite..." -ForegroundColor Yellow
+    & ctest --test-dir $BuildDir --build-config $Configuration --output-on-failure --no-tests=error
+    if ($LASTEXITCODE -ne 0) { throw "CTest native suite failed." }
 }
 
-# 3. Build Managed .NET Solution
-if ($DotNetExe) {
-    Write-Host "`n[3/4] Building Managed .NET Solution ($Configuration)..." -ForegroundColor Yellow
-    & $DotNetExe build "$RootDir\Moonshine.sln" -c $Configuration
-    if ($LASTEXITCODE -ne 0) { throw ".NET build failed." }
+Write-Host "`n[3/4] Restoring and building .NET 9 Windows 11 solution..." -ForegroundColor Yellow
+& $DotNetExe restore "$RootDir\Moonshine.sln" --runtime win-x64
+if ($LASTEXITCODE -ne 0) { throw ".NET restore failed." }
+& $DotNetExe build "$RootDir\Moonshine.sln" -c $Configuration --no-restore
+if ($LASTEXITCODE -ne 0) { throw ".NET build failed." }
 
-    $hostDll = "$RootDir\src\Moonshine.Host\bin\$Configuration\net9.0\Moonshine.Host.dll"
-    if (-not (Test-Path $hostDll)) {
-        throw "Managed build reported success but output artifact Moonshine.Host.dll does not exist on disk."
+$hostDll = Get-ChildItem -Path "$RootDir\src\Moonshine.Host\bin\$Configuration" -Recurse -Filter "Moonshine.Host.dll" -File | Select-Object -First 1
+if (-not $hostDll) {
+    throw "Managed build reported success but Moonshine.Host.dll is absent."
+}
+Write-Host "[+] Managed Windows artifact verified: $($hostDll.FullName)" -ForegroundColor Green
+
+if (-not $SkipTests) {
+    Get-ChildItem -Path "$RootDir\src", "$RootDir\tests" -Recurse -Directory | Where-Object {
+        $_.FullName -match '[\\/]bin[\\/]'
+    } | ForEach-Object {
+        Copy-Item $nativeDll $_.FullName -Force
     }
-    Write-Host "[+] Verified managed artifact exists: $hostDll" -ForegroundColor Green
 
-    # 4. Run Managed Tests
-    if (-not $SkipTests) {
-        Write-Host "`n[4/4] Executing .NET Test Suites..." -ForegroundColor Yellow
-        $nativeDll = if (Test-Path "$BuildDir\bin\Moonshine.Native.dll") {
-            "$BuildDir\bin\Moonshine.Native.dll"
-        } elseif (Test-Path "$BuildDir\src\Moonshine.Native\Moonshine.Native.dll") {
-            "$BuildDir\src\Moonshine.Native\Moonshine.Native.dll"
-        } else {
-            $null
-        }
-
-        if ($nativeDll) {
-            Get-ChildItem -Path "$RootDir\tests\*\bin\$Configuration\net9.0", "$RootDir\src\*\bin\$Configuration\net9.0" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-                Copy-Item $nativeDll $_.FullName -Force -ErrorAction SilentlyContinue
-            }
-        }
-        $env:PATH = "$BuildDir\bin;$BuildDir\src\Moonshine.Native;" + $env:PATH
-        & $DotNetExe test "$RootDir\Moonshine.sln" -c $Configuration --no-build --verbosity normal
-        if ($LASTEXITCODE -ne 0) { throw ".NET tests failed." }
-    }
-} else {
-    Write-Host "`n[!] Warning: .NET SDK not detected. Skipping managed build." -ForegroundColor Yellow
+    $env:PATH = "$(Split-Path -Parent $nativeDll);$env:PATH"
+    $resultsDirectory = Join-Path $RootDir "TestResults\$Configuration"
+    Write-Host "`n[4/4] Running .NET 9 xUnit test suite through dotnet test..." -ForegroundColor Yellow
+    & $DotNetExe test "$RootDir\Moonshine.sln" -c $Configuration --no-build --no-restore --arch x64 --logger "console;verbosity=normal" --results-directory $resultsDirectory
+    if ($LASTEXITCODE -ne 0) { throw ".NET xUnit test suite failed." }
 }
 
-Write-Host "`n[+] Build and test execution completed successfully!" -ForegroundColor Green
+Write-Host "`n[+] Windows 11 build and standardised native/managed tests completed successfully." -ForegroundColor Green

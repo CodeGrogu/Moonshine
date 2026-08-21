@@ -1,4 +1,4 @@
-name: Performance Micro-Benchmarks & Allocation Audit
+name: Windows 11 Performance Benchmarking
 
 on:
   push:
@@ -8,44 +8,30 @@ on:
 
 jobs:
   run-benchmarks:
-    name: Micro-Benchmarks & Zero-Allocation Gate
-    runs-on: windows-latest
+    name: BenchmarkDotNet on Windows 11
+    runs-on: windows-2022
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup .NET 9 SDK
+      - name: Set up .NET 9 SDK
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
 
-      - name: Setup Ninja
+      - name: Set up Ninja
         uses: ashutoshvarma/setup-ninja@v1.1
+        with:
+          version: '1.11.1'
 
-      - name: Setup MSVC
+      - name: Set up MSVC C++23 environment
         uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Build Native C++ Engine
-        run: |
-          cmake -B build -S . -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DMOONSHINE_ENABLE_AVX2=ON
-          cmake --build build --config Release --parallel
-
-      - name: Copy Native DLL to Benchmark Output
+      - name: Run standardised Windows 11 benchmarks
         shell: pwsh
-        run: |
-          $dll = "./build/src/Moonshine.Native/Moonshine.Native.dll"
-          Copy-Item $dll "./src/Moonshine.Benchmarks/bin/Release/net9.0/" -Force -ErrorAction SilentlyContinue
+        run: powershell -ExecutionPolicy Bypass -File .\scripts\run_benchmarks.ps1
 
-      - name: Run BenchmarkDotNet Suite
-        run: >
-          dotnet run
-          --project src/Moonshine.Benchmarks/Moonshine.Benchmarks.csproj
-          -c Release
-          --
-          --job short
-          --filter *
-
-      - name: Upload Benchmark Results
+      - name: Upload BenchmarkDotNet results
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-results

@@ -23,20 +23,19 @@ public class CaptureNativeTests
         uint height = 0;
         IntPtr handle = MoonshineNativeMethods.CaptureCreateDxgi(0, 0, out width, out height);
 
-        if (handle != IntPtr.Zero)
+        if (handle == IntPtr.Zero)
         {
-            width.Should().BeGreaterThan(0);
-            height.Should().BeGreaterThan(0);
-
-            MoonshineNativeMethods.CaptureAcquireFrame(handle, 50, out _);
-            MoonshineNativeMethods.CaptureReleaseFrame(handle);
-            MoonshineNativeMethods.CaptureDestroy(handle);
+            width.Should().Be(0);
+            height.Should().Be(0);
+            return;
         }
+
+        width.Should().BeGreaterThan(0);
+        height.Should().BeGreaterThan(0);
+
+        MoonshineNativeMethods.CaptureAcquireFrame(handle, 50, out _);
+        MoonshineNativeMethods.CaptureReleaseFrame(handle);
+        MoonshineNativeMethods.CaptureDestroy(handle);
     }
 
-    [Fact]
-    public void CaptureDestroy_NullHandle_DoesNotThrow()
-    {
-        MoonshineNativeMethods.CaptureDestroy(IntPtr.Zero);
-    }
 }

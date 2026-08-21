@@ -1,4 +1,4 @@
-name: Native Sanitizers & Concurrency Verification
+name: Windows 11 Native AddressSanitizer Verification
 
 on:
   push:
@@ -6,64 +6,34 @@ on:
   pull_request:
     branches: [ main ]
   schedule:
-    - cron: '0 2 * * *' # Nightly at 02:00 UTC
+    - cron: '0 2 * * *'
 
 jobs:
-  address-and-undefined-sanitizer:
-    name: ASan + UBSan (Linux Clang)
-    runs-on: ubuntu-latest
+  address-sanitizer:
+    name: MSVC AddressSanitizer (Windows 11)
+    runs-on: windows-2022
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install Clang & Ninja
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-18 ninja-build
+      - name: Set up Ninja
+        uses: ashutoshvarma/setup-ninja@v1.1
+        with:
+          version: '1.11.1'
 
-      - name: Configure CMake with ASan and UBSan
-        run: |
-          cmake -B build-asan -S . -G "Ninja" \
-            -DCMAKE_C_COMPILER=clang-18 \
-            -DCMAKE_CXX_COMPILER=clang++-18 \
-            -DCMAKE_BUILD_TYPE=Debug \
-            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g" \
-            -DMOONSHINE_BUILD_TESTS=ON
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Compile with Sanitizers
+      - name: Configure MSVC AddressSanitizer build
+        shell: pwsh
+        run: >
+          cmake -B build-asan -S . -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_CXX_FLAGS="/fsanitize=address /Zi"
+          -DMOONSHINE_BUILD_TESTS=ON
+
+      - name: Compile AddressSanitizer build
         run: cmake --build build-asan --parallel
 
-      - name: Run Native Test Suite under ASan/UBSan
-        env:
-          ASAN_OPTIONS: "detect_leaks=1:abort_on_error=1"
-          UBSAN_OPTIONS: "print_stacktrace=1:halt_on_error=1"
-        run: ctest --test-dir build-asan --output-on-failure
-
-  thread-sanitizer:
-    name: TSan Lock-Free Queue Concurrency (Linux Clang)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Install Clang & Ninja
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-18 ninja-build
-
-      - name: Configure CMake with ThreadSanitizer
-        run: |
-          cmake -B build-tsan -S . -G "Ninja" \
-            -DCMAKE_C_COMPILER=clang-18 \
-            -DCMAKE_CXX_COMPILER=clang++-18 \
-            -DCMAKE_BUILD_TYPE=Debug \
-            -DCMAKE_CXX_FLAGS="-fsanitize=thread -g" \
-            -DMOONSHINE_BUILD_TESTS=ON
-
-      - name: Compile with TSan
-        run: cmake --build build-tsan --parallel
-
-      - name: Run SPSC Stress Tests under TSan
-        env:
-          TSAN_OPTIONS: "halt_on_error=1:second_deadlock_stack=1"
-        run: ctest --test-dir build-tsan --output-on-failure
+      - name: Run native CTest suite under AddressSanitizer
+        run: ctest --test-dir build-asan --output-on-failure --no-tests=error

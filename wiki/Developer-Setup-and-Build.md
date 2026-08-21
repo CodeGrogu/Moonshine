@@ -58,4 +58,4 @@ dotnet test Moonshine.sln -c Release --no-build
 
 GitHub Actions (`.github/workflows/ci.yml`) automatically builds and tests every commit across:
 - `windows-latest` (MSVC 2022 + Ninja + .NET 9 Native AOT)
-- `ubuntu-latest` (Clang 18 + Ninja + .NET 9 Native AOT)
+- `windows-2022` (MSVC C++23 + Ninja + .NET 9 Native AOT)

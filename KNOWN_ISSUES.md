@@ -14,14 +14,14 @@ This document tracks known platform limitations, environment requirements, and c
 
 ## 2. Component Maturity Status
 
-<!-- REGISTERED: 2026-08-21, via `ctest --test-dir build --show-only` in Developer Command Prompt -->
+<!-- VERIFIED: 2026-08-21, via `ctest --test-dir build/release-avx2 --build-config Release --output-on-failure --no-tests=error` on Windows 11 with MSVC C++23 -->
 ### Native C++23 Engine (Moonshine.Native)
 - **Status**: Verified in Developer Environment / CI.
-- **Test Targets**: 16 native CTest targets registered and passing when built in the MSVC Developer environment.
+- **Test Targets**: 16 native CTest targets passed in the MSVC developer environment.
 
-<!-- VERIFIED: 2026-08-21, via `dotnet test` test runner execution in Developer PowerShell -->
+<!-- VERIFIED: 2026-08-21, via `tools/dotnet_sdk/dotnet.exe test Moonshine.sln -c Release --no-build --no-restore --arch x64` on Windows 11 -->
 ### Managed .NET 9 Solution
-- **Status**: Verified (239 unit tests passing across `Moonshine.Interop.Tests`, `Moonshine.Host.Tests`, `Moonshine.Protocol.Tests`, `Moonshine.Core.Tests`).
+- **Status**: Verified (238 unit tests passed across `Moonshine.Interop.Tests`, `Moonshine.Host.Tests`, `Moonshine.Protocol.Tests`, `Moonshine.Core.Tests`).
 
 ### Hardware Video Encoders (NVENC, AMF, QSV)
 - **Status**: Prototype on non-GPU CI runners; Verified on dedicated hardware test nodes.

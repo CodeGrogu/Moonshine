@@ -60,7 +60,7 @@ To achieve sub-millisecond decode latency at 4K 120 FPS:
 
 ## 4. Low-Latency DXGI Flip Model Swapchain (`DxgiSwapchainPipeline`)
 
-Moonshine integrates a custom DXGI Flip Model swapchain presentation engine delivering sub-0.5ms presentation overhead on Windows 10 and 11:
+Moonshine integrates a custom DXGI Flip Model swapchain presentation engine for Windows 11:
 
 ### A. Flip Discard and Tearing (VRR)
 - **`DXGI_SWAP_EFFECT_FLIP_DISCARD`**: Completely bypasses Desktop Window Manager (DWM) redirection surfaces. The GPU presents the decoded back-buffer directly to the display scanout.

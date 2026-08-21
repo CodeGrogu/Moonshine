@@ -9,7 +9,7 @@ Moonshine is a next-generation, ultra-low-latency game streaming client engineer
 ### Architecture and Design
 - [[Architecture Overview|Architecture-Overview]]: High-level hybrid C# and C++ architecture, data flow, and separation of concerns.
 - [[Zero-Allocation Data Plane|Zero-Allocation-Data-Plane]]: Zero-copy ingestion, Span, ReadOnlySequence, and unmanaged memory slabs.
-- [[Custom SIMD Galois Field FEC|Custom-SIMD-Galois-Field-FEC]]: Vectorised Reed-Solomon GF(2^8) arithmetic via AVX2, AVX-512, and ARM NEON.
+- [[Custom SIMD Galois Field FEC|Custom-SIMD-Galois-Field-FEC]]: Vectorised Reed-Solomon GF(2^8) arithmetic via AVX2 and AVX-512.
 - [[Custom Lock-Free SPSC Concurrency|Custom-Lock-Free-SPSC-Concurrency]]: Cacheline-padded atomic ring buffers with acquire-release memory ordering.
 - [[Predictive Jitter Buffer|Predictive-Jitter-Buffer]]: Custom predictive frame reassembly algorithms and zero-allocation indexing.
 - [[Hardware Video Pipeline|Hardware-Video-Pipeline]]: Direct3D 11/12 and Vulkan Video decoders, DXGI Flip Model, and HDR10 tone mapping.

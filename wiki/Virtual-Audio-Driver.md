@@ -1,6 +1,6 @@
 # Dedicated Windows Virtual Audio Driver
 
-The **Moonshine Virtual Audio Driver** is a custom Microsoft Windows Driver Kit (WDK) PortCls WaveRT miniport driver (`IMiniportWaveRT` and `IMiniportTopology`) providing isolated, persistent hardware audio endpoints for the Moonshine host ecosystem on Windows 10 and Windows 11.
+The **Moonshine Virtual Audio Driver** is a custom Microsoft Windows Driver Kit (WDK) PortCls WaveRT miniport driver (`IMiniportWaveRT` and `IMiniportTopology`) providing isolated, persistent hardware audio endpoints for the Moonshine host ecosystem on Windows 11.
 
 ---
 

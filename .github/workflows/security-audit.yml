@@ -11,7 +11,7 @@ on:
 jobs:
   nuget-security-scan:
     name: NuGet Dependency Vulnerability Scan
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -25,8 +25,8 @@ jobs:
         run: dotnet list package --vulnerable --include-transitive
 
   codeql-analysis:
-    name: CodeQL Static Security Analysis
-    runs-on: ubuntu-latest
+    name: CodeQL Static Security Analysis (Windows 11)
+    runs-on: windows-2022
     permissions:
       actions: read
       contents: read
@@ -46,12 +46,17 @@ jobs:
         with:
           dotnet-version: '9.0.x'
 
-      - name: Build Codebase for Analysis
-        run: |
-          sudo apt-get update && sudo apt-get install -y clang ninja-build
-          cmake -B build -S . -G "Ninja" -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --parallel
-          dotnet build Moonshine.sln -c Release
+      - name: Set up Ninja
+        uses: ashutoshvarma/setup-ninja@v1.1
+        with:
+          version: '1.11.1'
+
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build Windows 11 codebase for analysis
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1 -Configuration Release -SkipTests
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3

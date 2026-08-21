@@ -12,6 +12,11 @@ public static unsafe partial class MoonshineNativeMethods
 
     static MoonshineNativeMethods()
     {
+        if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
+        {
+            throw new PlatformNotSupportedException("Moonshine requires Windows 11 version 21H2 or later.");
+        }
+
         NativeLibrary.SetDllImportResolver(typeof(MoonshineNativeMethods).Assembly, DllImportResolver);
     }
 
@@ -19,12 +24,11 @@ public static unsafe partial class MoonshineNativeMethods
     {
         if (libraryName == LibraryName)
         {
-            string osLibName = OperatingSystem.IsWindows() ? "Moonshine.Native.dll" :
-                               OperatingSystem.IsMacOS() ? "libMoonshine.Native.dylib" : "libMoonshine.Native.so";
+            const string osLibName = "Moonshine.Native.dll";
 
             string[] searchDirs = [
                 AppContext.BaseDirectory,
-                Path.Combine(AppContext.BaseDirectory, "runtimes", OperatingSystem.IsWindows() ? "win-x64" : "linux-x64", "native"),
+                Path.Combine(AppContext.BaseDirectory, "runtimes", "win-x64", "native"),
                 Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "build", "bin"),
                 Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "build", "src", "Moonshine.Native")
             ];

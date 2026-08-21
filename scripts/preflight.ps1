@@ -42,7 +42,7 @@ function Test-ValidJustification([string]$line, [string]$prevLine, [string]$pref
 
 # 1. Scan Source Files (.cs, .cpp, .h, .hpp, .c)
 $sourceExtensions = @("*.cs", "*.cpp", "*.h", "*.hpp", "*.c")
-$excludeDirs = @("\build\", "\bin\", "\obj\", "\.git\", "\.vs\", "\TestResults\")
+$excludeDirs = @("\build\", "\bin\", "\obj\", "\.git\", "\.vs\", "\TestResults\", "\tools\")
 
 $sourceFiles = Get-ChildItem -Path $ScanPath -Recurse -Include $sourceExtensions -File | Where-Object {
     $fullName = $_.FullName
@@ -134,7 +134,33 @@ foreach ($file in $sourceFiles) {
     }
 }
 
-# 2. Scan Markdown Documentation for Bare Unprovenanced Metric Claims
+# 2. Enforce the Windows 11-only support boundary across repository-owned source,
+# configuration, automation, and documentation files.
+$platformExtensions = @("*.cs", "*.cpp", "*.h", "*.hpp", "*.c", "*.csproj", "*.props", "*.targets", "*.json", "*.yml", "*.yaml", "*.md", "*.ps1")
+$platformFiles = Get-ChildItem -Path $ScanPath -Recurse -Include $platformExtensions -File | Where-Object {
+    $fullName = $_.FullName
+    -not ($excludeDirs | Where-Object { $fullName.Contains($_) })
+}
+
+foreach ($file in $platformFiles) {
+    if ($file.Name -in @("preflight.ps1", "test_preflight_fixtures.ps1")) {
+        continue
+    }
+
+    $lines = [System.IO.File]::ReadAllLines($file.FullName)
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match '(?i)\b(linux|macos|mac\s+os|ubuntu|darwin|windows\s+10)\b|\.(?:so|dylib)\b') {
+            $violations.Add([PSCustomObject]@{
+                File = $file.FullName
+                Line = $i + 1
+                Type = "Non-Windows Platform Reference"
+                Detail = "Moonshine supports Windows 11 only. Remove non-Windows platform code, configuration, or documentation."
+            })
+        }
+    }
+}
+
+# 3. Scan Markdown Documentation for Bare Unprovenanced Metric Claims
 $docFiles = Get-ChildItem -Path $ScanPath -Recurse -Filter "*.md" -File | Where-Object {
     $fullName = $_.FullName
     $excluded = $false

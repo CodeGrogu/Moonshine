@@ -25,7 +25,7 @@ Performance in Moonshine is the primary design constraint. Every line of code, d
 - Avoid pointer chasing; keep related data contiguous in memory.
 
 ### Rule 5: SIMD Vectorization
-- Any loop processing binary arrays, matrix math, Galois Field arithmetic, or checksum verification must use AVX2, AVX-512, or ARM NEON intrinsics.
+- Any loop processing binary arrays, matrix math, Galois Field arithmetic, or checksum verification must use x64 AVX2 or AVX-512 intrinsics.
 - Fallback paths for legacy CPUs must be clearly isolated and dynamically dispatched at runtime using CPUID detection.
 
 ---

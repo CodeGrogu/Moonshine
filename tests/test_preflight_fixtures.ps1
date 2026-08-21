@@ -35,14 +35,14 @@ function Assert-Fixture([string]$name, [string]$content, [string]$filename, [boo
 
     if ($expectedSuccess -and $exitCode -eq 0) {
         Write-Host "  [PASS] Correctly passed clean/justified fixture." -ForegroundColor Green
-        $global:passCount++
+        $script:passCount++
     } elseif (-not $expectedSuccess -and $exitCode -ne 0) {
         Write-Host "  [PASS] Correctly flagged violation and exited with code $exitCode." -ForegroundColor Green
-        $global:passCount++
+        $script:passCount++
     } else {
         Write-Host "  [FAIL] Unexpected exit code $exitCode for fixture: $name" -ForegroundColor Red
         Write-Host "  Output: $output" -ForegroundColor Yellow
-        $global:failCount++
+        $script:failCount++
     }
 }
 
@@ -101,11 +101,17 @@ try {
                    -filename "status_provenance.md" `
                    -expectedSuccess $true
 
+    # 10. Non-Windows platform reference
+    Assert-Fixture -name "non_windows_platform" `
+                   -content "This build supports Linux runners." `
+                   -filename "platform.md" `
+                   -expectedSuccess $false
+
     Write-Host "`n==========================================================" -ForegroundColor Cyan
-    Write-Host "Preflight Fixture Test Results: $passCount passed, $failCount failed." -ForegroundColor $(if ($failCount -eq 0) { "Green" } else { "Red" })
+    Write-Host "Preflight Fixture Test Results: $script:passCount passed, $script:failCount failed." -ForegroundColor $(if ($script:failCount -eq 0) { "Green" } else { "Red" })
     Write-Host "==========================================================" -ForegroundColor Cyan
 
-    if ($failCount -gt 0) {
+    if ($script:failCount -gt 0) {
         exit 1
     }
 }

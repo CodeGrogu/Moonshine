@@ -9,7 +9,7 @@ Moonshine enforces strict zero-allocation performance discipline and sub-millise
 ```
 GitHub Actions CI Pipeline (.github/workflows/benchmarks.yml)
                      │
-                     ├─► C++23 Native Engine Compilation (MSVC AVX2 / Clang AVX2)
+                     ├─► C++23 Native Engine Compilation (MSVC AVX2)
                      ├─► .NET 9 Managed Solution Compilation (Native AOT / Release)
                      │
                      ▼

@@ -1,4 +1,4 @@
-name: Release Packaging & Distribution
+name: Windows 11 Release Packaging
 
 on:
   push:
@@ -7,55 +7,39 @@ on:
 
 jobs:
   package-release:
-    name: Package Release (${{ matrix.target }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - os: windows-latest
-            target: win-x64
-            archive-name: moonshine-win-x64.zip
-          - os: ubuntu-latest
-            target: linux-x64
-            archive-name: moonshine-linux-x64.tar.gz
-
+    name: Package Windows 11 x64 Release
+    runs-on: windows-2022
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup .NET 9 SDK
+      - name: Set up .NET 9 SDK
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
 
-      - name: Publish Native AOT Executable
+      - name: Publish Windows 11 Native AOT executable
         run: >
           dotnet publish src/Moonshine.Client/Moonshine.Client.csproj
           -c Release
-          -r ${{ matrix.target }}
+          -r win-x64
           --self-contained
           -p:PublishAot=true
-          -o ./dist/${{ matrix.target }}
+          -o ./dist/win-x64
 
-      - name: Package Windows Artifacts
-        if: runner.os == 'Windows'
+      - name: Package Windows 11 artifacts
         shell: pwsh
         run: |
-          Compress-Archive -Path ./dist/win-x64/* -DestinationPath ./${{ matrix.archive-name }}
-          $hash = (Get-FileHash ./${{ matrix.archive-name }} -Algorithm SHA256).Hash
-          "$hash  ${{ matrix.archive-name }}" | Out-File -FilePath ./${{ matrix.archive-name }}.sha256 -Encoding ascii
+          $archiveName = "moonshine-win-x64.zip"
+          Compress-Archive -Path ./dist/win-x64/* -DestinationPath ./$archiveName
+          $hash = (Get-FileHash ./$archiveName -Algorithm SHA256).Hash
+          "$hash  $archiveName" | Out-File -FilePath ./$archiveName.sha256 -Encoding ascii
 
-      - name: Package Linux Artifacts
-        if: runner.os == 'Linux'
-        run: |
-          tar -czvf ./${{ matrix.archive-name }} -C ./dist/linux-x64 .
-          sha256sum ./${{ matrix.archive-name }} > ./${{ matrix.archive-name }}.sha256
-
-      - name: Upload Release Assets
+      - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            ./${{ matrix.archive-name }}
-            ./${{ matrix.archive-name }}.sha256
+            ./moonshine-win-x64.zip
+            ./moonshine-win-x64.zip.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

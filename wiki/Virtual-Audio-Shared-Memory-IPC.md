@@ -1,6 +1,6 @@
 # Real-Time Shared Memory IPC Bridge for Virtual Audio Driver & Host Server
 
-The **Real-Time Shared Memory IPC Bridge** connects the user-mode Moonshine host audio engine directly to the dedicated Windows virtual audio driver endpoints (`Moonshine Audio` / Speaker and `Moonshine Microphone` / Mic) on Windows 10 and Windows 11.
+The **Real-Time Shared Memory IPC Bridge** connects the user-mode Moonshine host audio engine directly to the dedicated Windows virtual audio driver endpoints (`Moonshine Audio` / Speaker and `Moonshine Microphone` / Mic) on Windows 11.
 
 ---
 

@@ -1,4 +1,4 @@
-# 🏛 Moonshine Technical Architecture
+# Moonshine Technical Architecture
 
 This document details the architectural design, protocol state machine, memory pipeline, and native interop layer of **Moonshine**.
 

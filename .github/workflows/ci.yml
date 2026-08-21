@@ -1,4 +1,4 @@
-name: Continuous Integration
+name: Windows 11 Continuous Integration
 
 on:
   push:
@@ -12,21 +12,12 @@ concurrency:
 
 jobs:
   build-and-test:
-    name: ${{ matrix.os }} (${{ matrix.compiler }} / ${{ matrix.configuration }})
-    runs-on: ${{ matrix.os }}
+    name: Windows 11 (${{ matrix.configuration }})
+    runs-on: windows-2022
     strategy:
       fail-fast: false
       matrix:
-        os: [ windows-latest, ubuntu-latest ]
         configuration: [ Release, Debug ]
-        compiler: [ default ]
-        include:
-          - os: windows-latest
-            compiler: msvc
-            configuration: Release
-          - os: ubuntu-latest
-            compiler: clang
-            configuration: Release
 
     steps:
       - name: Checkout Repository
@@ -34,81 +25,27 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Setup .NET 9 SDK
+      - name: Set up .NET 9 SDK
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
 
-      - name: Setup Ninja Build System
+      - name: Set up Ninja
         uses: ashutoshvarma/setup-ninja@v1.1
         with:
           version: '1.11.1'
 
-      - name: Setup MSVC Environment (Windows)
-        if: runner.os == 'Windows'
+      - name: Set up MSVC C++23 environment
         uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Configure CMake Native Engine
-        run: >
-          cmake -B build -S . -G "Ninja"
-          -DCMAKE_BUILD_TYPE=${{ matrix.configuration }}
-          -DMOONSHINE_ENABLE_AVX2=ON
-          -DMOONSHINE_BUILD_TESTS=ON
-
-      - name: Compile Native C++23 Engine
-        run: cmake --build build --config ${{ matrix.configuration }} --parallel
-
-      - name: Run Native CTest Suite
-        run: ctest --test-dir build --output-on-failure -C ${{ matrix.configuration }} --timeout 60
-
-      - name: Restore Managed .NET Solution
-        run: dotnet restore Moonshine.sln
-
-      - name: Build Managed Solution (${{ matrix.configuration }})
-        run: dotnet build Moonshine.sln -c ${{ matrix.configuration }} --no-restore
-
-      - name: Copy Native Library to Test Directories (Windows)
-        if: runner.os == 'Windows'
+      - name: Verify, build, and test Windows 11 project
         shell: pwsh
-        run: |
-          $candidates = @(
-            "build/bin/Moonshine.Native.dll",
-            "build/src/Moonshine.Native/Moonshine.Native.dll"
-          )
-          foreach ($cand in $candidates) {
-            if (Test-Path $cand) {
-              Get-ChildItem -Path "tests/*/bin/${{ matrix.configuration }}/net9.0" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-                Copy-Item $cand $_.FullName -Force -ErrorAction SilentlyContinue
-              }
-            }
-          }
+        run: powershell -ExecutionPolicy Bypass -File .\scripts\verify_codebase.ps1 -Configuration ${{ matrix.configuration }}
 
-      - name: Copy Native Library to Test Directories (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          for dir in tests/*/bin/${{ matrix.configuration }}/net9.0; do
-            if [ -d "$dir" ]; then
-              cp -f build/bin/libMoonshine.Native.so "$dir/" 2>/dev/null || true
-              cp -f build/bin/Moonshine.Native.so "$dir/" 2>/dev/null || true
-              cp -f build/src/Moonshine.Native/libMoonshine.Native.so "$dir/" 2>/dev/null || true
-              cp -f build/src/Moonshine.Native/Moonshine.Native.so "$dir/" 2>/dev/null || true
-            fi
-          done
-
-      - name: Execute Managed xUnit Test Suites
-        env:
-          LD_LIBRARY_PATH: ${{ github.workspace }}/build/bin:${{ github.workspace }}/build/src/Moonshine.Native:${{ env.LD_LIBRARY_PATH }}
-        run: >
-          dotnet test Moonshine.sln
-          -c ${{ matrix.configuration }}
-          --no-build
-          --verbosity normal
-          --collect:"XPlat Code Coverage"
-          --results-directory ./TestResults
-
-      - name: Upload Test Coverage Artifacts
-        if: matrix.configuration == 'Release' && matrix.os == 'ubuntu-latest'
+      - name: Upload standardised test results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: code-coverage-report
-          path: ./TestResults/**/coverage.cobertura.xml
+          name: windows-11-test-results-${{ matrix.configuration }}
+          path: ./TestResults/**
+          if-no-files-found: ignore
