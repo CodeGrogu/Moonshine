@@ -73,21 +73,71 @@ VirtualAudioIpcChannel& VirtualAudioIpcChannel::operator=(VirtualAudioIpcChannel
 }
 
 #ifdef _WIN32
-void VirtualAudioIpcChannel::SetupSecurityDescriptor(void* pSecurityAttributes) {
-    if (!pSecurityAttributes) return;
+bool VirtualAudioIpcChannel::GetCurrentUserSidString(std::wstring& outSid) {
+    HANDLE tokenHandle = nullptr;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &tokenHandle)) {
+        return false;
+    }
+
+    DWORD tokenInfoLength = 0;
+    GetTokenInformation(tokenHandle, TokenUser, nullptr, 0, &tokenInfoLength);
+    if (tokenInfoLength == 0) {
+        CloseHandle(tokenHandle);
+        return false;
+    }
+
+    auto buffer = std::make_unique<uint8_t[]>(tokenInfoLength);
+    if (!GetTokenInformation(tokenHandle, TokenUser, buffer.get(), tokenInfoLength, &tokenInfoLength)) {
+        CloseHandle(tokenHandle);
+        return false;
+    }
+
+    auto* tokenUser = reinterpret_cast<TOKEN_USER*>(buffer.get());
+    LPWSTR stringSid = nullptr;
+    if (!ConvertSidToStringSidW(tokenUser->User.Sid, &stringSid)) {
+        CloseHandle(tokenHandle);
+        return false;
+    }
+
+    outSid = stringSid;
+    LocalFree(stringSid);
+    CloseHandle(tokenHandle);
+    return true;
+}
+
+bool VirtualAudioIpcChannel::SetupSecurityDescriptor(void* pSecurityAttributes) {
+    if (!pSecurityAttributes) return false;
     auto* sa = static_cast<SECURITY_ATTRIBUTES*>(pSecurityAttributes);
     sa->nLength = sizeof(SECURITY_ATTRIBUTES);
     sa->bInheritHandle = FALSE;
     sa->lpSecurityDescriptor = nullptr;
 
-    // DACL allowing Low Integrity, Application Containers, and Standard/Admin Users
-    const wchar_t* sddl = L"D:(A;;GA;;;WD)(A;;GA;;;AC)(A;;GA;;;S-1-15-2-1)";
-    ConvertStringSecurityDescriptorToSecurityDescriptorW(
-        sddl,
-        SDDL_REVISION_1,
-        &(sa->lpSecurityDescriptor),
-        nullptr
-    );
+    std::wstring userSid;
+    if (!GetCurrentUserSidString(userSid) || userSid.empty()) {
+        return false;
+    }
+
+    // Strict DACL: SYSTEM (SY), Builtin Administrators (BA), and Current User Token SID with GENERIC_ALL
+    std::wstring sddl = L"D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;" + userSid + L")";
+
+    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            sddl.c_str(),
+            SDDL_REVISION_1,
+            &(sa->lpSecurityDescriptor),
+            nullptr)) {
+        return false;
+    }
+
+    return true;
+}
+
+void VirtualAudioIpcChannel::FreeSecurityDescriptor(void* pSecurityAttributes) {
+    if (!pSecurityAttributes) return;
+    auto* sa = static_cast<SECURITY_ATTRIBUTES*>(pSecurityAttributes);
+    if (sa->lpSecurityDescriptor) {
+        LocalFree(sa->lpSecurityDescriptor);
+        sa->lpSecurityDescriptor = nullptr;
+    }
 }
 #endif
 
@@ -128,10 +178,12 @@ bool VirtualAudioIpcChannel::Initialize(
         : MOONSHINE_SHARED_EVENT_CAPTURE_NAME;
     const wchar_t* localEventName = globalEventName + 7;
 
-    SECURITY_ATTRIBUTES sa;
-    SetupSecurityDescriptor(&sa);
-
+    SECURITY_ATTRIBUTES sa{};
     if (isOwner) {
+        if (!SetupSecurityDescriptor(&sa)) {
+            return false;
+        }
+
         m_fileMapping = CreateFileMappingW(
             INVALID_HANDLE_VALUE,
             &sa,
@@ -154,6 +206,13 @@ bool VirtualAudioIpcChannel::Initialize(
         m_syncEvent = CreateEventExW(&sa, globalEventName, 0, EVENT_ALL_ACCESS);
         if (!m_syncEvent) {
             m_syncEvent = CreateEventExW(&sa, localEventName, 0, EVENT_ALL_ACCESS);
+        }
+
+        FreeSecurityDescriptor(&sa);
+
+        if (!m_fileMapping || !m_syncEvent) {
+            Close();
+            return false;
         }
     } else {
         m_fileMapping = OpenFileMappingW(FILE_MAP_ALL_ACCESS, FALSE, globalMemName);

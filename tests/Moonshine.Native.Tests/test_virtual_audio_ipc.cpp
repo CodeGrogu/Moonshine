@@ -145,6 +145,116 @@ void Test_MmcssScheduling() {
     std::cout << "[Pass] VirtualAudioIpcBridge MMCSS Scheduling." << std::endl;
 }
 
+#ifdef _WIN32
+#include <aclapi.h>
+#include <sddl.h>
+
+void VerifyKernelObjectDacl(HANDLE handle, const char* objectName) {
+    std::cout << "  Verifying DACL on " << objectName << "..." << std::endl;
+    REQUIRE(handle != nullptr);
+
+    PSECURITY_DESCRIPTOR pSD = nullptr;
+    PACL pDacl = nullptr;
+    DWORD res = GetSecurityInfo(
+        handle,
+        SE_KERNEL_OBJECT,
+        DACL_SECURITY_INFORMATION,
+        nullptr,
+        nullptr,
+        &pDacl,
+        nullptr,
+        &pSD
+    );
+    REQUIRE(res == ERROR_SUCCESS);
+    REQUIRE(pSD != nullptr);
+    REQUIRE(pDacl != nullptr);
+
+    std::wstring currentUserSidStr;
+    REQUIRE(VirtualAudioIpcChannel::GetCurrentUserSidString(currentUserSidStr));
+
+    PSID pSidSystem = nullptr;
+    ConvertStringSidToSidW(L"S-1-5-18", &pSidSystem); // SYSTEM
+    PSID pSidAdmins = nullptr;
+    ConvertStringSidToSidW(L"S-1-5-32-544", &pSidAdmins); // Builtin Administrators
+    PSID pSidCurrentUser = nullptr;
+    ConvertStringSidToSidW(currentUserSidStr.c_str(), &pSidCurrentUser); // Current User
+
+    PSID pSidEveryone = nullptr;
+    ConvertStringSidToSidW(L"S-1-1-0", &pSidEveryone); // Everyone
+    PSID pSidAuthUsers = nullptr;
+    ConvertStringSidToSidW(L"S-1-5-11", &pSidAuthUsers); // Authenticated Users
+    PSID pSidUsers = nullptr;
+    ConvertStringSidToSidW(L"S-1-5-32-545", &pSidUsers); // Users
+    PSID pSidAppPackages = nullptr;
+    ConvertStringSidToSidW(L"S-1-15-2-1", &pSidAppPackages); // All App Packages
+
+    bool foundSystem = false;
+    bool foundAdmins = false;
+    bool foundCurrentUser = false;
+
+    for (DWORD i = 0; i < pDacl->AceCount; ++i) {
+        LPVOID pAce = nullptr;
+        REQUIRE(GetAce(pDacl, i, &pAce));
+        auto* aceHeader = static_cast<ACE_HEADER*>(pAce);
+
+        // Verify no inheritance
+        REQUIRE((aceHeader->AceFlags & INHERITED_ACE) == 0);
+        REQUIRE(aceHeader->AceType == ACCESS_ALLOWED_ACE_TYPE);
+
+        auto* allowedAce = static_cast<ACCESS_ALLOWED_ACE*>(pAce);
+        auto* aceSid = reinterpret_cast<PSID>(&allowedAce->SidStart);
+
+        // Assert strictly prohibited identities do NOT exist
+        REQUIRE(!EqualSid(aceSid, pSidEveryone));
+        REQUIRE(!EqualSid(aceSid, pSidAuthUsers));
+        REQUIRE(!EqualSid(aceSid, pSidUsers));
+        REQUIRE(!EqualSid(aceSid, pSidAppPackages));
+
+        // Check authorized identities & verify access mask
+        if (EqualSid(aceSid, pSidSystem)) {
+            foundSystem = true;
+            REQUIRE(allowedAce->Mask != 0);
+        } else if (EqualSid(aceSid, pSidAdmins)) {
+            foundAdmins = true;
+            REQUIRE(allowedAce->Mask != 0);
+        } else if (EqualSid(aceSid, pSidCurrentUser)) {
+            foundCurrentUser = true;
+            REQUIRE(allowedAce->Mask != 0);
+        } else {
+            // No unrecognized identities allowed in strict owner/SYSTEM policy
+            std::cerr << "Unexpected SID detected in kernel object DACL at ACE " << i << std::endl;
+            REQUIRE(false);
+        }
+    }
+
+    REQUIRE(foundSystem);
+    REQUIRE(foundAdmins);
+    REQUIRE(foundCurrentUser);
+
+    LocalFree(pSidSystem);
+    LocalFree(pSidAdmins);
+    LocalFree(pSidCurrentUser);
+    LocalFree(pSidEveryone);
+    LocalFree(pSidAuthUsers);
+    LocalFree(pSidUsers);
+    LocalFree(pSidAppPackages);
+    LocalFree(pSD);
+}
+
+void Test_KernelObjectSecurityDacl() {
+    std::cout << "[Test] VirtualAudioIpc Kernel Object DACL Verification (GetSecurityInfo)..." << std::endl;
+    VirtualAudioIpcChannel channel;
+    bool ok = channel.Initialize(MOONSHINE_ENDPOINT_RENDER, true, 48000, 2);
+    REQUIRE(ok);
+
+    VerifyKernelObjectDacl(channel.GetFileMappingHandle(), "FileMapping (Shared Memory)");
+    VerifyKernelObjectDacl(channel.GetSyncEventHandle(), "SyncEvent (Synchronization Event)");
+
+    channel.Close();
+    std::cout << "[Pass] VirtualAudioIpc Kernel Object DACL Verification." << std::endl;
+}
+#endif
+
 int main() {
     std::cout << "==========================================================" << std::endl;
     std::cout << "Moonshine Virtual Audio Shared Memory IPC Test Suite" << std::endl;
@@ -156,6 +266,9 @@ int main() {
     Test_OverrunHandling();
     Test_BridgeBidirectionalPumping();
     Test_MmcssScheduling();
+#ifdef _WIN32
+    Test_KernelObjectSecurityDacl();
+#endif
 
     std::cout << "[+] All Virtual Audio Shared Memory IPC Tests Passed Successfully!" << std::endl;
     return 0;

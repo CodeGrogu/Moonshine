@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Moonshine.Core.Security;
 
 namespace Moonshine.Core.Pairing;
 
@@ -12,6 +13,7 @@ internal sealed partial class KeyStoreJsonContext : JsonSerializerContext
 /// <summary>
 /// Persistent file-based keystore storing certificates and keys in the user application data directory.
 /// Uses source-generated JSON serialization for 100% Native AOT trimming safety.
+/// Employs SecureFileStore to enforce Windows DACLs and atomic replacement on private keys and certificates.
 /// </summary>
 public sealed class FilePairingKeyStore : IPairingKeyStore, IDisposable
 {
@@ -41,7 +43,7 @@ public sealed class FilePairingKeyStore : IPairingKeyStore, IDisposable
         try
         {
             if (!File.Exists(_clientCertPath)) return null;
-            return await File.ReadAllTextAsync(_clientCertPath, ct).ConfigureAwait(false);
+            return await SecureFileStore.ReadAllTextSecureAsync(_clientCertPath, ct).ConfigureAwait(false);
         }
         finally
         {
@@ -55,7 +57,7 @@ public sealed class FilePairingKeyStore : IPairingKeyStore, IDisposable
         try
         {
             if (!File.Exists(_clientKeyPath)) return null;
-            return await File.ReadAllTextAsync(_clientKeyPath, ct).ConfigureAwait(false);
+            return await SecureFileStore.ReadAllTextSecureAsync(_clientKeyPath, ct).ConfigureAwait(false);
         }
         finally
         {
@@ -68,8 +70,8 @@ public sealed class FilePairingKeyStore : IPairingKeyStore, IDisposable
         await _lock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            await File.WriteAllTextAsync(_clientCertPath, certPem, ct).ConfigureAwait(false);
-            await File.WriteAllTextAsync(_clientKeyPath, keyPem, ct).ConfigureAwait(false);
+            await SecureFileStore.WriteAllTextSecureAsync(_clientCertPath, certPem, ct).ConfigureAwait(false);
+            await SecureFileStore.WriteAllTextSecureAsync(_clientKeyPath, keyPem, ct).ConfigureAwait(false);
         }
         finally
         {
@@ -147,7 +149,7 @@ public sealed class FilePairingKeyStore : IPairingKeyStore, IDisposable
 
         try
         {
-            string json = await File.ReadAllTextAsync(_serversJsonPath, ct).ConfigureAwait(false);
+            string json = await SecureFileStore.ReadAllTextSecureAsync(_serversJsonPath, ct).ConfigureAwait(false);
             return JsonSerializer.Deserialize(json, KeyStoreJsonContext.Default.DictionaryStringString) ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         }
         catch
@@ -159,9 +161,7 @@ public sealed class FilePairingKeyStore : IPairingKeyStore, IDisposable
     private async Task WriteServersMapAsync(Dictionary<string, string> map, CancellationToken ct)
     {
         string json = JsonSerializer.Serialize(map, KeyStoreJsonContext.Default.DictionaryStringString);
-        string tempPath = _serversJsonPath + ".tmp";
-        await File.WriteAllTextAsync(tempPath, json, ct).ConfigureAwait(false);
-        File.Move(tempPath, _serversJsonPath, overwrite: true);
+        await SecureFileStore.WriteAllTextSecureAsync(_serversJsonPath, json, ct).ConfigureAwait(false);
     }
 
     public void Dispose()

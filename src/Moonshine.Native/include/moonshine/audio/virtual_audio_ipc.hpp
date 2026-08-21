@@ -71,11 +71,18 @@ public:
     [[nodiscard]] uint32_t GetOverrunCount() const noexcept;
     [[nodiscard]] uint32_t GetPacketCount() const noexcept;
 
+#ifdef _WIN32
+    [[nodiscard]] HANDLE GetFileMappingHandle() const noexcept { return m_fileMapping; }
+    [[nodiscard]] HANDLE GetSyncEventHandle() const noexcept { return m_syncEvent; }
+    static bool GetCurrentUserSidString(std::wstring& outSid);
+    static bool SetupSecurityDescriptor(void* pSecurityAttributes);
+    static void FreeSecurityDescriptor(void* pSecurityAttributes);
+#endif
+
 private:
 #ifdef _WIN32
     HANDLE m_fileMapping{nullptr};
     HANDLE m_syncEvent{nullptr};
-    void SetupSecurityDescriptor(void* pSecurityAttributes);
 #endif
     MoonshineSharedAudioRing* m_sharedRing{nullptr};
     uint8_t* m_dataBuffer{nullptr};
