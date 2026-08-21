@@ -4,30 +4,61 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
 
 jobs:
   package-release:
-    name: Package Windows 11 x64 Release
+    name: Package Windows 11 x64 Moonshine Application
     runs-on: windows-2022
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
 
-      - name: Set up .NET 9 SDK
+      - name: Set up .NET SDK from global.json
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.0.x'
+          dotnet-version-file: global.json
 
-      - name: Publish Windows 11 Native AOT executable
+      - name: Verify Windows toolchain
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File .\scripts\verify_environment.ps1
+
+      - name: Require unified Moonshine application target
+        shell: pwsh
+        run: |
+          $applicationProject = "src/Moonshine/Moonshine.csproj"
+          if (-not (Test-Path $applicationProject)) {
+            throw "Tagged releases require the unified Moonshine application target at $applicationProject. The repository is not yet ready to publish a final Host/Client application package."
+          }
+
+          "APPLICATION_PROJECT=$applicationProject" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Publish unified Moonshine application
+        shell: pwsh
         run: >
-          dotnet publish src/Moonshine.Client/Moonshine.Client.csproj
+          dotnet publish "$env:APPLICATION_PROJECT"
           -c Release
           -r win-x64
           --self-contained
           -p:PublishAot=true
+          -p:TreatWarningsAsErrors=true
           -o ./dist/win-x64
 
-      - name: Package Windows 11 artifacts
+      - name: Verify release artifact
+        shell: pwsh
+        run: |
+          $executables = Get-ChildItem ./dist/win-x64 -Filter *.exe -File
+          if ($executables.Count -ne 1) {
+            throw "Expected exactly one final Moonshine executable, found $($executables.Count)."
+          }
+
+          Write-Host "Final application: $($executables[0].FullName)"
+
+      - name: Package Windows 11 x64 release
         shell: pwsh
         run: |
           $archiveName = "moonshine-win-x64.zip"
