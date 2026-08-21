@@ -341,4 +341,88 @@ public class UdpSocketPipelineTests
         pool.FreeCount.Should().Be(8);
         pool.ValidateInvariant().Should().BeTrue();
     }
+
+    [Fact]
+    public unsafe void UdpSocketPipeline_NativeConsumerDropPath_RecyclesSlotBackToFreeState()
+    {
+        const int poolCapacity = 4;
+        IntPtr spscHandle = MoonshineNativeMethods.SpscCreate(poolCapacity);
+        spscHandle.Should().NotBe(IntPtr.Zero);
+
+        try
+        {
+            using var pipeline = new UdpSocketPipeline(
+                localPort: 0,
+                nativeSpscHandle: spscHandle,
+                poolSlotCount: poolCapacity
+            );
+
+            IntPtr returnQueue = pipeline.ReturnQueueHandle;
+            returnQueue.Should().NotBe(IntPtr.Zero);
+
+            byte[] rawPacket = new byte[64];
+            rawPacket[0] = 0x80;
+            rawPacket[1] = 98;
+
+            // 1. Ingest 4 packets to exhaust the pool
+            for (int i = 0; i < poolCapacity; i++)
+            {
+                rawPacket[2] = (byte)(i >> 8);
+                rawPacket[3] = (byte)(i & 0xFF);
+                pipeline.ProcessDatagram(rawPacket);
+            }
+
+            pipeline.BufferPool.FreeCount.Should().Be(0);
+            pipeline.BufferPool.InFlightCount.Should().Be(poolCapacity);
+            pipeline.BufferPool.ValidateInvariant().Should().BeTrue();
+
+            // Pool is fully exhausted
+            pipeline.BufferPool.TryRent(out int _, out _, out _).Should().BeFalse();
+
+            // 2. Downstream native consumer dequeues a packet and decides to drop/discard it
+            int dequeueRes = MoonshineNativeMethods.SpscDequeue(spscHandle, out var discardedDesc);
+            dequeueRes.Should().Be(1);
+            int discardedSlot = discardedDesc.BufferSlotIndex;
+            discardedSlot.Should().BeInRange(0, poolCapacity - 1);
+
+            // 3. Consumer returns slot index to return queue upon discarding
+            int enqueueRet = MoonshineNativeMethods.SlotReturnEnqueue(returnQueue, discardedSlot);
+            enqueueRet.Should().Be(1);
+
+            // Prior to TryRent draining, slot is still in return queue and marked InFlight
+            pipeline.BufferPool.FreeCount.Should().Be(0);
+
+            // 4. TryRent is called by subsequent ingestion: drains return ring, reclaims slot to Free, and rents it
+            bool rentSuccess = pipeline.BufferPool.TryRent(out int reallocatedSlot, out _, out _);
+            rentSuccess.Should().BeTrue();
+            reallocatedSlot.Should().Be(discardedSlot);
+
+            // Invariant & state assertions
+            pipeline.BufferPool.ValidateInvariant().Should().BeTrue();
+            pipeline.BufferPool.FreeCount.Should().Be(0);
+            pipeline.BufferPool.RentedCount.Should().Be(1);
+            pipeline.BufferPool.InFlightCount.Should().Be(poolCapacity - 1);
+
+            // 5. Clean up remaining items
+            pipeline.BufferPool.ReturnRented(reallocatedSlot);
+            while (MoonshineNativeMethods.SpscDequeue(spscHandle, out var remaining) != 0)
+            {
+                int cleanupRet = MoonshineNativeMethods.SlotReturnEnqueue(returnQueue, remaining.BufferSlotIndex);
+                cleanupRet.Should().Be(1);
+            }
+
+            // Drain return queue
+            pipeline.BufferPool.TryRent(out int tempSlot, out _, out _);
+            if (tempSlot >= 0) pipeline.BufferPool.ReturnRented(tempSlot);
+
+            pipeline.BufferPool.FreeCount.Should().Be(poolCapacity);
+            pipeline.BufferPool.RentedCount.Should().Be(0);
+            pipeline.BufferPool.InFlightCount.Should().Be(0);
+            pipeline.BufferPool.ValidateInvariant().Should().BeTrue();
+        }
+        finally
+        {
+            MoonshineNativeMethods.SpscDestroy(spscHandle);
+        }
+    }
 }
