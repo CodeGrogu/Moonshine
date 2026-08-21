@@ -62,6 +62,7 @@ public sealed unsafe class NativeBufferLease : IDisposable
 /// <summary>
 /// High-performance unmanaged memory owner wrapping native memory allocations
 /// to provide zero-allocation IMemoryOwner and Span/Memory instances with strict lease/release lifetime semantics.
+/// Guarantees deferred memory deallocation until all active leases have completed.
 /// </summary>
 public sealed unsafe class NativeMemoryOwner : MemoryManager<byte>
 {
@@ -70,6 +71,7 @@ public sealed unsafe class NativeMemoryOwner : MemoryManager<byte>
     private readonly bool _ownsAllocation;
     private int _activeLeases;
     private int _disposed;
+    private int _freed;
 
     public NativeMemoryOwner(int length)
     {
@@ -100,9 +102,11 @@ public sealed unsafe class NativeMemoryOwner : MemoryManager<byte>
     public int Length => _length;
     public bool OwnsAllocation => _ownsAllocation;
     public int ActiveLeases => Volatile.Read(ref _activeLeases);
+    public bool IsDisposed => Volatile.Read(ref _disposed) != 0;
 
     /// <summary>
     /// Acquires an explicit lease over this unmanaged memory slab.
+    /// Fails closed if the owner is disposed.
     /// </summary>
     public NativeBufferLease Lease()
     {
@@ -117,6 +121,23 @@ public sealed unsafe class NativeMemoryOwner : MemoryManager<byte>
         if (remaining < 0)
         {
             throw new InvalidOperationException("Double-release detected: active lease count dropped below zero.");
+        }
+
+        // If the owner was marked disposed while leases were active, the final lease release triggers the free
+        if (remaining == 0 && Volatile.Read(ref _disposed) != 0)
+        {
+            FreeAllocationIfOwned();
+        }
+    }
+
+    private void FreeAllocationIfOwned()
+    {
+        if (_ownsAllocation && _pointer != null)
+        {
+            if (Interlocked.Exchange(ref _freed, 1) == 0)
+            {
+                NativeMemory.Free(_pointer);
+            }
         }
     }
 
@@ -145,9 +166,10 @@ public sealed unsafe class NativeMemoryOwner : MemoryManager<byte>
     {
         if (Interlocked.Exchange(ref _disposed, 1) == 0)
         {
-            if (_ownsAllocation && _pointer != null)
+            // Only deallocate immediately if there are zero active leases
+            if (Volatile.Read(ref _activeLeases) == 0)
             {
-                NativeMemory.Free(_pointer);
+                FreeAllocationIfOwned();
             }
         }
     }

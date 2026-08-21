@@ -79,4 +79,33 @@ public class NativeMemoryOwnerTests
         MoonshineErrorCode.UseAfterFree.IsFatal().Should().BeTrue();
         MoonshineErrorCode.DoubleRelease.IsFatal().Should().BeTrue();
     }
+
+    [Fact]
+    public void NativeMemoryOwner_DisposedWhileLeaseActive_DefersDeallocationUntilLeaseDisposed()
+    {
+        var owner = new NativeMemoryOwner(512);
+        NativeBufferLease lease = owner.Lease();
+        lease.Span[0] = 0x77;
+        lease.Span[511] = 0x88;
+
+        // Dispose owner while lease is actively held
+        ((IDisposable)owner).Dispose();
+        owner.IsDisposed.Should().BeTrue();
+
+        // New leases on owner should be rejected
+        Action newLeaseAction = () => { var _ = owner.Lease(); };
+        newLeaseAction.Should().Throw<ObjectDisposedException>();
+
+        // Existing lease is guaranteed valid and accessible
+        lease.Span[0].Should().Be(0x77);
+        lease.Span[511].Should().Be(0x88);
+
+        // Disposing lease triggers final deferred deallocation
+        lease.Dispose();
+        owner.ActiveLeases.Should().Be(0);
+
+        // Accessing disposed lease fails closed
+        Action postDisposeAccess = () => { var _ = lease.Span[0]; };
+        postDisposeAccess.Should().Throw<ObjectDisposedException>();
+    }
 }
