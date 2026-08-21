@@ -283,7 +283,7 @@ size_t VirtualAudioIpcChannel::WritePcm(const void* srcBuffer, size_t bytesToWri
 
     // Overrun handling: if insufficient free space, advance read pointer to drop oldest frame
     if (bytesToWrite > freeSpace) {
-        m_sharedRing->overrun_count++;
+        m_sharedRing->overrun_count = m_sharedRing->overrun_count + 1;
         uint32_t needed = static_cast<uint32_t>(bytesToWrite) - freeSpace;
         m_sharedRing->read_position_bytes = (readPos + needed) % m_bufferCapacityBytes;
     }
@@ -299,7 +299,7 @@ size_t VirtualAudioIpcChannel::WritePcm(const void* srcBuffer, size_t bytesToWri
 
     std::atomic_thread_fence(std::memory_order_release);
     m_sharedRing->write_position_bytes = (writePos + static_cast<uint32_t>(bytesToWrite)) % m_bufferCapacityBytes;
-    m_sharedRing->write_packet_count++;
+    m_sharedRing->write_packet_count = m_sharedRing->write_packet_count + 1;
 
 #ifdef _WIN32
     if (m_syncEvent) {
@@ -331,7 +331,7 @@ size_t VirtualAudioIpcChannel::ReadPcm(void* destBuffer, size_t bytesToRead, boo
 
     // Underrun handling: if no audio is available, zero pad to prevent audible glitching
     if (available == 0) {
-        m_sharedRing->underrun_count++;
+        m_sharedRing->underrun_count = m_sharedRing->underrun_count + 1;
         std::memset(dst, 0, bytesToRead);
         return 0;
     }
@@ -348,13 +348,13 @@ size_t VirtualAudioIpcChannel::ReadPcm(void* destBuffer, size_t bytesToRead, boo
 
     // Partial underrun: pad remaining requested bytes with silence
     if (copyBytes < bytesToRead) {
-        m_sharedRing->underrun_count++;
+        m_sharedRing->underrun_count = m_sharedRing->underrun_count + 1;
         std::memset(dst + copyBytes, 0, bytesToRead - copyBytes);
     }
 
     std::atomic_thread_fence(std::memory_order_release);
     m_sharedRing->read_position_bytes = (readPos + static_cast<uint32_t>(copyBytes)) % m_bufferCapacityBytes;
-    m_sharedRing->read_packet_count++;
+    m_sharedRing->read_packet_count = m_sharedRing->read_packet_count + 1;
 
     return copyBytes;
 }

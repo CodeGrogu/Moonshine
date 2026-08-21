@@ -14,6 +14,7 @@
 #include <avrt.h>
 #else
 using HANDLE = void*;
+using DWORD = uint32_t;
 #endif
 
 #include "shared_audio_buffer.h"
