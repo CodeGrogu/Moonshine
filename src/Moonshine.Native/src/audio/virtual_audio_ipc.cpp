@@ -23,19 +23,25 @@ VirtualAudioIpcChannel::~VirtualAudioIpcChannel() {
 }
 
 VirtualAudioIpcChannel::VirtualAudioIpcChannel(VirtualAudioIpcChannel&& other) noexcept
+#ifdef _WIN32
     : m_fileMapping(other.m_fileMapping),
+      m_syncEvent(other.m_syncEvent),
+#else
+    :
+#endif
       m_sharedRing(other.m_sharedRing),
       m_dataBuffer(other.m_dataBuffer),
-      m_syncEvent(other.m_syncEvent),
       m_isOwner(other.m_isOwner),
       m_endpointType(other.m_endpointType),
       m_bufferCapacityBytes(other.m_bufferCapacityBytes),
       m_frameSizeBytes(other.m_frameSizeBytes),
       m_localBackingMemory(other.m_localBackingMemory) {
+#ifdef _WIN32
     other.m_fileMapping = nullptr;
+    other.m_syncEvent = nullptr;
+#endif
     other.m_sharedRing = nullptr;
     other.m_dataBuffer = nullptr;
-    other.m_syncEvent = nullptr;
     other.m_isOwner = false;
     other.m_localBackingMemory = nullptr;
 }
@@ -44,28 +50,30 @@ VirtualAudioIpcChannel& VirtualAudioIpcChannel::operator=(VirtualAudioIpcChannel
     if (this != &other) {
         Close();
 
+#ifdef _WIN32
         m_fileMapping = other.m_fileMapping;
+        m_syncEvent = other.m_syncEvent;
+        other.m_fileMapping = nullptr;
+        other.m_syncEvent = nullptr;
+#endif
         m_sharedRing = other.m_sharedRing;
         m_dataBuffer = other.m_dataBuffer;
-        m_syncEvent = other.m_syncEvent;
         m_isOwner = other.m_isOwner;
         m_endpointType = other.m_endpointType;
         m_bufferCapacityBytes = other.m_bufferCapacityBytes;
         m_frameSizeBytes = other.m_frameSizeBytes;
         m_localBackingMemory = other.m_localBackingMemory;
 
-        other.m_fileMapping = nullptr;
         other.m_sharedRing = nullptr;
         other.m_dataBuffer = nullptr;
-        other.m_syncEvent = nullptr;
         other.m_isOwner = false;
         other.m_localBackingMemory = nullptr;
     }
     return *this;
 }
 
-void VirtualAudioIpcChannel::SetupSecurityDescriptor(void* pSecurityAttributes) {
 #ifdef _WIN32
+void VirtualAudioIpcChannel::SetupSecurityDescriptor(void* pSecurityAttributes) {
     if (!pSecurityAttributes) return;
     auto* sa = static_cast<SECURITY_ATTRIBUTES*>(pSecurityAttributes);
     sa->nLength = sizeof(SECURITY_ATTRIBUTES);
@@ -80,10 +88,8 @@ void VirtualAudioIpcChannel::SetupSecurityDescriptor(void* pSecurityAttributes) 
         &(sa->lpSecurityDescriptor),
         nullptr
     );
-#else
-    (void)pSecurityAttributes;
-#endif
 }
+#endif
 
 bool VirtualAudioIpcChannel::Initialize(
     MoonshineAudioEndpointType endpointType,

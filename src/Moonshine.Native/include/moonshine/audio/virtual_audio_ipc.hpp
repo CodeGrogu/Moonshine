@@ -72,17 +72,18 @@ public:
     [[nodiscard]] uint32_t GetPacketCount() const noexcept;
 
 private:
+#ifdef _WIN32
     HANDLE m_fileMapping{nullptr};
+    HANDLE m_syncEvent{nullptr};
+    void SetupSecurityDescriptor(void* pSecurityAttributes);
+#endif
     MoonshineSharedAudioRing* m_sharedRing{nullptr};
     uint8_t* m_dataBuffer{nullptr};
-    HANDLE m_syncEvent{nullptr};
     bool m_isOwner{false};
     MoonshineAudioEndpointType m_endpointType{MOONSHINE_ENDPOINT_RENDER};
     uint32_t m_bufferCapacityBytes{0};
     uint32_t m_frameSizeBytes{0};
     uint8_t* m_localBackingMemory{nullptr};
-
-    void SetupSecurityDescriptor(void* pSecurityAttributes);
 };
 
 class VirtualAudioIpcBridge {
@@ -123,8 +124,10 @@ private:
     bool m_isHostServer{true};
     uint32_t m_sampleRate{48000};
     uint32_t m_channels{2};
+#ifdef _WIN32
     HANDLE m_mmcssHandle{nullptr};
     DWORD m_mmcssTaskIndex{0};
+#endif
 };
 
 } // namespace moonshine::audio
