@@ -17,42 +17,113 @@
 
 ## What is Moonshine?
 
-**Moonshine is a custom Windows PC streaming platform written in C# and C++.** Its purpose is to allow a host PC to stream its desktop, applications, games, video, and audio to a client while maintaining a fully interactive connection between the two systems.
+**Moonshine is one custom Windows application, written in C# and C++, that provides a high-performance platform for remotely streaming and interacting with PCs.**
 
-Moonshine is being designed as its **own platform, protocol, architecture, and implementation**. It is not a reimplementation of Sunshine or Moonlight, and it does not aim to reproduce their internal architecture or protocol as its foundation. Moonshine may independently adopt proven ideas where they are technically useful, but its implementation decisions, protocols, data structures, performance model, and feature set are designed specifically for Moonshine.
+A user installs the same Moonshine application on a PC and chooses how that installation should operate:
 
-The core idea is simple:
+- **Host mode**: the application exposes the PC as a streaming host.
+- **Client mode**: the application connects to another Moonshine host and acts as the remote client.
+- **Host + Client mode**: the same installation can perform both roles when the user explicitly enables both.
+
+These are **runtime roles of one application**, not separate host and client products.
+
+When only one role is enabled, the other role is intended to be completely inactive. A Host-only installation must not start client media pipelines, client capture/rendering components, or client-specific network listeners. A Client-only installation must not initialise host capture/encoding/device services, open host-side listening ports, or consume host-specific resources. The goal is that an unused role has effectively no runtime footprint beyond the small amount of configuration needed to select or change the role.
+
+Moonshine is being designed as its **own platform, protocol, architecture, and implementation**. It is not a reimplementation of Sunshine or Moonlight, and it does not use their architecture or protocol as a foundation. Compatibility with other streaming systems is not a prerequisite for correctness. Moonshine's protocols, data structures, media pipeline, device integration, security model, and performance characteristics are designed specifically for Moonshine.
+
+The core model is:
 
 ```text
-                    MOONSHINE
-
-       HOST PC                         CLIENT PC
-   ┌───────────────┐               ┌───────────────┐
-   │ Desktop/Game  │               │ Display       │
-   │ Capture       │               │               │
-   └───────┬───────┘               └───────▲───────┘
-           │                               │
-   ┌───────▼───────┐               ┌───────┴───────┐
-   │ Video Encoder │──────────────►│ Video Decoder │
-   └───────────────┘               └───────────────┘
-           │                               │
-   ┌───────▼───────┐               ┌───────▲───────┐
-   │ Audio Capture │──────────────►│ Audio Output  │
-   └───────────────┘               └───────────────┘
-                                           
-   ┌───────────────┐               ┌───────────────┐
-   │ Virtual       │◄──────────────│ Client        │
-   │ Microphone    │   Mic Audio   │ Microphone    │
-   └───────────────┘               └───────────────┘
-
-             ◄────── Control ──────►
-                 Host Settings
-                 Session Control
-                 Configuration
-                 Device Control
+                         ONE MOONSHINE APPLICATION
+                                   │
+                    ┌──────────────┼──────────────┐
+                    │              │              │
+                    ▼              ▼              ▼
+                 HOST ONLY     CLIENT ONLY    HOST + CLIENT
+                    │              │              │
+                    │              │              │
+             Host subsystems   Client subsystems  Both role sets
+             active only       active only         explicitly active
+                    │              │              │
+                    └──────────────┴──────────────┘
+                                   │
+                            Moonshine Core
 ```
 
-The client is not merely a passive receiver. A connected client is intended to be able to **interact with the host PC and manage authorised host-side settings**, while also maintaining its own client-side configuration.
+When a session exists, the application can carry traffic in both directions:
+
+```text
+                         MOONSHINE SESSION
+
+                 HOST ROLE                    CLIENT ROLE
+              ┌─────────────┐              ┌─────────────┐
+              │ PC Capture  │─────────────►│ Video       │
+              │ Video       │   Video      │ Rendering   │
+              └─────────────┘              └─────────────┘
+
+              ┌─────────────┐              ┌─────────────┐
+              │ Host Audio  │─────────────►│ Audio       │
+              │ Capture     │   Audio      │ Playback    │
+              └─────────────┘              └─────────────┘
+
+              ┌─────────────┐              ┌─────────────┐
+              │ Virtual     │◄─────────────│ Client      │
+              │ Microphone  │  Microphone  │ Microphone  │
+              └─────────────┘              └─────────────┘
+
+                       ◄──── Control ────►
+                    Host + Client Settings
+                    Session Management
+                    Device Configuration
+```
+
+The client is not merely a passive receiver. A connected client is intended to **interact with the host PC and manage authorised host-side settings**, while also managing its own local configuration.
+
+---
+
+## Application Roles
+
+### Host mode
+
+When the user selects **Host only**, Moonshine activates the services required to make the local PC available for remote streaming and control.
+
+Host responsibilities include:
+
+- Desktop and/or application capture.
+- Game or desktop video capture.
+- Hardware-accelerated video encoding.
+- Host audio capture.
+- Client input reception.
+- Client microphone reception and decoding.
+- Moonshine virtual microphone integration.
+- Host-side device management.
+- Authenticated remote configuration.
+- Host-side session and transport services.
+
+The Client role is not initialised in Host-only mode.
+
+### Client mode
+
+When the user selects **Client only**, Moonshine activates the services required to connect to and use another Moonshine host.
+
+Client responsibilities include:
+
+- Receiving and decoding streamed video.
+- Rendering the remote PC.
+- Receiving and playing host audio.
+- Capturing the client's local microphone.
+- Sending microphone audio to the host.
+- Sending input to the host.
+- Managing authorised host settings.
+- Managing local client configuration.
+
+The Host role is not initialised in Client-only mode. Host capture, encoder, virtual microphone, host listener, and host-specific device services remain inactive.
+
+### Host + Client mode
+
+Users who want the local PC to both provide and consume Moonshine sessions can explicitly enable **Host + Client mode**. The application then activates both role sets while keeping their resources and lifecycle boundaries separate.
+
+Role selection is therefore an architectural concern, not merely a UI preference. Disabled subsystems must not create listeners, initialise drivers/devices, allocate large media buffers, or start background workers unnecessarily.
 
 ---
 
@@ -125,7 +196,7 @@ This allows applications running on the host PC to use the remote client's micro
 
 ### Windows-Native Audio Devices
 
-Moonshine is intended to provide dedicated Windows audio-device integration so that Moonshine's streamed audio can be represented separately from unrelated audio sources and applications.
+Moonshine is intended to provide dedicated Windows audio-device integration so that Moonshine's streaming audio is separated from unrelated applications and audio devices.
 
 The host-side device architecture is intended to provide dedicated Moonshine audio endpoints rather than treating existing application audio devices as Moonshine-owned resources.
 
@@ -159,67 +230,27 @@ The architecture therefore treats Moonshine as a **bidirectional platform**, not
 
 ---
 
-## Host and Client Model
-
-### Host
-
-The host is the PC whose resources are being streamed.
-
-The host is responsible for:
-
-- Capturing the desktop and/or applications.
-- Capturing host audio.
-- Encoding video and audio.
-- Receiving client input.
-- Receiving and decoding client microphone audio.
-- Providing the virtual microphone to Windows applications.
-- Maintaining the streaming session.
-- Exposing authorised host configuration through the control plane.
-- Reporting hardware capabilities and runtime state.
-
-### Client
-
-The client connects to a host and consumes its streamed resources while providing input and microphone data back to the host.
-
-The client is responsible for:
-
-- Receiving and decoding video.
-- Rendering the streamed desktop/game.
-- Receiving and playing host audio.
-- Capturing microphone input.
-- Sending microphone audio to the host.
-- Sending input to the host.
-- Managing authorised host settings.
-- Managing its own local configuration.
-- Displaying session state and diagnostics.
-
-The user interface is intentionally **not the current architectural priority**. The backend, networking, media pipelines, device integration, reliability, and performance foundations are being developed first.
-
----
-
 ## Custom Architecture
 
-Moonshine is being designed around a clear separation of responsibilities.
+Moonshine is being designed around a clear separation of responsibilities inside the single application.
 
 ```text
-                         Moonshine Session
-                                │
-          ┌─────────────────────┼─────────────────────┐
-          │                     │                     │
-          ▼                     ▼                     ▼
-     Media Plane           Control Plane          Device Plane
-          │                     │                     │
-     ┌────┴────┐          ┌─────┴─────┐        ┌────┴─────┐
-     │         │          │           │        │          │
-   Video     Audio      Settings   Session   Audio I/O  Microphone
-     │         │          │           │        │          │
-     └────┬────┘          └─────┬─────┘        └────┬─────┘
-          │                     │                   │
-          └─────────────────────┴───────────────────┘
-                                │
-                         Moonshine Core
-                                │
-                    Moonshine Native Engine
+                         Moonshine Application
+                                  │
+                    ┌─────────────┼─────────────┐
+                    │             │             │
+                    ▼             ▼             ▼
+                Host Role     Client Role    Shared Core
+                    │             │             │
+                    │             │             │
+                    └──────┬──────┴──────┬──────┘
+                           │             │
+                           ▼             ▼
+                     Media Plane     Control Plane
+                           │             │
+                           └──────┬──────┘
+                                  ▼
+                            Device Plane
 ```
 
 ### Media Plane
@@ -365,11 +396,11 @@ Moonshine is organised as a modular solution across managed and native component
 - [`src/Moonshine.Protocol`](./src/Moonshine.Protocol): Moonshine-native protocol definitions, packet formats, stream metadata, capability negotiation, and control messages.
 - [`src/Moonshine.Interop`](./src/Moonshine.Interop): C#/.NET to native C++ interoperability layer.
 - [`src/Moonshine.Core`](./src/Moonshine.Core): Shared managed application and session logic, configuration, security, orchestration, and networking coordination.
-- [`src/Moonshine.Host`](./src/Moonshine.Host): Host-side capture, encoding, audio, microphone, streaming, and remote-control components.
-- [`src/Moonshine.Client`](./src/Moonshine.Client): Client-side receiving, decoding, rendering, microphone capture, input, and host-control components.
+- [`src/Moonshine.Host`](./src/Moonshine.Host): Host-role capture, encoding, audio, microphone, streaming, and remote-control components.
+- [`src/Moonshine.Client`](./src/Moonshine.Client): Client-role receiving, decoding, rendering, microphone capture, input, and host-control components.
 - [`src/Moonshine.Benchmarks`](./src/Moonshine.Benchmarks): Performance and micro-benchmark suite.
 
-The exact boundaries between these projects may evolve as the native and managed architectures mature, but the separation between media, control, device, and application concerns is intentional.
+The exact boundaries between these projects may evolve as the native and managed architectures mature, but the separation between role, media, control, device, and application concerns is intentional.
 
 ---
 
@@ -394,6 +425,10 @@ Cross-platform support is not currently a primary goal. The project will priorit
 ## Engineering Principles
 
 Moonshine follows several principles throughout development:
+
+### One application, explicit roles
+
+Host and Client are runtime roles of the same application. Disabled roles must not initialise their pipelines, listeners, devices, drivers, large resource pools, or background workers.
 
 ### Custom by design
 
