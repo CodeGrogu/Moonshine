@@ -24,7 +24,7 @@ public unsafe struct MoonshinePacketDesc
 }
 
 /// <summary>
-/// Exact binary match for MoonshineFrameDesc (C-ABI).
+/// Exact binary match for MoonshineFrameDesc (C-ABI, 24 bytes).
 /// </summary>
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
 public unsafe struct MoonshineFrameDesc
@@ -38,7 +38,7 @@ public unsafe struct MoonshineFrameDesc
 }
 
 /// <summary>
-/// Exact binary match for MoonshineDecoderCaps (C-ABI).
+/// Exact binary match for MoonshineDecoderCaps (C-ABI, 20 bytes).
 /// </summary>
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
 public unsafe struct MoonshineDecoderCaps
@@ -57,7 +57,7 @@ public unsafe struct MoonshineDecoderCaps
 }
 
 /// <summary>
-/// Exact binary match for MoonshineCaptureFrameDesc (C-ABI).
+/// Exact binary match for MoonshineCaptureFrameDesc (C-ABI, 36 bytes).
 /// </summary>
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
 public unsafe struct MoonshineCaptureFrameDesc
@@ -141,4 +141,44 @@ public struct MoonshineEncodedPacketDesc
     public byte IsHeaderPacket;
     public byte TemporalId;
     public byte Reserved;
+}
+
+/// <summary>
+/// Exact binary match for MoonshineVirtualAudioDriverStatusC (C-ABI, 44 bytes).
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public unsafe struct MoonshineVirtualAudioDriverStatus
+{
+    public byte IsInstalled;
+    public byte IsRenderEndpointPresent;
+    public byte IsCaptureEndpointPresent;
+    public byte Reserved;
+    public uint SupportedSampleRatesCount;
+    public uint SupportedChannelsCount;
+    public fixed byte DriverVersion[32];
+
+    public readonly string GetDriverVersion()
+    {
+        fixed (byte* ptr = DriverVersion)
+        {
+            return Marshal.PtrToStringAnsi((IntPtr)ptr) ?? string.Empty;
+        }
+    }
+}
+
+/// <summary>
+/// Exact binary match for MoonshineAudioIpcMetricsC (C-ABI, 36 bytes).
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct MoonshineAudioIpcMetrics
+{
+    public uint RenderPacketsRead;
+    public uint RenderUnderruns;
+    public uint RenderOverruns;
+    public uint CapturePacketsWritten;
+    public uint CaptureUnderruns;
+    public uint CaptureOverruns;
+    public uint SampleRate;
+    public uint Channels;
+    public uint IsConnected;
 }

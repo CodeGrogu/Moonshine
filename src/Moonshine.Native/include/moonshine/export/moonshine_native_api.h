@@ -24,6 +24,21 @@
 extern "C" {
 #endif
 
+typedef enum MoonshineErrorCode {
+    MOONSHINE_SUCCESS = 0,
+    MOONSHINE_ERR_INVALID_ARGUMENT = -1,
+    MOONSHINE_ERR_OUT_OF_MEMORY = -2,
+    MOONSHINE_ERR_UNSUPPORTED_HARDWARE = -3,
+    MOONSHINE_ERR_DEVICE_LOST = -4,
+    MOONSHINE_ERR_BUFFER_TOO_SMALL = -5,
+    MOONSHINE_ERR_TIMEOUT = -6,
+    MOONSHINE_ERR_TRANSIENT_BUSY = -7,
+    MOONSHINE_ERR_USE_AFTER_FREE = -8,
+    MOONSHINE_ERR_DOUBLE_RELEASE = -9,
+    MOONSHINE_ERR_NOT_INITIALIZED = -10,
+    MOONSHINE_ERR_FATAL = -11
+} MoonshineErrorCode;
+
 #define MOONSHINE_NO_BUFFER_SLOT (-1)
 
 #pragma pack(push, 1)
@@ -435,6 +450,7 @@ typedef struct MoonshineVirtualAudioDriverStatusC {
     uint8_t is_installed;
     uint8_t is_render_endpoint_present;
     uint8_t is_capture_endpoint_present;
+    uint8_t reserved;
     uint32_t supported_sample_rates_count;
     uint32_t supported_channels_count;
     char driver_version[32];
@@ -763,6 +779,121 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_qsv_set_intra_refresh(
 
 #ifdef __cplusplus
 }
+
+// ============================================================================
+// Compile-Time C-ABI Layout and Offset Verification Assertions
+// ============================================================================
+
+static_assert(sizeof(MoonshinePacketDesc) == 32, "MoonshinePacketDesc size mismatch");
+static_assert(offsetof(MoonshinePacketDesc, sequence_number) == 0, "MoonshinePacketDesc::sequence_number offset mismatch");
+static_assert(offsetof(MoonshinePacketDesc, frame_index) == 4, "MoonshinePacketDesc::frame_index offset mismatch");
+static_assert(offsetof(MoonshinePacketDesc, packet_index) == 8, "MoonshinePacketDesc::packet_index offset mismatch");
+static_assert(offsetof(MoonshinePacketDesc, total_packets) == 10, "MoonshinePacketDesc::total_packets offset mismatch");
+static_assert(offsetof(MoonshinePacketDesc, payload_size) == 12, "MoonshinePacketDesc::payload_size offset mismatch");
+static_assert(offsetof(MoonshinePacketDesc, packet_type) == 14, "MoonshinePacketDesc::packet_type offset mismatch");
+static_assert(offsetof(MoonshinePacketDesc, flags) == 15, "MoonshinePacketDesc::flags offset mismatch");
+static_assert(offsetof(MoonshinePacketDesc, buffer_slot_index) == 16, "MoonshinePacketDesc::buffer_slot_index offset mismatch");
+static_assert(offsetof(MoonshinePacketDesc, stream_packet_index) == 20, "MoonshinePacketDesc::stream_packet_index offset mismatch");
+static_assert(offsetof(MoonshinePacketDesc, payload_ptr) == 24, "MoonshinePacketDesc::payload_ptr offset mismatch");
+
+static_assert(sizeof(MoonshineFrameDesc) == 24, "MoonshineFrameDesc size mismatch");
+static_assert(offsetof(MoonshineFrameDesc, frame_index) == 0, "MoonshineFrameDesc::frame_index offset mismatch");
+static_assert(offsetof(MoonshineFrameDesc, total_bytes) == 4, "MoonshineFrameDesc::total_bytes offset mismatch");
+static_assert(offsetof(MoonshineFrameDesc, packet_count) == 8, "MoonshineFrameDesc::packet_count offset mismatch");
+static_assert(offsetof(MoonshineFrameDesc, is_keyframe) == 12, "MoonshineFrameDesc::is_keyframe offset mismatch");
+static_assert(offsetof(MoonshineFrameDesc, reserved) == 13, "MoonshineFrameDesc::reserved offset mismatch");
+static_assert(offsetof(MoonshineFrameDesc, frame_buffer) == 16, "MoonshineFrameDesc::frame_buffer offset mismatch");
+
+static_assert(sizeof(MoonshineDecoderCaps) == 20, "MoonshineDecoderCaps size mismatch");
+static_assert(offsetof(MoonshineDecoderCaps, max_width) == 0, "MoonshineDecoderCaps::max_width offset mismatch");
+static_assert(offsetof(MoonshineDecoderCaps, max_height) == 4, "MoonshineDecoderCaps::max_height offset mismatch");
+static_assert(offsetof(MoonshineDecoderCaps, max_fps) == 8, "MoonshineDecoderCaps::max_fps offset mismatch");
+static_assert(offsetof(MoonshineDecoderCaps, supports_av1) == 12, "MoonshineDecoderCaps::supports_av1 offset mismatch");
+static_assert(offsetof(MoonshineDecoderCaps, supports_hevc) == 13, "MoonshineDecoderCaps::supports_hevc offset mismatch");
+static_assert(offsetof(MoonshineDecoderCaps, supports_h264) == 14, "MoonshineDecoderCaps::supports_h264 offset mismatch");
+static_assert(offsetof(MoonshineDecoderCaps, supports_hdr10) == 15, "MoonshineDecoderCaps::supports_hdr10 offset mismatch");
+static_assert(offsetof(MoonshineDecoderCaps, supports_10bit) == 16, "MoonshineDecoderCaps::supports_10bit offset mismatch");
+static_assert(offsetof(MoonshineDecoderCaps, supports_d3d12) == 17, "MoonshineDecoderCaps::supports_d3d12 offset mismatch");
+static_assert(offsetof(MoonshineDecoderCaps, supports_vulkan) == 18, "MoonshineDecoderCaps::supports_vulkan offset mismatch");
+static_assert(offsetof(MoonshineDecoderCaps, reserved) == 19, "MoonshineDecoderCaps::reserved offset mismatch");
+
+static_assert(sizeof(MoonshineCaptureFrameDesc) == 36, "MoonshineCaptureFrameDesc size mismatch");
+static_assert(offsetof(MoonshineCaptureFrameDesc, texture_handle) == 0, "MoonshineCaptureFrameDesc::texture_handle offset mismatch");
+static_assert(offsetof(MoonshineCaptureFrameDesc, width) == 8, "MoonshineCaptureFrameDesc::width offset mismatch");
+static_assert(offsetof(MoonshineCaptureFrameDesc, height) == 12, "MoonshineCaptureFrameDesc::height offset mismatch");
+static_assert(offsetof(MoonshineCaptureFrameDesc, format) == 16, "MoonshineCaptureFrameDesc::format offset mismatch");
+static_assert(offsetof(MoonshineCaptureFrameDesc, timestamp_qpc) == 20, "MoonshineCaptureFrameDesc::timestamp_qpc offset mismatch");
+static_assert(offsetof(MoonshineCaptureFrameDesc, accumulated_frames) == 28, "MoonshineCaptureFrameDesc::accumulated_frames offset mismatch");
+static_assert(offsetof(MoonshineCaptureFrameDesc, cursor_visible) == 32, "MoonshineCaptureFrameDesc::cursor_visible offset mismatch");
+static_assert(offsetof(MoonshineCaptureFrameDesc, reserved) == 33, "MoonshineCaptureFrameDesc::reserved offset mismatch");
+
+static_assert(sizeof(MoonshineHdr10Metadata) == 32, "MoonshineHdr10Metadata size mismatch");
+static_assert(offsetof(MoonshineHdr10Metadata, red_primary) == 0, "MoonshineHdr10Metadata::red_primary offset mismatch");
+static_assert(offsetof(MoonshineHdr10Metadata, green_primary) == 4, "MoonshineHdr10Metadata::green_primary offset mismatch");
+static_assert(offsetof(MoonshineHdr10Metadata, blue_primary) == 8, "MoonshineHdr10Metadata::blue_primary offset mismatch");
+static_assert(offsetof(MoonshineHdr10Metadata, white_point) == 12, "MoonshineHdr10Metadata::white_point offset mismatch");
+static_assert(offsetof(MoonshineHdr10Metadata, max_mastering_luminance) == 16, "MoonshineHdr10Metadata::max_mastering_luminance offset mismatch");
+static_assert(offsetof(MoonshineHdr10Metadata, min_mastering_luminance) == 20, "MoonshineHdr10Metadata::min_mastering_luminance offset mismatch");
+static_assert(offsetof(MoonshineHdr10Metadata, max_content_light_level) == 24, "MoonshineHdr10Metadata::max_content_light_level offset mismatch");
+static_assert(offsetof(MoonshineHdr10Metadata, max_frame_average_light_level) == 26, "MoonshineHdr10Metadata::max_frame_average_light_level offset mismatch");
+static_assert(offsetof(MoonshineHdr10Metadata, hdr_enabled) == 28, "MoonshineHdr10Metadata::hdr_enabled offset mismatch");
+static_assert(offsetof(MoonshineHdr10Metadata, color_space) == 29, "MoonshineHdr10Metadata::color_space offset mismatch");
+static_assert(offsetof(MoonshineHdr10Metadata, reserved) == 30, "MoonshineHdr10Metadata::reserved offset mismatch");
+
+static_assert(sizeof(MoonshineEncoderCaps) == 32, "MoonshineEncoderCaps size mismatch");
+static_assert(offsetof(MoonshineEncoderCaps, supported_codecs_mask) == 0, "MoonshineEncoderCaps::supported_codecs_mask offset mismatch");
+static_assert(offsetof(MoonshineEncoderCaps, max_width) == 4, "MoonshineEncoderCaps::max_width offset mismatch");
+static_assert(offsetof(MoonshineEncoderCaps, max_height) == 8, "MoonshineEncoderCaps::max_height offset mismatch");
+static_assert(offsetof(MoonshineEncoderCaps, max_fps) == 12, "MoonshineEncoderCaps::max_fps offset mismatch");
+static_assert(offsetof(MoonshineEncoderCaps, supports_10bit) == 16, "MoonshineEncoderCaps::supports_10bit offset mismatch");
+static_assert(offsetof(MoonshineEncoderCaps, supports_lossless) == 17, "MoonshineEncoderCaps::supports_lossless offset mismatch");
+static_assert(offsetof(MoonshineEncoderCaps, supports_smart_idr) == 18, "MoonshineEncoderCaps::supports_smart_idr offset mismatch");
+static_assert(offsetof(MoonshineEncoderCaps, vendor_id) == 19, "MoonshineEncoderCaps::vendor_id offset mismatch");
+static_assert(offsetof(MoonshineEncoderCaps, min_bitrate_kbps) == 20, "MoonshineEncoderCaps::min_bitrate_kbps offset mismatch");
+static_assert(offsetof(MoonshineEncoderCaps, max_bitrate_kbps) == 24, "MoonshineEncoderCaps::max_bitrate_kbps offset mismatch");
+static_assert(offsetof(MoonshineEncoderCaps, reserved) == 28, "MoonshineEncoderCaps::reserved offset mismatch");
+
+static_assert(sizeof(MoonshineEncoderConfig) == 32, "MoonshineEncoderConfig size mismatch");
+static_assert(offsetof(MoonshineEncoderConfig, width) == 0, "MoonshineEncoderConfig::width offset mismatch");
+static_assert(offsetof(MoonshineEncoderConfig, height) == 4, "MoonshineEncoderConfig::height offset mismatch");
+static_assert(offsetof(MoonshineEncoderConfig, fps) == 8, "MoonshineEncoderConfig::fps offset mismatch");
+static_assert(offsetof(MoonshineEncoderConfig, bitrate_kbps) == 12, "MoonshineEncoderConfig::bitrate_kbps offset mismatch");
+static_assert(offsetof(MoonshineEncoderConfig, peak_bitrate_kbps) == 16, "MoonshineEncoderConfig::peak_bitrate_kbps offset mismatch");
+static_assert(offsetof(MoonshineEncoderConfig, codec) == 20, "MoonshineEncoderConfig::codec offset mismatch");
+static_assert(offsetof(MoonshineEncoderConfig, rc_mode) == 24, "MoonshineEncoderConfig::rc_mode offset mismatch");
+static_assert(offsetof(MoonshineEncoderConfig, gop_length) == 28, "MoonshineEncoderConfig::gop_length offset mismatch");
+static_assert(offsetof(MoonshineEncoderConfig, enable_intra_refresh) == 30, "MoonshineEncoderConfig::enable_intra_refresh offset mismatch");
+static_assert(offsetof(MoonshineEncoderConfig, enable_filler_data) == 31, "MoonshineEncoderConfig::enable_filler_data offset mismatch");
+
+static_assert(sizeof(MoonshineEncodedPacketDesc) == 24, "MoonshineEncodedPacketDesc size mismatch");
+static_assert(offsetof(MoonshineEncodedPacketDesc, frame_index) == 0, "MoonshineEncodedPacketDesc::frame_index offset mismatch");
+static_assert(offsetof(MoonshineEncodedPacketDesc, timestamp_qpc) == 8, "MoonshineEncodedPacketDesc::timestamp_qpc offset mismatch");
+static_assert(offsetof(MoonshineEncodedPacketDesc, payload_size) == 16, "MoonshineEncodedPacketDesc::payload_size offset mismatch");
+static_assert(offsetof(MoonshineEncodedPacketDesc, is_keyframe) == 20, "MoonshineEncodedPacketDesc::is_keyframe offset mismatch");
+static_assert(offsetof(MoonshineEncodedPacketDesc, is_header_packet) == 21, "MoonshineEncodedPacketDesc::is_header_packet offset mismatch");
+static_assert(offsetof(MoonshineEncodedPacketDesc, temporal_id) == 22, "MoonshineEncodedPacketDesc::temporal_id offset mismatch");
+static_assert(offsetof(MoonshineEncodedPacketDesc, reserved) == 23, "MoonshineEncodedPacketDesc::reserved offset mismatch");
+
+static_assert(sizeof(MoonshineVirtualAudioDriverStatusC) == 44, "MoonshineVirtualAudioDriverStatusC size mismatch");
+static_assert(offsetof(MoonshineVirtualAudioDriverStatusC, is_installed) == 0, "MoonshineVirtualAudioDriverStatusC::is_installed offset mismatch");
+static_assert(offsetof(MoonshineVirtualAudioDriverStatusC, is_render_endpoint_present) == 1, "MoonshineVirtualAudioDriverStatusC::is_render_endpoint_present offset mismatch");
+static_assert(offsetof(MoonshineVirtualAudioDriverStatusC, is_capture_endpoint_present) == 2, "MoonshineVirtualAudioDriverStatusC::is_capture_endpoint_present offset mismatch");
+static_assert(offsetof(MoonshineVirtualAudioDriverStatusC, reserved) == 3, "MoonshineVirtualAudioDriverStatusC::reserved offset mismatch");
+static_assert(offsetof(MoonshineVirtualAudioDriverStatusC, supported_sample_rates_count) == 4, "MoonshineVirtualAudioDriverStatusC::supported_sample_rates_count offset mismatch");
+static_assert(offsetof(MoonshineVirtualAudioDriverStatusC, supported_channels_count) == 8, "MoonshineVirtualAudioDriverStatusC::supported_channels_count offset mismatch");
+static_assert(offsetof(MoonshineVirtualAudioDriverStatusC, driver_version) == 12, "MoonshineVirtualAudioDriverStatusC::driver_version offset mismatch");
+
+static_assert(sizeof(MoonshineAudioIpcMetricsC) == 36, "MoonshineAudioIpcMetricsC size mismatch");
+static_assert(offsetof(MoonshineAudioIpcMetricsC, render_packets_read) == 0, "MoonshineAudioIpcMetricsC::render_packets_read offset mismatch");
+static_assert(offsetof(MoonshineAudioIpcMetricsC, render_underruns) == 4, "MoonshineAudioIpcMetricsC::render_underruns offset mismatch");
+static_assert(offsetof(MoonshineAudioIpcMetricsC, render_overruns) == 8, "MoonshineAudioIpcMetricsC::render_overruns offset mismatch");
+static_assert(offsetof(MoonshineAudioIpcMetricsC, capture_packets_written) == 12, "MoonshineAudioIpcMetricsC::capture_packets_written offset mismatch");
+static_assert(offsetof(MoonshineAudioIpcMetricsC, capture_underruns) == 16, "MoonshineAudioIpcMetricsC::capture_underruns offset mismatch");
+static_assert(offsetof(MoonshineAudioIpcMetricsC, capture_overruns) == 20, "MoonshineAudioIpcMetricsC::capture_overruns offset mismatch");
+static_assert(offsetof(MoonshineAudioIpcMetricsC, sample_rate) == 24, "MoonshineAudioIpcMetricsC::sample_rate offset mismatch");
+static_assert(offsetof(MoonshineAudioIpcMetricsC, channels) == 28, "MoonshineAudioIpcMetricsC::channels offset mismatch");
+static_assert(offsetof(MoonshineAudioIpcMetricsC, is_connected) == 32, "MoonshineAudioIpcMetricsC::is_connected offset mismatch");
+
 #endif
 
 #endif // MOONSHINE_NATIVE_API_H

@@ -4,6 +4,10 @@
 #include <cstdlib>
 #include "moonshine/export/moonshine_native_api.h"
 
+#ifdef _MSC_VER
+#pragma warning(disable: 4127) // conditional expression is constant
+#endif
+
 #define TEST_ASSERT(expr) do { \
     if (!(expr)) { \
         std::cerr << "Assertion failed: " #expr " at " << __FILE__ << ":" << __LINE__ << std::endl; \
@@ -139,6 +143,47 @@ void TestExportSlotReturnLifecycle()
     moonshine_slot_return_destroy(handle);
 }
 
+void TestExportAbiStructLayoutsAndErrorCodes()
+{
+    std::cout << "[Test] C-ABI struct layouts and error code verification..." << std::endl;
+
+    // Error code verification
+    TEST_ASSERT(MOONSHINE_SUCCESS == 0);
+    TEST_ASSERT(MOONSHINE_ERR_INVALID_ARGUMENT == -1);
+    TEST_ASSERT(MOONSHINE_ERR_OUT_OF_MEMORY == -2);
+    TEST_ASSERT(MOONSHINE_ERR_UNSUPPORTED_HARDWARE == -3);
+    TEST_ASSERT(MOONSHINE_ERR_DEVICE_LOST == -4);
+    TEST_ASSERT(MOONSHINE_ERR_BUFFER_TOO_SMALL == -5);
+    TEST_ASSERT(MOONSHINE_ERR_TIMEOUT == -6);
+    TEST_ASSERT(MOONSHINE_ERR_TRANSIENT_BUSY == -7);
+    TEST_ASSERT(MOONSHINE_ERR_USE_AFTER_FREE == -8);
+    TEST_ASSERT(MOONSHINE_ERR_DOUBLE_RELEASE == -9);
+    TEST_ASSERT(MOONSHINE_ERR_NOT_INITIALIZED == -10);
+    TEST_ASSERT(MOONSHINE_ERR_FATAL == -11);
+
+    // Byte size checks
+    TEST_ASSERT(sizeof(MoonshinePacketDesc) == 32);
+    TEST_ASSERT(sizeof(MoonshineFrameDesc) == 24);
+    TEST_ASSERT(sizeof(MoonshineDecoderCaps) == 20);
+    TEST_ASSERT(sizeof(MoonshineCaptureFrameDesc) == 36);
+    TEST_ASSERT(sizeof(MoonshineHdr10Metadata) == 32);
+    TEST_ASSERT(sizeof(MoonshineEncoderCaps) == 32);
+    TEST_ASSERT(sizeof(MoonshineEncoderConfig) == 32);
+    TEST_ASSERT(sizeof(MoonshineEncodedPacketDesc) == 24);
+    TEST_ASSERT(sizeof(MoonshineVirtualAudioDriverStatusC) == 44);
+    TEST_ASSERT(sizeof(MoonshineAudioIpcMetricsC) == 36);
+
+    // Field offset checks
+    TEST_ASSERT(offsetof(MoonshinePacketDesc, sequence_number) == 0);
+    TEST_ASSERT(offsetof(MoonshinePacketDesc, payload_ptr) == 24);
+
+    TEST_ASSERT(offsetof(MoonshineCaptureFrameDesc, texture_handle) == 0);
+    TEST_ASSERT(offsetof(MoonshineCaptureFrameDesc, cursor_visible) == 32);
+
+    TEST_ASSERT(offsetof(MoonshineHdr10Metadata, red_primary) == 0);
+    TEST_ASSERT(offsetof(MoonshineHdr10Metadata, hdr_enabled) == 28);
+}
+
 int main()
 {
     std::cout << "=== Running C-ABI Export Test Suite ===" << std::endl;
@@ -147,6 +192,7 @@ int main()
     TestExportSlotReturnLifecycle();
     TestExportJitterLifecycle();
     TestExportVideoCaps();
+    TestExportAbiStructLayoutsAndErrorCodes();
     std::cout << "All C-ABI Export tests passed successfully." << std::endl;
     return 0;
 }
