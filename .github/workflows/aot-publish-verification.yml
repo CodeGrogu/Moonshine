@@ -5,26 +5,48 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   aot-publish-windows:
     name: Native AOT Build (Windows x64)
     runs-on: windows-2022
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Setup .NET 9 SDK
+      - name: Set up .NET SDK from global.json
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.0.x'
+          dotnet-version-file: global.json
 
-      - name: Setup MSVC C++ Environment
+      - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Publish Moonshine Client via Native AOT
+      - name: Select application target
+        shell: pwsh
+        run: |
+          $unified = "src/Moonshine/Moonshine.csproj"
+          $current = "src/Moonshine.Client/Moonshine.Client.csproj"
+
+          if (Test-Path $unified) {
+            "APPLICATION_PROJECT=$unified" | Out-File -FilePath $env:GITHUB_ENV -Append
+            Write-Host "Using unified Moonshine application target: $unified"
+          } elseif (Test-Path $current) {
+            "APPLICATION_PROJECT=$current" | Out-File -FilePath $env:GITHUB_ENV -Append
+            "USING_LEGACY_CLIENT_TARGET=true" | Out-File -FilePath $env:GITHUB_ENV -Append
+            Write-Warning "Unified Moonshine application target is not present; validating the current client executable target temporarily."
+          } else {
+            throw "No Moonshine application target was found."
+          }
+
+      - name: Publish selected application via Native AOT
+        shell: pwsh
         run: >
-          dotnet publish src/Moonshine.Client/Moonshine.Client.csproj
+          dotnet publish "$env:APPLICATION_PROJECT"
           -c Release
           -r win-x64
           --self-contained
@@ -32,11 +54,32 @@ jobs:
           -p:TreatWarningsAsErrors=true
           -o ./publish/win-x64
 
-      - name: Verify Binary Size and Existence
+      - name: Verify application artifact
         shell: pwsh
         run: |
-          $exePath = "./publish/win-x64/Moonshine.Client.exe"
-          if (-not (Test-Path $exePath)) { throw "Native AOT executable not generated." }
-          $sizeMb = (Get-Item $exePath).Length / 1MB
-          Write-Host "Native AOT Binary Size: $([math]::Round($sizeMb, 2)) MB"
-          if ($sizeMb -gt 40.0) { throw "Native AOT binary exceeded 40MB size budget." }
+          $executables = Get-ChildItem ./publish/win-x64 -Filter *.exe -File
+          if (-not $executables) {
+            throw "Native AOT executable was not generated."
+          }
+
+          $executables | ForEach-Object {
+            $sizeMb = $_.Length / 1MB
+            Write-Host "$($_.Name): $([math]::Round($sizeMb, 2)) MB"
+            if ($sizeMb -gt 40.0) {
+              throw "Native AOT executable exceeded the 40 MB size budget: $($_.Name)"
+            }
+          }
+
+      - name: Verify Host role assembly still builds
+        shell: pwsh
+        run: >
+          dotnet build src/Moonshine.Host/Moonshine.Host.csproj
+          -c Release --no-restore
+          -p:TreatWarningsAsErrors=true
+
+      - name: Upload AOT publish artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: moonshine-aot-win-x64-${{ github.sha }}
+          path: ./publish/win-x64/**
+          if-no-files-found: error
