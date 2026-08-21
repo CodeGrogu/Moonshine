@@ -93,11 +93,58 @@ void TestExportVideoCaps()
     TEST_ASSERT(moonshine_video_query_caps(nullptr) != 0);
 }
 
+void TestExportSlotReturnLifecycle()
+{
+    std::cout << "[Test] C-ABI moonshine_slot_return lifecycle and robustness..." << std::endl;
+
+    // 1. Null handle robustness
+    TEST_ASSERT(moonshine_slot_return_enqueue(nullptr, 42) == 0);
+    int32_t out_slot = -999;
+    TEST_ASSERT(moonshine_slot_return_dequeue(nullptr, &out_slot) == 0);
+    TEST_ASSERT(moonshine_slot_return_size(nullptr) == 0);
+    moonshine_slot_return_destroy(nullptr); // Safe no-op
+
+    // 2. Normal lifecycle
+    MoonshineRingBufferHandle handle = moonshine_slot_return_create(4);
+    TEST_ASSERT(handle != nullptr);
+    TEST_ASSERT(moonshine_slot_return_size(handle) == 0);
+
+    // Empty dequeue
+    TEST_ASSERT(moonshine_slot_return_dequeue(handle, &out_slot) == 0);
+    TEST_ASSERT(moonshine_slot_return_dequeue(handle, nullptr) == 0);
+
+    // Enqueue items
+    TEST_ASSERT(moonshine_slot_return_enqueue(handle, 101) == 1);
+    TEST_ASSERT(moonshine_slot_return_enqueue(handle, 102) == 1);
+    TEST_ASSERT(moonshine_slot_return_enqueue(handle, 103) == 1);
+    TEST_ASSERT(moonshine_slot_return_enqueue(handle, 104) == 1);
+    TEST_ASSERT(moonshine_slot_return_size(handle) == 4);
+
+    // Full queue rejection
+    TEST_ASSERT(moonshine_slot_return_enqueue(handle, 105) == 0);
+
+    // Dequeue in FIFO order
+    TEST_ASSERT(moonshine_slot_return_dequeue(handle, &out_slot) == 1);
+    TEST_ASSERT(out_slot == 101);
+    TEST_ASSERT(moonshine_slot_return_dequeue(handle, &out_slot) == 1);
+    TEST_ASSERT(out_slot == 102);
+    TEST_ASSERT(moonshine_slot_return_dequeue(handle, &out_slot) == 1);
+    TEST_ASSERT(out_slot == 103);
+    TEST_ASSERT(moonshine_slot_return_dequeue(handle, &out_slot) == 1);
+    TEST_ASSERT(out_slot == 104);
+
+    TEST_ASSERT(moonshine_slot_return_size(handle) == 0);
+    TEST_ASSERT(moonshine_slot_return_dequeue(handle, &out_slot) == 0);
+
+    moonshine_slot_return_destroy(handle);
+}
+
 int main()
 {
     std::cout << "=== Running C-ABI Export Test Suite ===" << std::endl;
     TestExportVectorXor();
     TestExportSpscLifecycle();
+    TestExportSlotReturnLifecycle();
     TestExportJitterLifecycle();
     TestExportVideoCaps();
     std::cout << "All C-ABI Export tests passed successfully." << std::endl;

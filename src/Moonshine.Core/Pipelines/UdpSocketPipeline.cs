@@ -35,6 +35,8 @@ public sealed class UdpSocketPipeline : IAsyncDisposable, IDisposable
     private ulong _sequenceDiscontinuities;
 
     public int Port { get; }
+    public PinnedBufferPool BufferPool => _bufferPool;
+    public IntPtr ReturnQueueHandle => _bufferPool.ReturnQueueHandle;
     public UdpPipelineMetrics Metrics => new(
         Volatile.Read(ref _packetsReceived),
         Volatile.Read(ref _bytesReceived),
@@ -162,17 +164,21 @@ public sealed class UdpSocketPipeline : IAsyncDisposable, IDisposable
             PayloadSize = (ushort)payload.Length,
             PacketType = (byte)(rtpHeader.PayloadId == 98 || rtpHeader.PayloadId == 96 || rtpHeader.PayloadId == 100 ? 0 : 1),
             Flags = (byte)(rtpHeader.Marker ? 2 : 0), // Bit 1: End of frame
+            BufferSlotIndex = slotIndex,
             PayloadPtr = slabPtr
         };
 
         // Dispatch to Native SPSC Ring Buffer if available
         if (_nativeSpscHandle != IntPtr.Zero)
         {
+            // Transition to InFlight prior to forward enqueue publication
+            _bufferPool.MarkInFlight(slotIndex);
+
             int enqueueResult = MoonshineNativeMethods.SpscEnqueue(_nativeSpscHandle, in desc);
             if (enqueueResult == 0)
             {
                 Interlocked.Increment(ref _packetsDropped);
-                _bufferPool.Return(slotIndex);
+                _bufferPool.ReturnInFlight(slotIndex);
                 return;
             }
         }
@@ -180,10 +186,10 @@ public sealed class UdpSocketPipeline : IAsyncDisposable, IDisposable
         // Invoke managed callback if registered
         _packetCallback?.Invoke(desc);
 
-        // Return slot if no native queue holds reference
+        // Return slot directly if no native queue holds reference
         if (_nativeSpscHandle == IntPtr.Zero)
         {
-            _bufferPool.Return(slotIndex);
+            _bufferPool.ReturnRented(slotIndex);
         }
     }
 

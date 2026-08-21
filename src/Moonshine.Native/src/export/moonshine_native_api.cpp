@@ -23,6 +23,18 @@
 
 using namespace moonshine;
 
+static_assert(sizeof(MoonshinePacketDesc) == 32, "MoonshinePacketDesc must be exactly 32 bytes");
+static_assert(alignof(MoonshinePacketDesc) == 1, "MoonshinePacketDesc packed alignment is 1");
+static_assert(offsetof(MoonshinePacketDesc, sequence_number) == 0, "sequence_number offset mismatch");
+static_assert(offsetof(MoonshinePacketDesc, frame_index) == 4, "frame_index offset mismatch");
+static_assert(offsetof(MoonshinePacketDesc, packet_index) == 8, "packet_index offset mismatch");
+static_assert(offsetof(MoonshinePacketDesc, total_packets) == 10, "total_packets offset mismatch");
+static_assert(offsetof(MoonshinePacketDesc, payload_size) == 12, "payload_size offset mismatch");
+static_assert(offsetof(MoonshinePacketDesc, packet_type) == 14, "packet_type offset mismatch");
+static_assert(offsetof(MoonshinePacketDesc, flags) == 15, "flags offset mismatch");
+static_assert(offsetof(MoonshinePacketDesc, buffer_slot_index) == 16, "buffer_slot_index offset mismatch");
+static_assert(offsetof(MoonshinePacketDesc, payload_ptr) == 24, "payload_ptr offset mismatch");
+
 extern "C" {
 
 // ============================================================================
@@ -87,6 +99,39 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_spsc_dequeue(MoonshineRingBufferHandl
 MOONSHINE_API size_t MOONSHINE_CONV moonshine_spsc_size(MoonshineRingBufferHandle handle) {
     if (!handle) return 0;
     auto* ring = static_cast<ring_buffer::SpscRingBuffer<MoonshinePacketDesc>*>(handle);
+    return ring->Size();
+}
+
+// ============================================================================
+// Lock-Free SPSC Slot Return Queue Management APIs
+// ============================================================================
+
+MOONSHINE_API MoonshineRingBufferHandle MOONSHINE_CONV moonshine_slot_return_create(size_t capacity) {
+    auto* ring = new ring_buffer::SpscRingBuffer<int32_t>(capacity);
+    return static_cast<MoonshineRingBufferHandle>(ring);
+}
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_slot_return_destroy(MoonshineRingBufferHandle handle) {
+    if (!handle) return;
+    auto* ring = static_cast<ring_buffer::SpscRingBuffer<int32_t>*>(handle);
+    delete ring;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_slot_return_enqueue(MoonshineRingBufferHandle handle, int32_t slot_index) {
+    if (!handle) return 0;
+    auto* ring = static_cast<ring_buffer::SpscRingBuffer<int32_t>*>(handle);
+    return ring->TryEnqueue(slot_index) ? 1 : 0;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_slot_return_dequeue(MoonshineRingBufferHandle handle, int32_t* out_slot_index) {
+    if (!handle || !out_slot_index) return 0;
+    auto* ring = static_cast<ring_buffer::SpscRingBuffer<int32_t>*>(handle);
+    return ring->TryDequeue(*out_slot_index) ? 1 : 0;
+}
+
+MOONSHINE_API size_t MOONSHINE_CONV moonshine_slot_return_size(MoonshineRingBufferHandle handle) {
+    if (!handle) return 0;
+    auto* ring = static_cast<ring_buffer::SpscRingBuffer<int32_t>*>(handle);
     return ring->Size();
 }
 

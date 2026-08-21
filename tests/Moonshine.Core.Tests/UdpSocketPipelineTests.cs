@@ -156,4 +156,189 @@ public class UdpSocketPipelineTests
         pipeline.Metrics.PacketsReceived.Should().BeGreaterThanOrEqualTo(1);
         pipeline.Metrics.BytesReceived.Should().BeGreaterThan(0);
     }
+
+    [Fact]
+    public async Task UdpSocketPipeline_100kDatagrams_RecyclesAllSlotsWithZeroStarvation()
+    {
+        const int poolCapacity = 2048;
+        const int packetCount = 100000;
+
+        IntPtr spscHandle = MoonshineNativeMethods.SpscCreate(1024);
+        spscHandle.Should().NotBe(IntPtr.Zero);
+
+        try
+        {
+            using var pipeline = new UdpSocketPipeline(
+                localPort: 0,
+                nativeSpscHandle: spscHandle,
+                poolSlotCount: poolCapacity
+            );
+
+            IntPtr returnQueue = pipeline.ReturnQueueHandle;
+            returnQueue.Should().NotBe(IntPtr.Zero);
+
+            int dequeuedCount = 0;
+            var uniqueSlotsObserved = new HashSet<int>();
+            bool producerDone = false;
+
+            // Single consumer thread dequeuing from forward SPSC and returning to SPSC return queue
+            var consumerTask = Task.Run(() =>
+            {
+                while (!Volatile.Read(ref producerDone) || MoonshineNativeMethods.SpscSize(spscHandle) > 0)
+                {
+                    if (MoonshineNativeMethods.SpscDequeue(spscHandle, out var desc) != 0)
+                    {
+                        desc.BufferSlotIndex.Should().BeInRange(0, poolCapacity - 1);
+                        lock (uniqueSlotsObserved)
+                        {
+                            uniqueSlotsObserved.Add(desc.BufferSlotIndex);
+                        }
+
+                        // Return slot to unmanaged return queue
+                        int ret = MoonshineNativeMethods.SlotReturnEnqueue(returnQueue, desc.BufferSlotIndex);
+                        ret.Should().Be(1);
+                        Interlocked.Increment(ref dequeuedCount);
+                    }
+                    else
+                    {
+                        Thread.Yield();
+                    }
+                }
+            });
+
+            // Producer: Feed 100,000 RTP datagrams (~50x pool capacity), yielding if queue is near capacity
+            byte[] rawPacket = new byte[128];
+            rawPacket[0] = 0x80;
+            rawPacket[1] = 98; // HEVC
+
+            for (int i = 0; i < packetCount; i++)
+            {
+                while (MoonshineNativeMethods.SpscSize(spscHandle) >= 1000)
+                {
+                    Thread.Yield();
+                }
+
+                rawPacket[2] = (byte)(i >> 8);
+                rawPacket[3] = (byte)(i & 0xFF);
+                pipeline.ProcessDatagram(rawPacket);
+            }
+
+            Volatile.Write(ref producerDone, true);
+            await consumerTask;
+
+            // Assertions
+            dequeuedCount.Should().Be(packetCount);
+            pipeline.Metrics.PacketsDropped.Should().Be(0);
+
+            // Final drain of any remaining returned slots in pool
+            unsafe
+            {
+                pipeline.BufferPool.TryRent(out int testSlot, out _, out _);
+                if (testSlot >= 0) pipeline.BufferPool.Return(testSlot);
+            }
+
+            pipeline.BufferPool.ValidateInvariant().Should().BeTrue();
+            pipeline.BufferPool.FreeCount.Should().Be(poolCapacity);
+            pipeline.BufferPool.RentedCount.Should().Be(0);
+            pipeline.BufferPool.InFlightCount.Should().Be(0);
+            uniqueSlotsObserved.Count.Should().BeGreaterThan(100);
+        }
+        finally
+        {
+            MoonshineNativeMethods.SpscDestroy(spscHandle);
+        }
+    }
+
+    [Fact]
+    public void UdpSocketPipeline_ForwardQueueFull_ReturnsSlotImmediatelyWithoutLeak()
+    {
+        const int poolCapacity = 16;
+        const int queueCapacity = 4;
+
+        IntPtr spscHandle = MoonshineNativeMethods.SpscCreate(queueCapacity);
+        spscHandle.Should().NotBe(IntPtr.Zero);
+
+        try
+        {
+            using var pipeline = new UdpSocketPipeline(
+                localPort: 0,
+                nativeSpscHandle: spscHandle,
+                poolSlotCount: poolCapacity
+            );
+
+            byte[] rawPacket = new byte[64];
+            rawPacket[0] = 0x80;
+            rawPacket[1] = 96;
+
+            // Fill queue to capacity (4 items)
+            for (int i = 0; i < queueCapacity; i++)
+            {
+                rawPacket[2] = (byte)(i >> 8);
+                rawPacket[3] = (byte)(i & 0xFF);
+                pipeline.ProcessDatagram(rawPacket);
+            }
+
+            pipeline.Metrics.PacketsDropped.Should().Be(0);
+            pipeline.BufferPool.InFlightCount.Should().Be(queueCapacity);
+
+            // Push 5th packet while forward queue is completely full
+            rawPacket[2] = 0xFF;
+            rawPacket[3] = 0xFF;
+            pipeline.ProcessDatagram(rawPacket);
+
+            // Dropped count must increment by 1
+            pipeline.Metrics.PacketsDropped.Should().Be(1);
+
+            // The dropped packet's slot must have been immediately returned to Free
+            pipeline.BufferPool.ValidateInvariant().Should().BeTrue();
+            pipeline.BufferPool.FreeCount.Should().Be(poolCapacity - queueCapacity);
+            pipeline.BufferPool.RentedCount.Should().Be(0);
+            pipeline.BufferPool.InFlightCount.Should().Be(queueCapacity);
+
+            // Clean up queue
+            while (MoonshineNativeMethods.SpscDequeue(spscHandle, out var dequeued) != 0)
+            {
+                pipeline.BufferPool.ReturnInFlight(dequeued.BufferSlotIndex);
+            }
+
+            pipeline.BufferPool.FreeCount.Should().Be(poolCapacity);
+            pipeline.BufferPool.ValidateInvariant().Should().BeTrue();
+        }
+        finally
+        {
+            MoonshineNativeMethods.SpscDestroy(spscHandle);
+        }
+    }
+
+    [Fact]
+    public unsafe void PinnedBufferPool_InvalidOrDuplicateReturn_RejectedSafely()
+    {
+        using var pool = new PinnedBufferPool(slotCount: 8, slotSize: 64);
+        pool.FreeCount.Should().Be(8);
+        pool.ValidateInvariant().Should().BeTrue();
+
+        // 1. Rent a slot
+        pool.TryRent(out int slot0, out _, out _).Should().BeTrue();
+        slot0.Should().Be(7); // Top of free stack
+        pool.FreeCount.Should().Be(7);
+        pool.RentedCount.Should().Be(1);
+
+        // 2. Out of bounds returns
+        pool.Return(-1);
+        pool.Return(100);
+        pool.ReturnRented(-5);
+        pool.ReturnInFlight(999);
+        pool.FreeCount.Should().Be(7);
+
+        // 3. Return rented slot
+        pool.ReturnRented(slot0);
+        pool.FreeCount.Should().Be(8);
+        pool.RentedCount.Should().Be(0);
+
+        // 4. Duplicate return of already Free slot is ignored safely
+        pool.Return(slot0);
+        pool.ReturnRented(slot0);
+        pool.FreeCount.Should().Be(8);
+        pool.ValidateInvariant().Should().BeTrue();
+    }
 }

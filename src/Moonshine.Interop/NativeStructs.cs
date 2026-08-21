@@ -3,11 +3,13 @@ using System.Runtime.InteropServices;
 namespace Moonshine.Interop;
 
 /// <summary>
-/// Exact binary match for MoonshinePacketDesc (C-ABI).
+/// Exact binary match for MoonshinePacketDesc (C-ABI, 32 bytes).
 /// </summary>
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
 public unsafe struct MoonshinePacketDesc
 {
+    public const int NoBufferSlot = -1;
+
     public uint SequenceNumber;
     public uint FrameIndex;
     public ushort PacketIndex;
@@ -15,6 +17,8 @@ public unsafe struct MoonshinePacketDesc
     public ushort PayloadSize;
     public byte PacketType; // 0: Data, 1: Parity (FEC)
     public byte Flags;      // Bit 0: Start, Bit 1: End, Bit 2: Keyframe
+    public int BufferSlotIndex;
+    public fixed byte Reserved[4];
     public byte* PayloadPtr;
 }
 

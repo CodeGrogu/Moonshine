@@ -96,6 +96,30 @@ public static unsafe partial class MoonshineNativeMethods
     public static partial nuint SpscSize(IntPtr handle);
 
     // ========================================================================
+    // Lock-Free SPSC Slot Return Queue APIs
+    // ========================================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_slot_return_create")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial IntPtr SlotReturnCreate(nuint capacity);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_slot_return_destroy")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void SlotReturnDestroy(IntPtr handle);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_slot_return_enqueue")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int SlotReturnEnqueue(IntPtr handle, int slotIndex);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_slot_return_dequeue")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int SlotReturnDequeue(IntPtr handle, out int slotIndex);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_slot_return_size")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial nuint SlotReturnSize(IntPtr handle);
+
+    // ========================================================================
     // Sub-Millisecond Jitter Buffer APIs
     // ========================================================================
 

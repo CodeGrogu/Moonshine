@@ -77,6 +77,7 @@ public sealed class MoonshineStreamSession : IAsyncDisposable
                 PayloadSize = (ushort)payload.Length,
                 PacketType = (byte)(rtpHeader.PayloadId == 96 ? 0 : 1),
                 Flags = (byte)(rtpHeader.Marker ? 0x02 : 0x00),
+                BufferSlotIndex = MoonshinePacketDesc.NoBufferSlot,
                 PayloadPtr = payloadPtr
             };
 
