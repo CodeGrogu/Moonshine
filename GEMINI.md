@@ -9,4 +9,4 @@ All architectural decisions, native SIMD pipelines, managed protocols, and engin
 - **Strict Blittable Interop**: 1:1 binary layout parity across C# P/Invoke and C-ABI export boundaries.
 - **Formatting Standards**: British English standard, no em dashes, no emojis.
 - **MCP Research Protocols**: Always make use of `microsoftdocs/mcp` (for Windows, DirectX, Win32, and .NET documentation/samples), `com.microsoft/nuget` (for package searches, version verification, and security reviews), and `io.github.upstash/context7` (for library and documentation lookups).
-- **Verification Pipeline**: All changes must pass `scripts/verify_codebase.ps1` (environment probe, preflight sweep, physical artifact checks, 17 CTests, and 235 xUnit tests).
+- **Verification Pipeline**: All changes must pass `scripts/verify_codebase.ps1` (environment probe, preflight sweep, physical artifact checks, 17 CTests, and 240 xUnit tests).
