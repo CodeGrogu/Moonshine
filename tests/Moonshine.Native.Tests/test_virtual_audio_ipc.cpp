@@ -34,9 +34,13 @@ void Test_WriteAndReadPcm() {
     bool pOk = producer.Initialize(MOONSHINE_ENDPOINT_RENDER, true, 48000, 2);
     REQUIRE(pOk);
 
+#ifdef _WIN32
     VirtualAudioIpcChannel consumer;
     bool cOk = consumer.Initialize(MOONSHINE_ENDPOINT_RENDER, false, 48000, 2);
     REQUIRE(cOk);
+#else
+    VirtualAudioIpcChannel& consumer = producer;
+#endif
 
     // 480 samples = 10ms of stereo audio (960 floats)
     std::vector<float> src(960);
@@ -56,7 +60,9 @@ void Test_WriteAndReadPcm() {
     }
 
     producer.Close();
+#ifdef _WIN32
     consumer.Close();
+#endif
     std::cout << "[Pass] VirtualAudioIpcChannel Write and Read PCM." << std::endl;
 }
 
