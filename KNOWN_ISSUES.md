@@ -24,8 +24,11 @@ This document tracks known platform limitations, environment requirements, and c
 - **Status**: Verified (281 unit and integration tests passed across `Moonshine.Protocol.Tests` (71), `Moonshine.Core.Tests` (79), `Moonshine.Interop.Tests` (74), `Moonshine.Host.Tests` (57)).
 
 ### Hardware Video Encoders (NVENC, AMF, QuickSync, D3D11)
-- **Status**: Implemented / Live Driver Query with Strict Fail-Closed Semantics.
-- **Implementation**: Dynamic runtime loaders (`nvEncodeAPI64.dll`, `amfrt64.dll`, `vpl.dll`/`mfx64.dll`, and Windows Hardware MFTs) query live GPU hardware capabilities on selected Direct3D 11 physical adapters, support dynamic rate control reconfiguration, and reject unsupported hardware explicitly without synthetic frame generation.
+- **Status**: Substantially Implemented / Live Capability Discovery with Fail-Closed Semantics.
+- **Hardware Capability Discovery**: Implemented. Dynamic runtime loaders (`nvEncodeAPI64.dll`, `amfrt64.dll`, `vpl.dll`/`mfx64.dll`, and Windows Hardware MFTs) query live GPU driver capabilities on physical Direct3D 11 adapters and fail closed on missing/unsupported hardware without synthetic fallbacks.
+- **Hardware Encoder Abstraction**: Implemented. Multi-vendor unification, dynamic rate-control reconfiguration, keyframe requests, latency measurement, and zero-allocation managed wrappers are operational.
+- **Physical Bitstream Encoding**: In Progress / Fail-Closed. Physical GPU encode session lifecycle and bitstream extraction per vendor ASIC operate in fail-closed states pending complete downstream hardware pipeline wiring.
+- **End-to-End Pipeline**: Not implemented yet (staged for downstream media packetisation and session orchestrator in Issues #70, #79, #82).
 
 ### Direct3D 11 / 12 Hardware Video Decoder
 - **Status**: Prototype / Fail-Closed.
