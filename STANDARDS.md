@@ -85,6 +85,7 @@ Documentation, performance numbers, and test counts are engineering claims, not 
 ### Rule 10: AI Pair-Programming Protocol
 - The default human response to any completion claim is "show me the proof."
 - The AI agent must provide concrete command outputs, test execution evidence, and adversarial critiques before claiming completion.
+- Always make proactive use of `microsoftdocs/mcp`, `com.microsoft/nuget`, and `io.github.upstash/context7` for researching official platform documentation, package versions, security advisories, and library references.
 - Periodically execute full repository audits using `.agents/skills/moonshine-adversarial-audit` to detect accumulated stubs, simulated code paths, or stale documentation claims.
 - Moonshine supports Windows 11 version 21H2 (build 22000) or later on x64 only. The required native test stack is MSVC C++23, CMake, Ninja, and CTest. The required managed test stack is .NET 9 and xUnit through `dotnet test`.
 

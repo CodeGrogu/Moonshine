@@ -8,4 +8,5 @@ All architectural decisions, native SIMD pipelines, managed protocols, and engin
 - **Cache-Aligned Concurrency**: Lock-free SPSC queues with explicit 64-byte cacheline padding in C++23.
 - **Strict Blittable Interop**: 1:1 binary layout parity across C# P/Invoke and C-ABI export boundaries.
 - **Formatting Standards**: British English standard, no em dashes, no emojis.
-- **Verification Pipeline**: All changes must pass `scripts/verify_codebase.ps1` (environment probe, preflight sweep, physical artifact checks, 16 CTests, and 239 xUnit tests).
+- **MCP Research Protocols**: Always make use of `microsoftdocs/mcp` (for Windows, DirectX, Win32, and .NET documentation/samples), `com.microsoft/nuget` (for package searches, version verification, and security reviews), and `io.github.upstash/context7` (for library and documentation lookups).
+- **Verification Pipeline**: All changes must pass `scripts/verify_codebase.ps1` (environment probe, preflight sweep, physical artifact checks, 16 CTests, and 213 xUnit tests).
