@@ -7,6 +7,7 @@
 #include "moonshine/video/video_decoder_interface.hpp"
 #include "moonshine/video/dxgi_swapchain.hpp"
 #include "moonshine/audio/wasapi_renderer.hpp"
+#include "moonshine/audio/wasapi_loopback_capture.hpp"
 #include "moonshine/capture/dxgi_desktop_duplicator.hpp"
 #include "moonshine/capture/wgc_desktop_capture.hpp"
 #include "moonshine/color/hdr_metadata_extractor.hpp"
@@ -229,6 +230,86 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_audio_get_metrics(MoonshineAudioHand
     audio->GetMetrics(frames, underruns);
     if (out_frames_rendered) *out_frames_rendered = frames;
     if (out_underruns) *out_underruns = underruns;
+}
+
+// ============================================================================
+// WASAPI Master Loopback Audio Capture APIs
+// ============================================================================
+
+MOONSHINE_API MoonshineAudioCaptureHandle MOONSHINE_CONV moonshine_audio_capture_create(
+    uint32_t sample_rate,
+    uint32_t channels,
+    uint32_t buffer_duration_ms
+) {
+    auto* capture = new audio::WasapiLoopbackCapture(sample_rate, channels, buffer_duration_ms);
+    if (!capture->initialize()) {
+        delete capture;
+        return nullptr;
+    }
+    return static_cast<MoonshineAudioCaptureHandle>(capture);
+}
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_audio_capture_destroy(
+    MoonshineAudioCaptureHandle handle
+) {
+    if (!handle) return;
+    auto* capture = static_cast<audio::WasapiLoopbackCapture*>(handle);
+    delete capture;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_audio_capture_read_float(
+    MoonshineAudioCaptureHandle handle,
+    float* out_buffer,
+    uint32_t max_samples,
+    uint32_t* out_samples_read,
+    uint64_t* out_timestamp_qpc
+) {
+    if (!handle || !out_buffer || !out_samples_read || !out_timestamp_qpc) return 0;
+    auto* capture = static_cast<audio::WasapiLoopbackCapture*>(handle);
+    uint32_t read = 0;
+    uint64_t qpc = 0;
+    if (!capture->read_samples_float(out_buffer, max_samples, read, qpc)) {
+        return 0;
+    }
+    *out_samples_read = read;
+    *out_timestamp_qpc = qpc;
+    return 1;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_audio_capture_read_pcm16(
+    MoonshineAudioCaptureHandle handle,
+    int16_t* out_buffer,
+    uint32_t max_samples,
+    uint32_t* out_samples_read,
+    uint64_t* out_timestamp_qpc
+) {
+    if (!handle || !out_buffer || !out_samples_read || !out_timestamp_qpc) return 0;
+    auto* capture = static_cast<audio::WasapiLoopbackCapture*>(handle);
+    uint32_t read = 0;
+    uint64_t qpc = 0;
+    if (!capture->read_samples_pcm16(out_buffer, max_samples, read, qpc)) {
+        return 0;
+    }
+    *out_samples_read = read;
+    *out_timestamp_qpc = qpc;
+    return 1;
+}
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_audio_capture_get_metrics(
+    MoonshineAudioCaptureHandle handle,
+    uint64_t* out_frames_captured,
+    uint64_t* out_samples_captured,
+    uint32_t* out_underruns,
+    uint32_t* out_overruns
+) {
+    if (!handle) return;
+    auto* capture = static_cast<audio::WasapiLoopbackCapture*>(handle);
+    audio::AudioCaptureMetrics metrics{};
+    capture->get_metrics(metrics);
+    if (out_frames_captured) *out_frames_captured = metrics.total_frames_captured;
+    if (out_samples_captured) *out_samples_captured = metrics.total_samples_captured;
+    if (out_underruns) *out_underruns = metrics.underruns;
+    if (out_overruns) *out_overruns = metrics.overruns;
 }
 
 // ============================================================================
