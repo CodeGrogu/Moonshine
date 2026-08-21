@@ -346,6 +346,72 @@ public static unsafe partial class MoonshineNativeMethods
     );
 
     // ========================================================================
+    // Dedicated Windows Virtual Audio Driver Controller APIs
+    // ========================================================================
+
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct VirtualAudioDriverStatusInterop
+    {
+        public byte IsInstalled;
+        public byte IsRenderEndpointPresent;
+        public byte IsCaptureEndpointPresent;
+        public uint SupportedSampleRatesCount;
+        public uint SupportedChannelsCount;
+        public fixed byte DriverVersion[32];
+
+        public readonly string GetDriverVersion()
+        {
+            fixed (byte* ptr = DriverVersion)
+            {
+                return Marshal.PtrToStringAnsi((IntPtr)ptr) ?? string.Empty;
+            }
+        }
+    }
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_virtual_audio_driver_create")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial IntPtr VirtualAudioDriverCreate();
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_virtual_audio_driver_destroy")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void VirtualAudioDriverDestroy(IntPtr handle);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_virtual_audio_driver_is_installed")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int VirtualAudioDriverIsInstalled(IntPtr handle);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_virtual_audio_driver_get_status")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int VirtualAudioDriverGetStatus(IntPtr handle, out VirtualAudioDriverStatusInterop outStatus);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_virtual_audio_driver_validate_format")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int VirtualAudioDriverValidateFormat(
+        IntPtr handle,
+        uint sampleRate,
+        uint channels,
+        uint formatType
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_virtual_audio_driver_get_endpoint_names")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int VirtualAudioDriverGetEndpointNames(
+        IntPtr handle,
+        byte* outRenderName,
+        uint renderNameMaxLen,
+        byte* outCaptureName,
+        uint captureNameMaxLen
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_virtual_audio_driver_enable_mmcss")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int VirtualAudioDriverEnableMmcss(IntPtr handle, out IntPtr outTaskHandle);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_virtual_audio_driver_disable_mmcss")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int VirtualAudioDriverDisableMmcss(IntPtr handle, IntPtr taskHandle);
+
+    // ========================================================================
     // Zero-Copy Direct3D Desktop Capture APIs
     // ========================================================================
 
