@@ -162,7 +162,7 @@ public class MoonshineProtocolContractsTests
             PayloadSize = 1380,
             PacketType = 0,
             Flags = MoonshineVideoAttributes.Keyframe | MoonshineVideoAttributes.FrameStart,
-            Reserved = 0
+            TotalFrameBytes = 13800
         };
 
         byte[] buffer = new byte[32];

@@ -250,7 +250,7 @@ public struct MoonshineVideoPacketHeader
     public ushort PayloadSize;
     public byte PacketType; // 0: Data, 1: Parity
     public MoonshineVideoAttributes Flags;
-    public uint Reserved;
+    public uint TotalFrameBytes;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
@@ -489,7 +489,7 @@ public static class MoonshineProtocolCodec
         BinaryPrimitives.WriteUInt16BigEndian(destination[24..26], videoHeader.PayloadSize);
         destination[26] = videoHeader.PacketType;
         destination[27] = (byte)videoHeader.Flags;
-        BinaryPrimitives.WriteUInt32BigEndian(destination[28..32], videoHeader.Reserved);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[28..32], videoHeader.TotalFrameBytes);
 
         return true;
     }
@@ -510,7 +510,7 @@ public static class MoonshineProtocolCodec
             PayloadSize = BinaryPrimitives.ReadUInt16BigEndian(source[24..26]),
             PacketType = source[26],
             Flags = (MoonshineVideoAttributes)source[27],
-            Reserved = BinaryPrimitives.ReadUInt32BigEndian(source[28..32])
+            TotalFrameBytes = BinaryPrimitives.ReadUInt32BigEndian(source[28..32])
         };
 
         return true;
