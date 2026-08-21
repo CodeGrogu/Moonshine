@@ -15,12 +15,12 @@ public class HostCoordinatorTests
     }
 
     [Fact]
-    public void MoonshineHostCoordinator_EnableAndDisable_TransitionsStateCleanly()
+    public void MoonshineHostCoordinator_Enable_ReportsUnsupportedUntilNativeTransportExists()
     {
         using var coordinator = new MoonshineHostCoordinator();
         coordinator.Enable();
-        coordinator.State.Should().Be(HostState.Running);
-        coordinator.IsRunning.Should().BeTrue();
+        coordinator.State.Should().Be(HostState.Unsupported);
+        coordinator.IsRunning.Should().BeFalse();
 
         coordinator.Disable();
         coordinator.State.Should().Be(HostState.Disabled);

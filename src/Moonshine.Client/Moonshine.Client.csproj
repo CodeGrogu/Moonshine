@@ -4,7 +4,8 @@
     <TargetFramework>net9.0-windows10.0.22000.0</TargetFramework>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <RootNamespace>Moonshine.Client</RootNamespace>
+    <AssemblyName>Moonshine</AssemblyName>
+    <RootNamespace>Moonshine.App</RootNamespace>
     <PublishAot>true</PublishAot>
   </PropertyGroup>
 
@@ -12,6 +13,12 @@
     <ProjectReference Include="..\Moonshine.Protocol\Moonshine.Protocol.csproj" />
     <ProjectReference Include="..\Moonshine.Interop\Moonshine.Interop.csproj" />
     <ProjectReference Include="..\Moonshine.Core\Moonshine.Core.csproj" />
+    <ProjectReference Include="..\Moonshine.Host\Moonshine.Host.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- STUB: This GameStream-only client engine is retained as migration reference and excluded from the single-application product executable. -->
+    <Compile Remove="MoonshineClientEngine.cs" />
   </ItemGroup>
 
   <ItemGroup>

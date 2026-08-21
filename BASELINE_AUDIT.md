@@ -1,0 +1,91 @@
+# Moonshine Backend Baseline Audit
+
+<!-- VERIFIED: 2026-08-21, via `scripts/verify_environment.ps1`, `scripts/preflight.ps1`, `ctest --test-dir build/release-avx2 --build-config Release --output-on-failure --no-tests=error`, and `tools/dotnet_sdk/dotnet.exe test Moonshine.sln -c Release --no-build --no-restore --arch x64` on Windows 11 Pro build 26200 -->
+
+## Product Boundary
+
+Moonshine has one Windows executable: `src/Moonshine.Client`, with assembly name `Moonshine`. It selects one role per invocation:
+
+- `Moonshine --role host`
+- `Moonshine --role client`
+- `Moonshine --role host-client`
+
+The composition root is `Moonshine.App.MoonshineApplication`. It is deliberately fail-closed: every role reports unsupported until the Moonshine-native session-control and media transport designs are implemented. It starts no listener, worker, compatibility handshake, or simulated device path.
+
+## Dependency Graph
+
+```text
+Moonshine executable
+  -> Moonshine.Host: Host role coordinator, capture, encode, audio
+  -> Moonshine.Core: shared lifecycle, security, input, video and audio abstractions
+  -> Moonshine.Interop: C# to C++ ABI only
+  -> Moonshine.Protocol: shared serialisation and cryptography primitives
+  -> Moonshine.Native.dll: Windows device, SIMD, capture, media and audio resources
+
+Compatibility-only code, not reached by MoonshineApplication:
+  Moonshine.ClientEngine -> GameStream discovery/pairing -> RTSP -> RTP/RTCP/UDP
+```
+
+The `MoonshineClientEngine` compatibility entry point is excluded from compilation by the executable project. The following compatibility modules remain in the repository for audit and migration reference only. They must not be composed by a Host, Client, or Host + Client role: `MoonshineDiscoveryService`, `LiveHostDiscoveryEngine`, `MoonshinePairingManager`, `MoonshineRtspClient`, `MoonshineStreamSession`, `UdpSocketPipeline`, and RTP, RTCP, RTSP, mDNS, SSDP, and GameStream packet codecs. They require extraction to a non-product compatibility assembly before any new transport is added.
+
+## Runtime Inventory and Classification
+
+| Area | Resources and boundaries | State | Product disposition |
+| --- | --- | --- | --- |
+| Single application | Console executable and role selector | Incomplete | Production composition root, fail-closed until native streaming exists. |
+| Host coordinator | Host state only, no listener | Incomplete | Reports `Unsupported`; never reports `Running`. |
+| Client engine | HTTP pairing, certificate handling, GameStream host query | Incompatible | Compatibility-only, unreachable from the application composition root. |
+| Discovery | mDNS and SSDP UDP sockets, HTTP `serverinfo` probes, background task | Incompatible | Compatibility-only, no active product listener. |
+| RTSP session | TCP client, request serialiser, RTP and RTCP packet dispatch | Incompatible | Compatibility-only, no active product listener. |
+| UDP ingestion | UDP bind, long-running receive worker, pinned pool, native SPSC interop | Incompatible | Compatibility-only because it assumes RTP and GameStream framing. |
+| Host audio | WASAPI loopback, Opus encoder, RTP packetiser, virtual-device IPC | Incomplete | Device portions have software tests; the RTP output contract is incompatible with the new transport. |
+| Client audio | microphone capture, Opus, RTP backchannel | Incompatible | Not selected by application roles. |
+| Desktop capture | DXGI duplication, Windows.Graphics.Capture, D3D texture handles | Prototype | Can expose real device failures. No end-to-end Host media path exists. |
+| Hardware encoding | NVENC, AMF, QuickSync, D3D11 hardware encoder ABI | Incomplete | Explicit unsupported results. All synthetic bitstream success paths are blocked. |
+| Hardware decoding | D3D11VA and D3D12 Video ABI | Incomplete | Explicit unsupported results and zero capabilities. |
+| Presentation | DXGI swapchain ABI | Incomplete | Explicit unsupported result because no retained real `IDXGISwapChain` exists. |
+| Native data plane | SPSC ring, Reed-Solomon FEC, jitter buffer | Prototype | Value-tested in isolation, but the existing framing assumes compatibility wire formats. |
+| Interop boundary | `LibraryImport` C ABI structs and `Moonshine.Native.dll` | Prototype | ABI tests cover layouts and explicit unsupported media results. |
+| Virtual audio driver | WaveRT driver, shared-memory IPC and PnP integration | Prototype | Test-harness verified only; deployment needs Windows driver signing or test-signing. |
+
+## Listeners, Workers, and Device Resources
+
+There are no active product listeners or streaming workers in `MoonshineApplication`. Legacy-only resources are: discovery mDNS and SSDP socket receive tasks, HTTP probe tasks, RTSP TCP client, UDP receiver thread, client microphone audio capture, WASAPI loopback capture, DXGI/WGC capture handles, encoder handles, decoder handles, swapchain handles, virtual audio IPC mappings, and the WaveRT driver. These resources remain disabled by the role selector.
+
+## Baseline Evidence
+
+<!-- VERIFIED: 2026-08-21, via `scripts/verify_environment.ps1` on Windows 11 Pro build 26200 -->
+
+- Toolchain: MSVC C++23, CMake 3.31.5, Ninja, CTest, and repository .NET SDK 9.0.317 resolved successfully.
+
+<!-- VERIFIED: 2026-08-21, via `scripts/preflight.ps1` and `tests/test_preflight_fixtures.ps1` on Windows 11 Pro build 26200 -->
+
+- Preflight: 204 source files and 64 documents scanned with zero violations. Fixture regression: 10 passed.
+
+<!-- VERIFIED: 2026-08-21, via `ctest --test-dir build/release-avx2 --build-config Release --output-on-failure --no-tests=error` on Windows 11 Pro build 26200 -->
+
+- Native baseline before remediation: 16 of 16 CTest targets passed.
+
+<!-- VERIFIED: 2026-08-21, via `tools/dotnet_sdk/dotnet.exe test Moonshine.sln -c Release --no-build --no-restore --arch x64 --logger "console;verbosity=minimal"` on Windows 11 Pro build 26200 -->
+
+- Managed baseline before remediation: 254 tests passed: Protocol 61, Core 51, Interop 71, Host 71.
+
+<!-- VERIFIED: 2026-08-21, via existing `BenchmarkDotNet.Artifacts/results/*-report-github.md` results generated with the repository benchmark configuration on Windows 11 build 26200 -->
+
+| Benchmark | Mean | Allocation |
+| --- | ---: | ---: |
+| UDP pinned-buffer rent and return | 39.73 ns | 0 B |
+| UDP datagram processing | 57.19 ns | 0 B |
+| RTP span parsing | 1.133 ns | 0 B |
+| SPSC enqueue and dequeue | 10.45 ns | 0 B |
+| Jitter assembly and pop | 53.35 ns | 0 B |
+| SIMD Reed-Solomon FEC recovery | 287.54 ns | 0 B |
+
+These are microbenchmark baselines for isolated algorithms, not streaming throughput or end-to-end latency claims. No real frame, hardware encode, decode, presentation, or host-to-client latency measurement exists.
+
+## Direct Follow-up Work
+
+1. Extract the listed compatibility-only modules into a separate assembly, then remove it from the product executable dependency graph.
+2. Specify and implement a Moonshine-native authenticated control protocol and media framing before enabling listeners or UDP workers.
+3. Integrate each hardware SDK or Windows media API with physical-device capability probes and frame-value validation before changing any unsupported result.
+4. Record real host-to-client throughput, allocation, and latency measurements using physical capture, encode, transport, decode, and presentation.

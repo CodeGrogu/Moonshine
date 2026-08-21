@@ -25,6 +25,13 @@ D3D11VideoDecoder::~D3D11VideoDecoder() {
 }
 
 int D3D11VideoDecoder::Initialize(void* hwnd, uint32_t width, uint32_t height, VideoCodec codec) {
+    (void)hwnd;
+    (void)width;
+    (void)height;
+    (void)codec;
+    // STUB: D3D11VA decode-buffer submission has not been implemented, so decoder creation must fail explicitly.
+    return -2;
+
     if (width == 0 || height == 0) return -1;
 
     hwnd_ = hwnd;
@@ -104,6 +111,9 @@ void D3D11VideoDecoder::Shutdown() {
 
 void D3D11VideoDecoder::QueryCaps(MoonshineDecoderCaps& out_caps) noexcept {
     std::memset(&out_caps, 0, sizeof(MoonshineDecoderCaps));
+    // STUB: Decoder capability probing requires real D3D11VA feature negotiation, which is not implemented in this build.
+    return;
+
     out_caps.max_width = 3840;
     out_caps.max_height = 2160;
     out_caps.max_fps = 240;
@@ -127,6 +137,13 @@ D3D12VideoDecoder::~D3D12VideoDecoder() {
 }
 
 int D3D12VideoDecoder::Initialize(void* hwnd, uint32_t width, uint32_t height, VideoCodec codec) {
+    (void)hwnd;
+    (void)width;
+    (void)height;
+    (void)codec;
+    // STUB: D3D12 Video decode command-list submission has not been implemented, so decoder creation must fail explicitly.
+    return -2;
+
     if (width == 0 || height == 0) return -1;
 
     hwnd_ = hwnd;

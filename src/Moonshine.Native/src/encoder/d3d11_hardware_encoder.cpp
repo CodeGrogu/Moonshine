@@ -12,6 +12,11 @@ D3D11HardwareEncoder::~D3D11HardwareEncoder() {
 
 // SIMULATED: Direct3D 11 hardware encoder context and bitstream output are synthesized with NAL parameter sets and deterministic filler bytes because low-level Media Foundation / D3D11 encoder transforms are not integrated into this build.
 bool D3D11HardwareEncoder::initialize(void* d3d_device, const EncoderConfig& config) {
+    (void)d3d_device;
+    (void)config;
+    // STUB: Media Foundation hardware transform submission is absent, so this backend must reject activation rather than emit fabricated bitstreams.
+    return false;
+
     cleanup();
     _d3d_device = d3d_device;
     _config = config;
@@ -131,6 +136,10 @@ void D3D11HardwareEncoder::cleanup() {
 }
 
 bool D3D11HardwareEncoder::query_capabilities(void* /*d3d_device*/, EncoderCaps& out_caps) {
+    // STUB: Capability enumeration requires a Media Foundation transform probe, which is not implemented in this build.
+    out_caps = {};
+    return false;
+
     out_caps = {};
     out_caps.supported_codecs_mask = 0x07; // H264 | HEVC | HEVC Main10
     out_caps.max_width = 4096;

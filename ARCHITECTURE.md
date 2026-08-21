@@ -1,5 +1,7 @@
 # Moonshine Technical Architecture
 
+> Current baseline: see `BASELINE_AUDIT.md`. The diagrams below describe historical compatibility-oriented prototypes, not the active product architecture. The active architecture is one Windows executable with selectable Host, Client, and Host + Client roles. It is fail-closed while native Moonshine session control and media transport are absent.
+
 This document details the architectural design, protocol state machine, memory pipeline, and native interop layer of **Moonshine**.
 
 ---

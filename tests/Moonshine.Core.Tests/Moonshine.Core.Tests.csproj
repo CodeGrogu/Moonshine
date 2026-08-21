@@ -15,6 +15,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- STUB: These tests asserted fabricated decoder and presentation success; negative interop tests now cover the explicit unsupported contracts. -->
+    <Compile Remove="DxgiSwapchainTests.cs" />
+    <Compile Remove="VideoPipelineTests.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />

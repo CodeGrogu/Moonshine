@@ -16,77 +16,17 @@ public class EncoderNativeTests
     }
 
     [Theory]
-    [InlineData(0u)] // Auto
-    [InlineData(1u)] // NVENC
-    [InlineData(2u)] // AMF
-    [InlineData(3u)] // QuickSync
-    [InlineData(4u)] // D3D11
-    public void EncoderQueryCaps_AllVendors_ReturnsSuccess(uint vendor)
-    {
-        int res = MoonshineNativeMethods.EncoderQueryCaps(vendor, IntPtr.Zero, out var caps);
-        res.Should().Be(1);
-        caps.MaxWidth.Should().BeGreaterThanOrEqualTo(3840);
-        caps.MaxFps.Should().BeGreaterThanOrEqualTo(120);
-        caps.MaxBitrateKbps.Should().BeGreaterThanOrEqualTo(100000);
-    }
+    [InlineData(0u)]
+    [InlineData(1u)]
+    [InlineData(2u)]
+    [InlineData(3u)]
+    [InlineData(4u)]
+    public void EncoderQueryCaps_AllUnimplementedVendors_ReturnsUnsupported(uint vendor) => MoonshineNativeMethods.EncoderQueryCaps(vendor, IntPtr.Zero, out _).Should().Be(0);
 
     [Fact]
-    public unsafe void EncoderLifecycle_CreateEncodeAndDestroy_ExecutesCleanly()
+    public void EncoderCreate_ReturnsNullWithoutARealHardwareBackend()
     {
-        var config = new MoonshineEncoderConfig
-        {
-            Width = 1920,
-            Height = 1080,
-            Fps = 60,
-            BitrateKbps = 20000,
-            PeakBitrateKbps = 30000,
-            Codec = 2, // HEVC Main10
-            RcMode = 0, // CBR
-            GopLength = 0,
-            EnableIntraRefresh = 0,
-            EnableFillerData = 1
-        };
-
-        IntPtr handle = MoonshineNativeMethods.EncoderCreate(0, IntPtr.Zero, in config);
-        handle.Should().NotBe(IntPtr.Zero);
-
-        byte[] buffer = new byte[1024 * 1024];
-        fixed (byte* bufPtr = buffer)
-        {
-            // Frame 0: Keyframe
-            int res = MoonshineNativeMethods.EncoderEncodeFrame(
-                handle,
-                IntPtr.Zero,
-                0,
-                out var desc,
-                bufPtr,
-                (uint)buffer.Length,
-                out uint written
-            );
-
-            res.Should().Be(1);
-            desc.FrameIndex.Should().Be(0);
-            desc.IsKeyframe.Should().Be(1);
-            desc.IsHeaderPacket.Should().Be(1);
-            written.Should().BeGreaterThan(0);
-            desc.PayloadSize.Should().Be(written);
-
-            // Frame 1: Inter-frame
-            res = MoonshineNativeMethods.EncoderEncodeFrame(
-                handle,
-                IntPtr.Zero,
-                0,
-                out desc,
-                bufPtr,
-                (uint)buffer.Length,
-                out written
-            );
-
-            res.Should().Be(1);
-            desc.FrameIndex.Should().Be(1);
-            desc.IsKeyframe.Should().Be(0);
-        }
-
-        MoonshineNativeMethods.EncoderDestroy(handle);
+        var config = new MoonshineEncoderConfig { Width = 1920, Height = 1080, Fps = 60, BitrateKbps = 20000 };
+        MoonshineNativeMethods.EncoderCreate(0, IntPtr.Zero, in config).Should().Be(IntPtr.Zero);
     }
 }

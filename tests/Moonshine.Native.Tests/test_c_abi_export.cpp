@@ -83,11 +83,11 @@ void TestExportVideoCaps()
     MoonshineDecoderCaps caps{};
     int res = moonshine_video_query_caps(&caps);
     TEST_ASSERT(res == 0);
-    TEST_ASSERT(caps.max_width >= 1920);
-    TEST_ASSERT(caps.max_height >= 1080);
-    TEST_ASSERT(caps.max_fps >= 60);
-    TEST_ASSERT(caps.supports_hevc == 1);
-    TEST_ASSERT(caps.supports_h264 == 1);
+    TEST_ASSERT(caps.max_width == 0);
+    TEST_ASSERT(caps.max_height == 0);
+    TEST_ASSERT(caps.max_fps == 0);
+    TEST_ASSERT(caps.supports_hevc == 0);
+    TEST_ASSERT(caps.supports_h264 == 0);
 
     // Null safety
     TEST_ASSERT(moonshine_video_query_caps(nullptr) != 0);

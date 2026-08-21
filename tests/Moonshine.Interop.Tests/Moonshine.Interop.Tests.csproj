@@ -14,6 +14,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- STUB: These tests asserted SDK-backed encoder operations despite no SDK integration; EncoderNativeTests now verify the failure contract. -->
+    <Compile Remove="AmfNativeTests.cs" />
+    <Compile Remove="NvencNativeTests.cs" />
+    <Compile Remove="QsvNativeTests.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />

@@ -5,12 +5,13 @@ public enum HostState
     Disabled,
     Starting,
     Running,
-    Stopping
+    Stopping,
+    Unsupported
 }
 
 /// <summary>
-/// Modular Moonshine Host Coordinator.
-/// Provides zero-overhead state management for enabling and disabling the host streaming server.
+/// Coordinates the Host role state. It does not claim an active host until a Moonshine-native
+/// control and media transport is implemented and bound to a listener.
 /// </summary>
 public sealed class MoonshineHostCoordinator : IDisposable
 {
@@ -31,8 +32,8 @@ public sealed class MoonshineHostCoordinator : IDisposable
     {
         lock (_lock)
         {
-            if (_state == HostState.Running || _state == HostState.Starting) return;
-            _state = HostState.Running;
+            if (_state == HostState.Running || _state == HostState.Starting || _state == HostState.Unsupported) return;
+            _state = HostState.Unsupported;
         }
     }
 

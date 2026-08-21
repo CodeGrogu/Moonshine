@@ -19,6 +19,11 @@ NvencVideoEncoder::~NvencVideoEncoder() {
 
 // SIMULATED: GPU NVENC encoder context and bitstream output are synthesized with NAL parameter sets and deterministic filler bytes because NVIDIA Video Codec SDK link libraries are not integrated into this build.
 bool NvencVideoEncoder::initialize(void* d3d_device, const EncoderConfig& config) {
+    (void)d3d_device;
+    (void)config;
+    // STUB: NVIDIA Video Codec SDK integration is absent, so this backend must reject activation rather than emit fabricated bitstreams.
+    return false;
+
     cleanup();
     _d3d_device = d3d_device;
     _config = config;
@@ -160,6 +165,10 @@ void NvencVideoEncoder::cleanup() {
 }
 
 bool NvencVideoEncoder::query_capabilities(void* /*d3d_device*/, EncoderCaps& out_caps) {
+    // STUB: Capability enumeration needs the NVIDIA Video Codec SDK and a physical encoder session, neither of which exists in this build.
+    out_caps = {};
+    return false;
+
     out_caps = {};
     out_caps.supported_codecs_mask = 0x0F; // H264 | HEVC | HEVC Main10 | AV1
     out_caps.max_width = 8192;
@@ -175,6 +184,9 @@ bool NvencVideoEncoder::query_capabilities(void* /*d3d_device*/, EncoderCaps& ou
 }
 
 bool NvencVideoEncoder::query_codec_support(VideoCodec codec) {
+    (void)codec;
+    return false;
+
     switch (codec) {
         case VideoCodec::H264:
         case VideoCodec::Hevc:

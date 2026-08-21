@@ -20,6 +20,15 @@ DxgiSwapchain::~DxgiSwapchain() {
 }
 
 int DxgiSwapchain::Initialize(void* hwnd, void* d3d11_device, uint32_t width, uint32_t height, uint32_t buffer_count, bool is_hdr10) {
+    (void)hwnd;
+    (void)d3d11_device;
+    (void)width;
+    (void)height;
+    (void)buffer_count;
+    (void)is_hdr10;
+    // STUB: The swapchain does not retain and present a real IDXGISwapChain, so creation must fail explicitly.
+    return -2;
+
     if (width == 0 || height == 0) return -1;
 
     hwnd_ = hwnd;

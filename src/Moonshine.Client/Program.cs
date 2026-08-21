@@ -1,27 +1,13 @@
-using System;
-using Moonshine.Client;
-using Moonshine.Interop;
+using Moonshine.App;
 
-Console.WriteLine("=================================================================");
-Console.WriteLine("Moonshine - Ultra-Low-Latency GameStream Client Engine");
-Console.WriteLine("Engineered in C# 13 (.NET Native AOT) & C++23 AVX2/AVX-512 SIMD");
-Console.WriteLine("=================================================================\n");
-
-Console.WriteLine("[Hardware] Querying Native Video Decoder Capabilities...");
-try
+if (!MoonshineApplication.TryParseRole(args, out ApplicationRole role))
 {
-    var caps = MoonshineClientEngine.QueryHardwareCaps();
-    Console.WriteLine($"  - Max Resolution: {caps.MaxWidth}x{caps.MaxHeight} @ {caps.MaxFps} FPS");
-    Console.WriteLine($"  - Hardware AV1 Support:  {(caps.SupportsAv1 != 0 ? "YES" : "NO")}");
-    Console.WriteLine($"  - Hardware HEVC Support: {(caps.SupportsHevc != 0 ? "YES" : "NO")}");
-    Console.WriteLine($"  - Hardware H.264 Support:{(caps.SupportsH264 != 0 ? "YES" : "NO")}");
-    Console.WriteLine($"  - HDR10 & 10-Bit Color:  {(caps.SupportsHdr10 != 0 ? "YES" : "NO")}");
-    Console.WriteLine($"  - Direct3D 12 Video:     {(caps.SupportsD3D12 != 0 ? "YES" : "NO")}");
-}
-// ALLOWED_EXCEPTION: CLI bootstrap diagnostic fallback when native library is not on standard search path
-catch (Exception ex)
-{
-    Console.WriteLine($"  [!] Note: Native DLL not yet loaded in path ({ex.Message})");
+    Console.Error.WriteLine("Usage: Moonshine --role host|client|host-client");
+    return 2;
 }
 
-Console.WriteLine("\n[Core] Moonshine Client ready for low-latency streaming sessions.");
+using var application = new MoonshineApplication();
+ApplicationStartResult result = application.Start(role);
+Console.WriteLine($"Moonshine role: {role}");
+Console.WriteLine(result.Message);
+return result.IsStarted ? 0 : 1;
