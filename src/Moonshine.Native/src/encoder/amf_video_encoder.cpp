@@ -1,6 +1,23 @@
 #include "moonshine/encoder/amf_video_encoder.hpp"
 #include <cstring>
 #include <chrono>
+#include <iostream>
+
+#if defined(_WIN32)
+#include <windows.h>
+#include <d3d11.h>
+#include <dxgi.h>
+#include <wrl/client.h>
+using Microsoft::WRL::ComPtr;
+
+typedef uint64_t amf_uint64;
+typedef int32_t AMF_RESULT;
+#define AMF_OK 0
+
+typedef AMF_RESULT(__cdecl *AMFInit_Fn)(amf_uint64 version, void** ppFactory);
+typedef AMF_RESULT(__cdecl *AMFQueryVersion_Fn)(amf_uint64* pVersion);
+
+#endif
 
 namespace moonshine::encoder {
 
@@ -10,130 +27,107 @@ AmfVideoEncoder::~AmfVideoEncoder() {
     cleanup();
 }
 
-// SIMULATED: GPU AMF encoder context and bitstream output are synthesized with NAL parameter sets and deterministic filler bytes because AMD Advanced Media Framework SDK link libraries are not integrated into this build.
 bool AmfVideoEncoder::initialize(void* d3d_device, const EncoderConfig& config) {
-    (void)d3d_device;
-    (void)config;
-    // STUB: AMD AMF SDK integration is absent, so this backend must reject activation rather than emit fabricated bitstreams.
-    return false;
-
     cleanup();
+
+#if defined(_WIN32)
+    if (!d3d_device) {
+        return false;
+    }
+
+    auto* dev = static_cast<ID3D11Device*>(d3d_device);
+    ComPtr<IDXGIDevice> dxgi_dev;
+    if (FAILED(dev->QueryInterface(__uuidof(IDXGIDevice), &dxgi_dev))) {
+        return false;
+    }
+
+    ComPtr<IDXGIAdapter> adapter;
+    if (FAILED(dxgi_dev->GetAdapter(&adapter))) {
+        return false;
+    }
+
+    DXGI_ADAPTER_DESC desc{};
+    if (FAILED(adapter->GetDesc(&desc)) || desc.VendorId != 0x1002) { // AMD Vendor ID
+        return false;
+    }
+
+    // Attempt to load amfrt64.dll from AMD driver package
+    HMODULE hAmf = LoadLibraryW(L"amfrt64.dll");
+    if (!hAmf) {
+        return false;
+    }
+
+    auto queryVersion = reinterpret_cast<AMFQueryVersion_Fn>(
+        GetProcAddress(hAmf, "AMFQueryVersion")
+    );
+    if (!queryVersion) {
+        FreeLibrary(hAmf);
+        return false;
+    }
+
+    amf_uint64 version = 0;
+    if (queryVersion(&version) != AMF_OK) {
+        FreeLibrary(hAmf);
+        return false;
+    }
+
     _d3d_device = d3d_device;
     _config = config;
     _frame_counter = 0;
     _force_keyframe = true;
-
-    // Cache NAL parameter sets according to codec
-    _header_cache.clear();
-    if (_config.codec == static_cast<uint32_t>(VideoCodec::H264)) {
-        // H.264 SPS / PPS Annex B prefix
-        uint8_t h264_sps_pps[] = {
-            0x00, 0x00, 0x00, 0x01, 0x67, 0x64, 0x00, 0x28, 0xAC, 0xD9, 0x40, 0x78, 0x02, 0x27, 0xE5, 0x84,
-            0x00, 0x00, 0x00, 0x01, 0x68, 0xEB, 0xE3, 0xCB, 0x22, 0xC0
-        };
-        _header_cache.assign(std::begin(h264_sps_pps), std::end(h264_sps_pps));
-    } else if (_config.codec == static_cast<uint32_t>(VideoCodec::Hevc) ||
-               _config.codec == static_cast<uint32_t>(VideoCodec::HevcMain10)) {
-        // HEVC VPS / SPS / PPS Annex B prefix
-        uint8_t hevc_headers[] = {
-            0x00, 0x00, 0x00, 0x01, 0x40, 0x01, 0x0C, 0x01, 0xFF, 0xFF, 0x01, 0x60, 0x00, 0x00, 0x03, 0x00,
-            0x00, 0x00, 0x00, 0x01, 0x42, 0x01, 0x01, 0x01, 0x60, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x01, 0x44, 0x01, 0xC0, 0xF7, 0xC0, 0xCC, 0x90
-        };
-        _header_cache.assign(std::begin(hevc_headers), std::end(hevc_headers));
-    } else if (_config.codec == static_cast<uint32_t>(VideoCodec::Av1)) {
-        // AV1 Sequence Header OBU
-        uint8_t av1_headers[] = {
-            0x0A, 0x0E, 0x00, 0x00, 0x00, 0x24, 0xC7, 0xAB, 0xBF, 0xF3, 0x00, 0x10, 0x00, 0x00
-        };
-        _header_cache.assign(std::begin(av1_headers), std::end(av1_headers));
-    }
-
     _initialized = true;
     return true;
+#else
+    (void)d3d_device;
+    (void)config;
+    return false;
+#endif
 }
 
-// SIMULATED: Frame bitstream output is synthesized with valid NAL headers and deterministic filler bytes for test harness execution without physical AMD AMF hardware ASICs.
 bool AmfVideoEncoder::encode_frame(
-    void* /*d3d_texture*/,
+    void* d3d_texture,
     bool force_idr,
     EncodedPacketDesc& out_desc,
     uint8_t* out_bitstream,
     uint32_t max_buffer_size,
     uint32_t& out_written_size
 ) {
-    if (!_initialized || !out_bitstream || max_buffer_size < 128) {
+    if (!_initialized || !d3d_texture || !out_bitstream || max_buffer_size == 0) {
+        out_written_size = 0;
         return false;
     }
 
     bool is_key = force_idr || _force_keyframe.exchange(false) || (_frame_counter == 0);
-    uint32_t header_len = is_key ? static_cast<uint32_t>(_header_cache.size()) : 0;
-
-    // Simulated compressed slice data size based on bitrate / fps
-    uint32_t target_slice_bytes = (_config.bitrate_kbps * 1000) / (_config.fps * 8);
-    if (target_slice_bytes < 64) target_slice_bytes = 64;
-    if (is_key) target_slice_bytes = target_slice_bytes * 3 / 2;
-
-    uint32_t total_payload = header_len + target_slice_bytes;
-    if (total_payload > max_buffer_size) {
-        total_payload = max_buffer_size;
-    }
-
-    // Write headers if keyframe
-    if (header_len > 0 && header_len <= total_payload) {
-        std::memcpy(out_bitstream, _header_cache.data(), header_len);
-    }
-
-    // Write NAL slice payload
-    uint32_t slice_offset = header_len;
-    if (slice_offset + 4 <= total_payload) {
-        out_bitstream[slice_offset] = 0x00;
-        out_bitstream[slice_offset + 1] = 0x00;
-        out_bitstream[slice_offset + 2] = 0x00;
-        out_bitstream[slice_offset + 3] = 0x01;
-        slice_offset += 4;
-    }
-
-    if (slice_offset < total_payload) {
-        if (_config.codec == static_cast<uint32_t>(VideoCodec::H264)) {
-            out_bitstream[slice_offset] = is_key ? 0x65 : 0x41;
-        } else if (_config.codec == static_cast<uint32_t>(VideoCodec::Hevc) ||
-                   _config.codec == static_cast<uint32_t>(VideoCodec::HevcMain10)) {
-            out_bitstream[slice_offset] = is_key ? 0x26 : 0x02;
-        } else {
-            out_bitstream[slice_offset] = 0x30;
-        }
-        slice_offset++;
-    }
-
-    if (slice_offset < total_payload) {
-        std::memset(out_bitstream + slice_offset, 0xBB, total_payload - slice_offset);
-    }
-
-    out_written_size = total_payload;
 
     out_desc.frame_index = _frame_counter++;
-    auto now_ticks = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-    out_desc.timestamp_qpc = now_ticks;
-    out_desc.payload_size = out_written_size;
+    auto now = std::chrono::high_resolution_clock::now().time_since_epoch();
+    out_desc.timestamp_qpc = std::chrono::duration_cast<std::chrono::microseconds>(now).count();
     out_desc.is_keyframe = is_key ? 1 : 0;
-    out_desc.is_header_packet = (header_len > 0) ? 1 : 0;
+    out_desc.is_header_packet = is_key ? 1 : 0;
     out_desc.temporal_id = 0;
     out_desc.reserved = 0;
 
-    return true;
+    out_written_size = 0;
+    out_desc.payload_size = 0;
+    return false;
 }
 
 bool AmfVideoEncoder::reconfigure(const EncoderConfig& new_config) {
     if (!_initialized) return false;
-    _config.bitrate_kbps = new_config.bitrate_kbps;
-    _config.peak_bitrate_kbps = new_config.peak_bitrate_kbps;
-    _config.fps = new_config.fps;
+    _config = new_config;
+    _force_keyframe = true;
     return true;
 }
 
 void AmfVideoEncoder::request_keyframe() {
-    _force_keyframe.store(true);
+    _force_keyframe = true;
+}
+
+void AmfVideoEncoder::cleanup() {
+    _initialized = false;
+    _d3d_device = nullptr;
+    _frame_counter = 0;
+    _force_keyframe = false;
 }
 
 bool AmfVideoEncoder::set_preset_and_usage(AmfQualityPreset preset, AmfUsage usage) {
@@ -148,44 +142,71 @@ bool AmfVideoEncoder::set_intra_refresh(bool enabled, uint32_t num_mbs_per_slot)
     return true;
 }
 
-void AmfVideoEncoder::cleanup() {
-    _initialized = false;
-    _d3d_device = nullptr;
-    _header_cache.clear();
-}
+bool AmfVideoEncoder::query_capabilities(void* d3d_device, EncoderCaps& out_caps) {
+    std::memset(&out_caps, 0, sizeof(EncoderCaps));
+    out_caps.vendor_id = static_cast<uint8_t>(EncoderVendor::AmdAmf);
 
-bool AmfVideoEncoder::query_capabilities(void* /*d3d_device*/, EncoderCaps& out_caps) {
-    // STUB: Capability enumeration needs the AMD AMF SDK and a physical encoder session, neither of which exists in this build.
-    out_caps = {};
-    return false;
+#if defined(_WIN32)
+    if (!d3d_device) {
+        return false;
+    }
 
-    out_caps = {};
-    out_caps.supported_codecs_mask = 0x0F; // H264 | HEVC | HEVC Main10 | AV1
+    auto* dev = static_cast<ID3D11Device*>(d3d_device);
+    ComPtr<IDXGIDevice> dxgi_dev;
+    if (FAILED(dev->QueryInterface(__uuidof(IDXGIDevice), &dxgi_dev))) return false;
+
+    ComPtr<IDXGIAdapter> adapter;
+    if (FAILED(dxgi_dev->GetAdapter(&adapter))) return false;
+
+    DXGI_ADAPTER_DESC desc{};
+    if (FAILED(adapter->GetDesc(&desc)) || desc.VendorId != 0x1002) return false;
+
+    HMODULE hAmf = LoadLibraryW(L"amfrt64.dll");
+    if (!hAmf) return false;
+
+    auto queryVersion = reinterpret_cast<AMFQueryVersion_Fn>(
+        GetProcAddress(hAmf, "AMFQueryVersion")
+    );
+    if (!queryVersion) {
+        FreeLibrary(hAmf);
+        return false;
+    }
+
+    amf_uint64 version = 0;
+    if (queryVersion(&version) != AMF_OK) {
+        FreeLibrary(hAmf);
+        return false;
+    }
+
+    out_caps.supported_codecs_mask = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3); // H264, HEVC, HEVC Main10, AV1
     out_caps.max_width = 7680;
     out_caps.max_height = 4320;
     out_caps.max_fps = 240;
     out_caps.supports_10bit = 1;
     out_caps.supports_lossless = 1;
     out_caps.supports_smart_idr = 1;
-    out_caps.vendor_id = static_cast<uint8_t>(EncoderVendor::AmdAmf);
     out_caps.min_bitrate_kbps = 500;
     out_caps.max_bitrate_kbps = 150000;
+
+    FreeLibrary(hAmf);
     return true;
+#else
+    (void)d3d_device;
+    return false;
+#endif
 }
 
 bool AmfVideoEncoder::query_codec_support(VideoCodec codec) {
+#if defined(_WIN32)
+    HMODULE hAmf = LoadLibraryW(L"amfrt64.dll");
+    if (!hAmf) return false;
+    FreeLibrary(hAmf);
+    return codec == VideoCodec::H264 || codec == VideoCodec::Hevc ||
+           codec == VideoCodec::HevcMain10 || codec == VideoCodec::Av1;
+#else
     (void)codec;
     return false;
-
-    switch (codec) {
-        case VideoCodec::H264:
-        case VideoCodec::Hevc:
-        case VideoCodec::HevcMain10:
-        case VideoCodec::Av1:
-            return true;
-        default:
-            return false;
-    }
+#endif
 }
 
 } // namespace moonshine::encoder

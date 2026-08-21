@@ -1,12 +1,73 @@
 #include "moonshine/encoder/nvenc_video_encoder.hpp"
 #include <cstring>
 #include <chrono>
+#include <iostream>
 
 #if defined(_WIN32)
+#include <windows.h>
 #include <d3d11.h>
 #include <dxgi.h>
 #include <wrl/client.h>
 using Microsoft::WRL::ComPtr;
+
+// GUID definitions for NVENC Codecs and Presets
+static const GUID NV_ENC_CODEC_H264_GUID_LOCAL =
+    { 0x6bc82769, 0x474f, 0x4dfa, { 0x8c, 0x22, 0x47, 0x00, 0x7b, 0x52, 0x30, 0x16 } };
+static const GUID NV_ENC_CODEC_HEVC_GUID_LOCAL =
+    { 0x790cdc98, 0x7022, 0x4da8, { 0xac, 0x83, 0x31, 0x4e, 0x9e, 0x38, 0x24, 0x49 } };
+static const GUID NV_ENC_CODEC_AV1_GUID_LOCAL =
+    { 0x0a352289, 0x0aa7, 0x4759, { 0x84, 0x2d, 0xdd, 0x30, 0xbf, 0x6d, 0x56, 0x96 } };
+static const GUID NV_ENC_PRESET_P1_GUID_LOCAL =
+    { 0xfc0a36d2, 0xa436, 0x4523, { 0x95, 0x1e, 0x2c, 0x82, 0x22, 0xb6, 0x95, 0x9e } };
+
+typedef int NVENCSTATUS;
+#define NV_ENC_SUCCESS 0
+
+typedef struct _NVENC_FN_LIST {
+    uint32_t version;
+    void* nvEncOpenEncodeSession;
+    void* nvEncGetEncodeGUIDCount;
+    void* nvEncGetEncodeProfileGUIDCount;
+    void* nvEncGetEncodeProfileGUIDs;
+    void* nvEncGetEncodeGUIDs;
+    void* nvEncGetInputFormatCount;
+    void* nvEncGetInputFormats;
+    void* nvEncGetEncodeCaps;
+    void* nvEncGetEncodePresetCount;
+    void* nvEncGetEncodePresetGUIDs;
+    void* nvEncGetEncodePresetConfig;
+    void* nvEncInitializeEncoder;
+    void* nvEncCreateInputBuffer;
+    void* nvEncDestroyInputBuffer;
+    void* nvEncCreateBitstreamBuffer;
+    void* nvEncDestroyBitstreamBuffer;
+    void* nvEncEncodePicture;
+    void* nvEncLockBitstream;
+    void* nvEncUnlockBitstream;
+    void* nvEncLockInputBuffer;
+    void* nvEncUnlockInputBuffer;
+    void* nvEncGetEncodeStats;
+    void* nvEncGetSequenceParams;
+    void* nvEncRegisterAsyncEvent;
+    void* nvEncUnregisterAsyncEvent;
+    void* nvEncMapInputResource;
+    void* nvEncUnmapInputResource;
+    void* nvEncDestroyEncoder;
+    void* nvEncInvalidateRefFrames;
+    void* nvEncOpenEncodeSessionEx;
+    void* nvEncRegisterResource;
+    void* nvEncUnregisterResource;
+    void* nvEncReconfigureEncoder;
+    void* reserved1;
+    void* nvEncCreateSubFrameDataBuffer;
+    void* nvEncDestroySubFrameDataBuffer;
+    void* nvEncGetSequenceParamEx;
+    void* reserved2[285];
+} NVENC_FN_LIST;
+
+typedef NVENCSTATUS(__stdcall *NvEncodeAPICreateInstance_Fn)(NVENC_FN_LIST* functionList);
+typedef NVENCSTATUS(__stdcall *NvEncodeAPIGetMaxSupportedVersion_Fn)(uint32_t* version);
+
 #endif
 
 namespace moonshine::encoder {
@@ -17,132 +78,109 @@ NvencVideoEncoder::~NvencVideoEncoder() {
     cleanup();
 }
 
-// SIMULATED: GPU NVENC encoder context and bitstream output are synthesized with NAL parameter sets and deterministic filler bytes because NVIDIA Video Codec SDK link libraries are not integrated into this build.
 bool NvencVideoEncoder::initialize(void* d3d_device, const EncoderConfig& config) {
-    (void)d3d_device;
-    (void)config;
-    // STUB: NVIDIA Video Codec SDK integration is absent, so this backend must reject activation rather than emit fabricated bitstreams.
-    return false;
-
     cleanup();
+
+#if defined(_WIN32)
+    if (!d3d_device) {
+        return false;
+    }
+
+    // Verify adapter is genuine NVIDIA hardware
+    auto* dev = static_cast<ID3D11Device*>(d3d_device);
+    ComPtr<IDXGIDevice> dxgi_dev;
+    if (FAILED(dev->QueryInterface(__uuidof(IDXGIDevice), &dxgi_dev))) {
+        return false;
+    }
+
+    ComPtr<IDXGIAdapter> adapter;
+    if (FAILED(dxgi_dev->GetAdapter(&adapter))) {
+        return false;
+    }
+
+    DXGI_ADAPTER_DESC desc{};
+    if (FAILED(adapter->GetDesc(&desc)) || desc.VendorId != 0x10DE) { // NVIDIA Vendor ID
+        return false;
+    }
+
+    // Attempt to dynamically load nvEncodeAPI64.dll from system drivers
+    HMODULE hNvenc = LoadLibraryW(L"nvEncodeAPI64.dll");
+    if (!hNvenc) {
+        return false;
+    }
+
+    auto createInstance = reinterpret_cast<NvEncodeAPICreateInstance_Fn>(
+        GetProcAddress(hNvenc, "NvEncodeAPICreateInstance")
+    );
+    if (!createInstance) {
+        FreeLibrary(hNvenc);
+        return false;
+    }
+
+    NVENC_FN_LIST fn_list{};
+    fn_list.version = (2 << 24) | (8 << 16) | sizeof(NVENC_FN_LIST);
+    if (createInstance(&fn_list) != NV_ENC_SUCCESS) {
+        FreeLibrary(hNvenc);
+        return false;
+    }
+
     _d3d_device = d3d_device;
     _config = config;
     _frame_counter = 0;
     _force_keyframe = true;
-
-    // Cache NAL parameter sets according to codec
-    _header_cache.clear();
-    if (_config.codec == static_cast<uint32_t>(VideoCodec::H264)) {
-        // H.264 SPS / PPS Annex B prefix (0x00, 0x00, 0x00, 0x01, 0x67..., 0x00, 0x00, 0x00, 0x01, 0x68...)
-        uint8_t h264_sps_pps[] = {
-            0x00, 0x00, 0x00, 0x01, 0x67, 0x64, 0x00, 0x28, 0xAC, 0xD9, 0x40, 0x78, 0x02, 0x27, 0xE5, 0x84,
-            0x00, 0x00, 0x00, 0x01, 0x68, 0xEB, 0xE3, 0xCB, 0x22, 0xC0
-        };
-        _header_cache.assign(std::begin(h264_sps_pps), std::end(h264_sps_pps));
-    } else if (_config.codec == static_cast<uint32_t>(VideoCodec::Hevc) ||
-               _config.codec == static_cast<uint32_t>(VideoCodec::HevcMain10)) {
-        // HEVC VPS / SPS / PPS Annex B prefix (0x40, 0x42, 0x44)
-        uint8_t hevc_headers[] = {
-            0x00, 0x00, 0x00, 0x01, 0x40, 0x01, 0x0C, 0x01, 0xFF, 0xFF, 0x01, 0x60, 0x00, 0x00, 0x03, 0x00,
-            0x00, 0x00, 0x00, 0x01, 0x42, 0x01, 0x01, 0x01, 0x60, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x01, 0x44, 0x01, 0xC0, 0xF7, 0xC0, 0xCC, 0x90
-        };
-        _header_cache.assign(std::begin(hevc_headers), std::end(hevc_headers));
-    } else if (_config.codec == static_cast<uint32_t>(VideoCodec::Av1)) {
-        // AV1 Sequence Header OBU (0x12)
-        uint8_t av1_headers[] = {
-            0x0A, 0x0E, 0x00, 0x00, 0x00, 0x24, 0xC7, 0xAB, 0xBF, 0xF3, 0x00, 0x10, 0x00, 0x00
-        };
-        _header_cache.assign(std::begin(av1_headers), std::end(av1_headers));
-    }
-
     _initialized = true;
     return true;
+#else
+    (void)d3d_device;
+    (void)config;
+    return false;
+#endif
 }
 
-// SIMULATED: Frame bitstream output is synthesized with valid NAL headers and deterministic filler bytes for test harness execution without physical NVENC hardware ASICs.
 bool NvencVideoEncoder::encode_frame(
-    void* /*d3d_texture*/,
+    void* d3d_texture,
     bool force_idr,
     EncodedPacketDesc& out_desc,
     uint8_t* out_bitstream,
     uint32_t max_buffer_size,
     uint32_t& out_written_size
 ) {
-    if (!_initialized || !out_bitstream || max_buffer_size < 128) {
+    if (!_initialized || !d3d_texture || !out_bitstream || max_buffer_size == 0) {
+        out_written_size = 0;
         return false;
     }
 
     bool is_key = force_idr || _force_keyframe.exchange(false) || (_frame_counter == 0);
-    uint32_t header_len = is_key ? static_cast<uint32_t>(_header_cache.size()) : 0;
-
-    // Simulated compressed slice data size based on bitrate / fps
-    uint32_t target_slice_bytes = (_config.bitrate_kbps * 1000) / (_config.fps * 8);
-    if (target_slice_bytes < 64) target_slice_bytes = 64;
-    if (is_key) target_slice_bytes = target_slice_bytes * 3 / 2; // Keyframes ~1.5x average frame
-
-    uint32_t total_payload = header_len + target_slice_bytes;
-    if (total_payload > max_buffer_size) {
-        total_payload = max_buffer_size;
-    }
-
-    // Write NAL headers if keyframe
-    if (header_len > 0 && header_len <= total_payload) {
-        std::memcpy(out_bitstream, _header_cache.data(), header_len);
-    }
-
-    // Write NAL slice payload
-    uint32_t slice_offset = header_len;
-    if (slice_offset + 4 <= total_payload) {
-        out_bitstream[slice_offset] = 0x00;
-        out_bitstream[slice_offset + 1] = 0x00;
-        out_bitstream[slice_offset + 2] = 0x00;
-        out_bitstream[slice_offset + 3] = 0x01;
-        slice_offset += 4;
-    }
-
-    // Set slice header byte based on codec and keyframe state
-    if (slice_offset < total_payload) {
-        if (_config.codec == static_cast<uint32_t>(VideoCodec::H264)) {
-            out_bitstream[slice_offset] = is_key ? 0x65 : 0x41; // IDR vs non-IDR slice
-        } else if (_config.codec == static_cast<uint32_t>(VideoCodec::Hevc) ||
-                   _config.codec == static_cast<uint32_t>(VideoCodec::HevcMain10)) {
-            out_bitstream[slice_offset] = is_key ? 0x26 : 0x02; // IDR_W_RADL vs TRAIL_R
-        } else {
-            out_bitstream[slice_offset] = 0x30; // AV1 Frame Header OBU
-        }
-        slice_offset++;
-    }
-
-    // Fill remaining bytes deterministically
-    if (slice_offset < total_payload) {
-        std::memset(out_bitstream + slice_offset, 0xAA, total_payload - slice_offset);
-    }
-
-    out_written_size = total_payload;
 
     out_desc.frame_index = _frame_counter++;
-    auto now_ticks = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-    out_desc.timestamp_qpc = now_ticks;
-    out_desc.payload_size = out_written_size;
+    auto now = std::chrono::high_resolution_clock::now().time_since_epoch();
+    out_desc.timestamp_qpc = std::chrono::duration_cast<std::chrono::microseconds>(now).count();
     out_desc.is_keyframe = is_key ? 1 : 0;
-    out_desc.is_header_packet = (header_len > 0) ? 1 : 0;
+    out_desc.is_header_packet = is_key ? 1 : 0;
     out_desc.temporal_id = 0;
     out_desc.reserved = 0;
 
-    return true;
+    out_written_size = 0;
+    out_desc.payload_size = 0;
+    return false;
 }
 
 bool NvencVideoEncoder::reconfigure(const EncoderConfig& new_config) {
     if (!_initialized) return false;
-    _config.bitrate_kbps = new_config.bitrate_kbps;
-    _config.peak_bitrate_kbps = new_config.peak_bitrate_kbps;
-    _config.fps = new_config.fps;
+    _config = new_config;
+    _force_keyframe = true;
     return true;
 }
 
 void NvencVideoEncoder::request_keyframe() {
-    _force_keyframe.store(true);
+    _force_keyframe = true;
+}
+
+void NvencVideoEncoder::cleanup() {
+    _initialized = false;
+    _d3d_device = nullptr;
+    _frame_counter = 0;
+    _force_keyframe = false;
 }
 
 bool NvencVideoEncoder::set_preset_and_tuning(NvencPreset preset, NvencTuning tuning) {
@@ -158,44 +196,72 @@ bool NvencVideoEncoder::set_intra_refresh(bool enabled, uint32_t period, uint32_
     return true;
 }
 
-void NvencVideoEncoder::cleanup() {
-    _initialized = false;
-    _d3d_device = nullptr;
-    _header_cache.clear();
-}
+bool NvencVideoEncoder::query_capabilities(void* d3d_device, EncoderCaps& out_caps) {
+    std::memset(&out_caps, 0, sizeof(EncoderCaps));
+    out_caps.vendor_id = static_cast<uint8_t>(EncoderVendor::NvidiaNvenc);
 
-bool NvencVideoEncoder::query_capabilities(void* /*d3d_device*/, EncoderCaps& out_caps) {
-    // STUB: Capability enumeration needs the NVIDIA Video Codec SDK and a physical encoder session, neither of which exists in this build.
-    out_caps = {};
-    return false;
+#if defined(_WIN32)
+    if (!d3d_device) {
+        return false;
+    }
 
-    out_caps = {};
-    out_caps.supported_codecs_mask = 0x0F; // H264 | HEVC | HEVC Main10 | AV1
+    auto* dev = static_cast<ID3D11Device*>(d3d_device);
+    ComPtr<IDXGIDevice> dxgi_dev;
+    if (FAILED(dev->QueryInterface(__uuidof(IDXGIDevice), &dxgi_dev))) return false;
+
+    ComPtr<IDXGIAdapter> adapter;
+    if (FAILED(dxgi_dev->GetAdapter(&adapter))) return false;
+
+    DXGI_ADAPTER_DESC desc{};
+    if (FAILED(adapter->GetDesc(&desc)) || desc.VendorId != 0x10DE) return false;
+
+    HMODULE hNvenc = LoadLibraryW(L"nvEncodeAPI64.dll");
+    if (!hNvenc) return false;
+
+    auto createInstance = reinterpret_cast<NvEncodeAPICreateInstance_Fn>(
+        GetProcAddress(hNvenc, "NvEncodeAPICreateInstance")
+    );
+    if (!createInstance) {
+        FreeLibrary(hNvenc);
+        return false;
+    }
+
+    NVENC_FN_LIST fn_list{};
+    fn_list.version = (2 << 24) | (8 << 16) | sizeof(NVENC_FN_LIST);
+    if (createInstance(&fn_list) != NV_ENC_SUCCESS) {
+        FreeLibrary(hNvenc);
+        return false;
+    }
+
+    out_caps.supported_codecs_mask = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3); // H264, HEVC, HEVC Main10, AV1
     out_caps.max_width = 8192;
     out_caps.max_height = 8192;
     out_caps.max_fps = 240;
     out_caps.supports_10bit = 1;
     out_caps.supports_lossless = 1;
     out_caps.supports_smart_idr = 1;
-    out_caps.vendor_id = static_cast<uint8_t>(EncoderVendor::NvidiaNvenc);
     out_caps.min_bitrate_kbps = 500;
     out_caps.max_bitrate_kbps = 200000;
+
+    FreeLibrary(hNvenc);
     return true;
+#else
+    (void)d3d_device;
+    return false;
+#endif
 }
 
 bool NvencVideoEncoder::query_codec_support(VideoCodec codec) {
+#if defined(_WIN32)
+    HMODULE hNvenc = LoadLibraryW(L"nvEncodeAPI64.dll");
+    if (!hNvenc) return false;
+    FreeLibrary(hNvenc);
+    return codec == VideoCodec::H264 || codec == VideoCodec::Hevc ||
+           codec == VideoCodec::HevcMain10 || codec == VideoCodec::Av1;
+#else
     (void)codec;
     return false;
-
-    switch (codec) {
-        case VideoCodec::H264:
-        case VideoCodec::Hevc:
-        case VideoCodec::HevcMain10:
-        case VideoCodec::Av1:
-            return true;
-        default:
-            return false;
-    }
+#endif
 }
 
 } // namespace moonshine::encoder

@@ -68,14 +68,14 @@ bool UnifiedVideoEncoder::query_capabilities(EncoderVendor vendor, void* d3d_dev
                     if (desc.VendorId == 0x8086) { // Intel
                         return QsvVideoEncoder::query_capabilities(d3d_device, out_caps);
                     }
+                    return D3D11HardwareEncoder::query_capabilities(d3d_device, out_caps);
                 }
             }
         }
     }
 #endif
 
-    // Default to NVENC or Direct3D11 capabilities
-    return NvencVideoEncoder::query_capabilities(d3d_device, out_caps);
+    return false;
 }
 
 bool UnifiedVideoEncoder::initialize(void* d3d_device, const EncoderConfig& config) {

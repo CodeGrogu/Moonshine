@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Moonshine.Interop;
 
@@ -19,6 +20,10 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
     private bool _disposed;
     private readonly Lock _lock = new();
 
+    private ulong _framesEncoded;
+    private ulong _totalEncodingTimeQpc;
+    private ulong _encodingErrorsCount;
+
     public uint Width => _width;
     public uint Height => _height;
     public uint Fps => Volatile.Read(ref _fps);
@@ -26,6 +31,18 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
     public VideoCodec Codec => _codec;
     public EncoderVendor Vendor => _vendor;
     public bool IsActive => _handle != IntPtr.Zero && !_disposed;
+
+    public ulong FramesEncoded => Volatile.Read(ref _framesEncoded);
+    public ulong EncodingErrorsCount => Volatile.Read(ref _encodingErrorsCount);
+    public double AverageEncodingLatencyMicroseconds
+    {
+        get
+        {
+            ulong frames = Volatile.Read(ref _framesEncoded);
+            ulong totalQpc = Volatile.Read(ref _totalEncodingTimeQpc);
+            return frames > 0 ? (double)totalQpc / frames * (1_000_000.0 / Stopwatch.Frequency) : 0.0;
+        }
+    }
 
     public HardwareVideoEncoderPipeline(
         uint width,
@@ -79,6 +96,7 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
     {
         desc = default;
         bytesWritten = 0;
+        long startQpc = Stopwatch.GetTimestamp();
 
         lock (_lock)
         {
@@ -99,9 +117,13 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
                 if (res > 0)
                 {
                     bytesWritten = (int)written;
+                    long elapsed = Stopwatch.GetTimestamp() - startQpc;
+                    Interlocked.Increment(ref _framesEncoded);
+                    Interlocked.Add(ref _totalEncodingTimeQpc, (ulong)elapsed);
                     return true;
                 }
 
+                Interlocked.Increment(ref _encodingErrorsCount);
                 return false;
             }
         }
@@ -154,6 +176,11 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
                 MoonshineNativeMethods.EncoderRequestKeyframe(_handle);
             }
         }
+    }
+
+    public static bool TryQueryCapabilities(EncoderVendor vendor, IntPtr d3dDevice, out MoonshineEncoderCaps caps)
+    {
+        return MoonshineNativeMethods.EncoderQueryCaps((uint)vendor, d3dDevice, out caps) > 0;
     }
 
     public void Dispose()

@@ -29,6 +29,7 @@ public sealed class UnifiedHardwareEncoderEngine : IDisposable
     public long KeyframesEmitted => Interlocked.Read(ref _keyframesEmitted);
     public long BytesEmitted => Interlocked.Read(ref _bytesEmitted);
     public long EncodingErrors => Interlocked.Read(ref _encodingErrors);
+    public double AverageEncodingLatencyMicroseconds => _pipeline.AverageEncodingLatencyMicroseconds;
 
     public UnifiedHardwareEncoderEngine(
         uint width,

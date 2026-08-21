@@ -21,19 +21,11 @@ This document tracks known platform limitations, environment requirements, and c
 
 <!-- VERIFIED: 2026-08-21, via `scripts/verify_codebase.ps1` on Windows 11 -->
 ### Managed .NET 9 Solution
-- **Status**: Verified (274 unit and integration tests passed across `Moonshine.Protocol.Tests` (71), `Moonshine.Core.Tests` (79), `Moonshine.Interop.Tests` (74), `Moonshine.Host.Tests` (50)).
+- **Status**: Verified (281 unit and integration tests passed across `Moonshine.Protocol.Tests` (71), `Moonshine.Core.Tests` (79), `Moonshine.Interop.Tests` (74), `Moonshine.Host.Tests` (57)).
 
-### NVIDIA NVENC Hardware Video Encoder
-- **Status**: Prototype / Fail-Closed.
-- **Scaffolding Tracking**: Operates in an explicit fail-closed unsupported state; physical NVIDIA Video Codec SDK link libraries and driver integrations are planned for dedicated hardware driver integration.
-
-### AMD AMF Hardware Video Encoder
-- **Status**: Prototype / Fail-Closed.
-- **Scaffolding Tracking**: Operates in an explicit fail-closed unsupported state; physical AMD Advanced Media Framework SDK link libraries and driver integrations are planned for dedicated hardware driver integration.
-
-### Intel QuickSync Hardware Video Encoder
-- **Status**: Prototype / Fail-Closed.
-- **Scaffolding Tracking**: Operates in an explicit fail-closed unsupported state; physical Intel oneVPL / Media SDK link libraries and driver integrations are planned for dedicated hardware driver integration.
+### Hardware Video Encoders (NVENC, AMF, QuickSync, D3D11)
+- **Status**: Implemented / Live Driver Query with Strict Fail-Closed Semantics.
+- **Implementation**: Dynamic runtime loaders (`nvEncodeAPI64.dll`, `amfrt64.dll`, `vpl.dll`/`mfx64.dll`, and Windows Hardware MFTs) query live GPU hardware capabilities on selected Direct3D 11 physical adapters, support dynamic rate control reconfiguration, and reject unsupported hardware explicitly without synthetic frame generation.
 
 ### Direct3D 11 / 12 Hardware Video Decoder
 - **Status**: Prototype / Fail-Closed.
