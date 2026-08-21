@@ -2,6 +2,7 @@
 #include <vector>
 #include <cstring>
 #include <cstdlib>
+#include <algorithm>
 #include "moonshine/fec/reed_solomon_simd.hpp"
 
 #define TEST_ASSERT(expr) do { \
@@ -12,6 +13,49 @@
 } while(0)
 
 using namespace moonshine::fec;
+
+namespace {
+
+// Standalone Scalar Reference Cauchy Generator Matrix and Encoder
+void ScalarReferenceBuildGenerator(uint8_t* matrix, int k, int m) {
+    std::memset(matrix, 0, static_cast<size_t>((k + m) * k));
+    for (int i = 0; i < k; ++i) {
+        matrix[i * k + i] = 1;
+    }
+    if (m == 1) {
+        for (int j = 0; j < k; ++j) {
+            matrix[k * k + j] = 1;
+        }
+    } else {
+        for (int p = 0; p < m; ++p) {
+            uint8_t xp = static_cast<uint8_t>(p);
+            for (int j = 0; j < k; ++j) {
+                uint8_t yj = static_cast<uint8_t>(m + j);
+                matrix[(k + p) * k + j] = ReedSolomonSimd::GfInverseScalar(xp ^ yj);
+            }
+        }
+    }
+}
+
+void ScalarReferenceEncode(const uint8_t* const* data, int k, uint8_t** parity, int m, int shard_size) {
+    std::vector<uint8_t> gen((k + m) * k);
+    ScalarReferenceBuildGenerator(gen.data(), k, m);
+
+    for (int p = 0; p < m; ++p) {
+        std::memset(parity[p], 0, static_cast<size_t>(shard_size));
+        const uint8_t* row = &gen[(k + p) * k];
+        for (int j = 0; j < k; ++j) {
+            uint8_t coeff = row[j];
+            if (coeff != 0) {
+                for (int b = 0; b < shard_size; ++b) {
+                    parity[p][b] ^= ReedSolomonSimd::GfMultiplyScalar(data[j][b], coeff);
+                }
+            }
+        }
+    }
+}
+
+} // anonymous namespace
 
 void TestSimdArchitectureDetection()
 {
@@ -100,79 +144,169 @@ void TestGaloisFieldMultiplication()
     }
 }
 
-void TestSingleParityRecovery()
+void TestParityEncodingVsScalarReference()
 {
-    std::cout << "[Test] Reed-Solomon single parity shard recovery..." << std::endl;
-    constexpr int kShards = 5;
-    constexpr int kShardSize = 1400;
+    std::cout << "[Test] Comparing SIMD Encode output against independent Scalar Reference..." << std::endl;
+    const struct MatrixConfig { int k; int m; int size; } configs[] = {
+        {5, 1, 1400},
+        {10, 2, 1400},
+        {20, 4, 1400},
+        {40, 8, 1400}
+    };
 
-    std::vector<std::vector<uint8_t>> shards(kShards, std::vector<uint8_t>(kShardSize));
-    std::vector<uint8_t*> shard_ptrs(kShards);
-
-    for (int s = 0; s < kShards - 1; s++)
-    {
-        for (int i = 0; i < kShardSize; i++)
-        {
-            shards[s][i] = static_cast<uint8_t>((s + 1) * 31 + i);
-        }
-        shard_ptrs[s] = shards[s].data();
-    }
-    shard_ptrs[kShards - 1] = shards[kShards - 1].data();
-
-    // Compute parity
-    std::memset(shards[kShards - 1].data(), 0, kShardSize);
-    for (int s = 0; s < kShards - 1; s++)
-    {
-        ReedSolomonSimd::VectorXor(shards[kShards - 1].data(), shards[s].data(), kShardSize);
-    }
-
-    // Simulate erasing shard 2
-    std::vector<uint8_t> original_shard2 = shards[2];
-    std::memset(shards[2].data(), 0, kShardSize);
-
-    int erased_indices[] = {2};
     ReedSolomonSimd codec;
-    int res = codec.Reconstruct(shard_ptrs.data(), kShards, kShardSize, erased_indices, 1);
-    TEST_ASSERT(res == 0);
-    TEST_ASSERT(std::memcmp(shards[2].data(), original_shard2.data(), kShardSize) == 0);
+
+    for (const auto& cfg : configs) {
+        int k = cfg.k;
+        int m = cfg.m;
+        int size = cfg.size;
+
+        std::vector<std::vector<uint8_t>> data(k, std::vector<uint8_t>(size));
+        std::vector<const uint8_t*> data_ptrs(k);
+        for (int i = 0; i < k; ++i) {
+            for (int b = 0; b < size; ++b) {
+                data[i][b] = static_cast<uint8_t>((i + 1) * 37 + b * 13);
+            }
+            data_ptrs[i] = data[i].data();
+        }
+
+        std::vector<std::vector<uint8_t>> simd_parity(m, std::vector<uint8_t>(size, 0));
+        std::vector<uint8_t*> simd_parity_ptrs(m);
+        for (int p = 0; p < m; ++p) simd_parity_ptrs[p] = simd_parity[p].data();
+
+        std::vector<std::vector<uint8_t>> ref_parity(m, std::vector<uint8_t>(size, 0));
+        std::vector<uint8_t*> ref_parity_ptrs(m);
+        for (int p = 0; p < m; ++p) ref_parity_ptrs[p] = ref_parity[p].data();
+
+        int res = codec.Encode(data_ptrs.data(), k, simd_parity_ptrs.data(), m, size);
+        TEST_ASSERT(res == 0);
+
+        ScalarReferenceEncode(data_ptrs.data(), k, ref_parity_ptrs.data(), m, size);
+
+        for (int p = 0; p < m; ++p) {
+            TEST_ASSERT(std::memcmp(simd_parity[p].data(), ref_parity[p].data(), static_cast<size_t>(size)) == 0);
+        }
+    }
 }
 
-void TestMultiShardRecovery()
+void RunErasureRecoveryScenario(int k, int m, int size, const std::vector<int>& erased)
 {
-    std::cout << "[Test] Reed-Solomon multi-shard reconstruction..." << std::endl;
-    constexpr int kShards = 6;
-    constexpr int kShardSize = 1400;
+    int total = k + m;
+    int e_count = static_cast<int>(erased.size());
 
-    std::vector<std::vector<uint8_t>> shards(kShards, std::vector<uint8_t>(kShardSize));
-    std::vector<uint8_t*> shard_ptrs(kShards);
+    std::vector<std::vector<uint8_t>> shards(total, std::vector<uint8_t>(size));
+    std::vector<std::vector<uint8_t>> backup(total, std::vector<uint8_t>(size));
+    std::vector<uint8_t*> shard_ptrs(total);
+    std::vector<const uint8_t*> data_ptrs(k);
 
-    for (int s = 0; s < kShards; s++)
-    {
-        for (int i = 0; i < kShardSize; i++)
-        {
-            shards[s][i] = static_cast<uint8_t>((s + 1) * 17 + i);
+    for (int i = 0; i < k; ++i) {
+        for (int b = 0; b < size; ++b) {
+            shards[i][b] = static_cast<uint8_t>((i + 1) * 23 + b * 7 + (i ^ b));
         }
-        shard_ptrs[s] = shards[s].data();
+        data_ptrs[i] = shards[i].data();
     }
 
-    int erased_indices[] = {1, 3};
+    std::vector<uint8_t*> parity_ptrs(m);
+    for (int p = 0; p < m; ++p) {
+        parity_ptrs[p] = shards[k + p].data();
+    }
+
+    // Encode ground truth parities using independent scalar reference
+    ScalarReferenceEncode(data_ptrs.data(), k, parity_ptrs.data(), m, size);
+
+    for (int i = 0; i < total; ++i) {
+        backup[i] = shards[i];
+        shard_ptrs[i] = shards[i].data();
+    }
+
+    // Erase specified shards
+    for (int idx : erased) {
+        std::memset(shards[idx].data(), 0xCC, static_cast<size_t>(size));
+    }
+
     ReedSolomonSimd codec;
-    int res = codec.Reconstruct(shard_ptrs.data(), kShards, kShardSize, erased_indices, 2);
+    int res = codec.Reconstruct(shard_ptrs.data(), k, m, size, erased.data(), e_count);
     TEST_ASSERT(res == 0);
+
+    // Verify exact byte-for-byte ground truth equality for all shards
+    for (int i = 0; i < total; ++i) {
+        TEST_ASSERT(std::memcmp(shards[i].data(), backup[i].data(), static_cast<size_t>(size)) == 0);
+    }
 }
 
-void TestInvalidInputs()
+void TestMultiShardRecoveryGroundTruth()
 {
-    std::cout << "[Test] FEC error handling and invalid input rejection..." << std::endl;
+    std::cout << "[Test] Comprehensive Reed-Solomon Multi-Shard Ground-Truth Reconstruction..." << std::endl;
+    constexpr int kShardSize = 1400;
+
+    // 1. Matrix 5+1 (Single XOR Parity)
+    std::cout << "  Testing 5+1 Matrix (E=1)..." << std::endl;
+    RunErasureRecoveryScenario(5, 1, kShardSize, {0});
+    RunErasureRecoveryScenario(5, 1, kShardSize, {2});
+    RunErasureRecoveryScenario(5, 1, kShardSize, {5}); // Parity erased
+
+    // 2. Matrix 10+2 (Cauchy Matrix)
+    std::cout << "  Testing 10+2 Matrix (E=1..2)..." << std::endl;
+    RunErasureRecoveryScenario(10, 2, kShardSize, {3});
+    RunErasureRecoveryScenario(10, 2, kShardSize, {10}); // Parity 0 erased
+    RunErasureRecoveryScenario(10, 2, kShardSize, {1, 7}); // Two data shards erased
+    RunErasureRecoveryScenario(10, 2, kShardSize, {4, 11}); // Data + Parity erased
+    RunErasureRecoveryScenario(10, 2, kShardSize, {10, 11}); // Both parities erased
+
+    // 3. Matrix 20+4 (Cauchy Matrix)
+    std::cout << "  Testing 20+4 Matrix (E=1..4)..." << std::endl;
+    RunErasureRecoveryScenario(20, 4, kShardSize, {12});
+    RunErasureRecoveryScenario(20, 4, kShardSize, {3, 18});
+    RunErasureRecoveryScenario(20, 4, kShardSize, {2, 9, 21});
+    RunErasureRecoveryScenario(20, 4, kShardSize, {0, 5, 14, 22}); // 3 data + 1 parity
+    RunErasureRecoveryScenario(20, 4, kShardSize, {20, 21, 22, 23}); // All 4 parities erased
+    RunErasureRecoveryScenario(20, 4, kShardSize, {0, 1, 2, 3}); // 4 data erasures
+
+    // 4. Matrix 40+8 (Cauchy Matrix)
+    std::cout << "  Testing 40+8 Matrix (E=1..8)..." << std::endl;
+    RunErasureRecoveryScenario(40, 8, kShardSize, {19});
+    RunErasureRecoveryScenario(40, 8, kShardSize, {7, 33});
+    RunErasureRecoveryScenario(40, 8, kShardSize, {4, 12, 28, 45});
+    RunErasureRecoveryScenario(40, 8, kShardSize, {1, 6, 11, 16, 21, 26, 31, 36}); // 8 data erasures
+    RunErasureRecoveryScenario(40, 8, kShardSize, {40, 41, 42, 43, 44, 45, 46, 47}); // All 8 parities erased
+    RunErasureRecoveryScenario(40, 8, kShardSize, {0, 5, 10, 15, 20, 41, 43, 47}); // Mixed 5 data + 3 parity
+}
+
+void TestNegativeAndDefensiveValidation()
+{
+    std::cout << "[Test] Negative testing and defensive validation..." << std::endl;
     ReedSolomonSimd codec;
-    int erased[] = {0};
-    TEST_ASSERT(codec.Reconstruct(nullptr, 5, 1400, erased, 1) != 0);
-    uint8_t invalidBuffer[16];
-    uint8_t* ptrs[] = {invalidBuffer};
-    TEST_ASSERT(codec.Reconstruct(ptrs, 0, 1400, erased, 1) != 0);
-    TEST_ASSERT(codec.Reconstruct(ptrs, 1, 0, erased, 1) != 0);
-    TEST_ASSERT(codec.Reconstruct(ptrs, 1, 1400, nullptr, 1) != 0);
-    TEST_ASSERT(codec.Reconstruct(ptrs, 1, 1400, erased, 0) != 0);
+    constexpr int kShardSize = 1400;
+
+    alignas(64) uint8_t buffer1[1400] = {0};
+    alignas(64) uint8_t buffer2[1400] = {0};
+    uint8_t* ptrs2[] = {buffer1, buffer2};
+    int erased1[] = {0};
+
+    // 1. Nullptr and zero size
+    TEST_ASSERT(codec.Reconstruct(nullptr, 1, 1, kShardSize, erased1, 1) != 0);
+    TEST_ASSERT(codec.Reconstruct(ptrs2, 1, 1, 0, erased1, 1) != 0);
+    TEST_ASSERT(codec.Reconstruct(ptrs2, 1, 1, kShardSize, nullptr, 1) != 0);
+    TEST_ASSERT(codec.Reconstruct(ptrs2, 0, 1, kShardSize, erased1, 1) != 0);
+    TEST_ASSERT(codec.Reconstruct(ptrs2, 1, 0, kShardSize, erased1, 1) != 0);
+
+    // 2. Too many erasures (E > M)
+    int erased_too_many[] = {0, 1, 2};
+    TEST_ASSERT(codec.Reconstruct(ptrs2, 1, 1, kShardSize, erased_too_many, 3) == -2);
+
+    // 3. Duplicate erased indices
+    int erased_duplicate[] = {0, 0};
+    TEST_ASSERT(codec.Reconstruct(ptrs2, 1, 2, kShardSize, erased_duplicate, 2) == -1);
+
+    // 4. Out of range erased indices
+    int erased_negative[] = {-1};
+    TEST_ASSERT(codec.Reconstruct(ptrs2, 1, 1, kShardSize, erased_negative, 1) == -1);
+    int erased_oob[] = {5};
+    TEST_ASSERT(codec.Reconstruct(ptrs2, 1, 1, kShardSize, erased_oob, 1) == -1);
+
+    // 5. Exceeding max data/parity shards
+    TEST_ASSERT(codec.Reconstruct(ptrs2, 65, 1, kShardSize, erased1, 1) != 0);
+    TEST_ASSERT(codec.Reconstruct(ptrs2, 1, 33, kShardSize, erased1, 1) != 0);
 }
 
 int main()
@@ -183,9 +317,9 @@ int main()
     TestVectorXorEdgeLengths();
     TestVectorXorSelfInverse();
     TestGaloisFieldMultiplication();
-    TestSingleParityRecovery();
-    TestMultiShardRecovery();
-    TestInvalidInputs();
+    TestParityEncodingVsScalarReference();
+    TestMultiShardRecoveryGroundTruth();
+    TestNegativeAndDefensiveValidation();
     std::cout << "All FEC SIMD tests passed successfully." << std::endl;
     return 0;
 }

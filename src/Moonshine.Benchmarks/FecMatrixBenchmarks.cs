@@ -38,6 +38,11 @@ public unsafe class FecMatrixBenchmarks
             _handles10[i] = GCHandle.Alloc(_shards10[i], GCHandleType.Pinned);
             _shardPointers10[i] = (byte*)_handles10[i].AddrOfPinnedObject();
         }
+        fixed (byte** ptrs = _shardPointers10)
+        {
+            int res = MoonshineNativeMethods.FecEncodeSimd(ptrs, 10, ptrs + 10, 2, ShardSize);
+            if (res != 0) throw new InvalidOperationException($"10+2 FEC encoding failed with code {res}");
+        }
         _erasedIndices2 = [1, 3];
 
         // 20 + 4 Matrix
@@ -51,6 +56,11 @@ public unsafe class FecMatrixBenchmarks
             _handles20[i] = GCHandle.Alloc(_shards20[i], GCHandleType.Pinned);
             _shardPointers20[i] = (byte*)_handles20[i].AddrOfPinnedObject();
         }
+        fixed (byte** ptrs = _shardPointers20)
+        {
+            int res = MoonshineNativeMethods.FecEncodeSimd(ptrs, 20, ptrs + 20, 4, ShardSize);
+            if (res != 0) throw new InvalidOperationException($"20+4 FEC encoding failed with code {res}");
+        }
         _erasedIndices4 = [2, 5, 8, 12];
 
         // 40 + 8 Matrix
@@ -63,6 +73,11 @@ public unsafe class FecMatrixBenchmarks
             Array.Fill(_shards40[i], (byte)(i + 1));
             _handles40[i] = GCHandle.Alloc(_shards40[i], GCHandleType.Pinned);
             _shardPointers40[i] = (byte*)_handles40[i].AddrOfPinnedObject();
+        }
+        fixed (byte** ptrs = _shardPointers40)
+        {
+            int res = MoonshineNativeMethods.FecEncodeSimd(ptrs, 40, ptrs + 40, 8, ShardSize);
+            if (res != 0) throw new InvalidOperationException($"40+8 FEC encoding failed with code {res}");
         }
         _erasedIndices8 = [1, 4, 7, 11, 15, 22, 28, 35];
     }
@@ -92,7 +107,7 @@ public unsafe class FecMatrixBenchmarks
         fixed (byte** ptrs = _shardPointers10)
         fixed (int* erased = _erasedIndices2)
         {
-            return MoonshineNativeMethods.FecRecoverSimd(ptrs, 12, ShardSize, erased, 2);
+            return MoonshineNativeMethods.FecReconstructSimd(ptrs, 10, 2, ShardSize, erased, 2);
         }
     }
 
@@ -102,7 +117,7 @@ public unsafe class FecMatrixBenchmarks
         fixed (byte** ptrs = _shardPointers20)
         fixed (int* erased = _erasedIndices4)
         {
-            return MoonshineNativeMethods.FecRecoverSimd(ptrs, 24, ShardSize, erased, 4);
+            return MoonshineNativeMethods.FecReconstructSimd(ptrs, 20, 4, ShardSize, erased, 4);
         }
     }
 
@@ -112,7 +127,7 @@ public unsafe class FecMatrixBenchmarks
         fixed (byte** ptrs = _shardPointers40)
         fixed (int* erased = _erasedIndices8)
         {
-            return MoonshineNativeMethods.FecRecoverSimd(ptrs, 48, ShardSize, erased, 8);
+            return MoonshineNativeMethods.FecReconstructSimd(ptrs, 40, 8, ShardSize, erased, 8);
         }
     }
 }

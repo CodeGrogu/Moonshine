@@ -94,7 +94,43 @@ typedef struct MoonshineCaptureFrameDesc {
 // ============================================================================
 
 /**
- * @brief Performs vectorized AVX2/AVX-512 Galois Field GF(2^8) XOR parity recovery.
+ * @brief Encodes parity shards from data shards using the Cauchy systematic generator matrix.
+ * @param data_shards Array of pointers to data shards.
+ * @param data_shards_count Number of data shards (K <= 64).
+ * @param parity_shards Array of pointers to parity shards.
+ * @param parity_shards_count Number of parity shards (M <= 32).
+ * @param shard_size Size in bytes of each shard.
+ * @return 0 on success, non-zero on error.
+ */
+MOONSHINE_API int MOONSHINE_CONV moonshine_fec_encode_simd(
+    const uint8_t* const* data_shards,
+    int data_shards_count,
+    uint8_t** parity_shards,
+    int parity_shards_count,
+    int shard_size
+);
+
+/**
+ * @brief Reconstructs lost data and parity shards using genuine GF(2^8) Gauss-Jordan matrix inversion.
+ * @param shards Array of pointers to all shards (K data followed by M parity shards).
+ * @param data_shards_count Number of data shards (K <= 64).
+ * @param parity_shards_count Number of parity shards (M <= 32).
+ * @param shard_size Size in bytes of each shard.
+ * @param erased_indices Indices of lost shards to reconstruct.
+ * @param erased_count Number of lost shards.
+ * @return 0 on success, non-zero on error.
+ */
+MOONSHINE_API int MOONSHINE_CONV moonshine_fec_reconstruct_simd(
+    uint8_t** shards,
+    int data_shards_count,
+    int parity_shards_count,
+    int shard_size,
+    const int* erased_indices,
+    int erased_count
+);
+
+/**
+ * @brief Performs vectorized AVX2/AVX-512 Galois Field GF(2^8) parity recovery (backward compatible).
  * @param shards Array of pointers to shard buffers (data shards followed by parity shards).
  * @param shard_count Total number of shards (data + parity).
  * @param shard_size Size in bytes of each shard.

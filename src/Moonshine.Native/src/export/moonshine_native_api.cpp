@@ -41,6 +41,42 @@ extern "C" {
 // SIMD FEC APIs
 // ============================================================================
 
+MOONSHINE_API int MOONSHINE_CONV moonshine_fec_encode_simd(
+    const uint8_t* const* data_shards,
+    int data_shards_count,
+    uint8_t** parity_shards,
+    int parity_shards_count,
+    int shard_size
+) {
+    if (!data_shards || !parity_shards || shard_size <= 0) return -1;
+    if (data_shards_count <= 0 || data_shards_count > fec::kMaxDataShards) return -1;
+    if (parity_shards_count <= 0 || parity_shards_count > fec::kMaxParityShards) return -1;
+    if ((data_shards_count + parity_shards_count) > 255) return -1;
+
+    static fec::ReedSolomonSimd fec_engine;
+    return fec_engine.Encode(data_shards, data_shards_count, parity_shards, parity_shards_count, shard_size);
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_fec_reconstruct_simd(
+    uint8_t** shards,
+    int data_shards_count,
+    int parity_shards_count,
+    int shard_size,
+    const int* erased_indices,
+    int erased_count
+) {
+    if (!shards || shard_size <= 0) return -1;
+    if (data_shards_count <= 0 || data_shards_count > fec::kMaxDataShards) return -1;
+    if (parity_shards_count <= 0 || parity_shards_count > fec::kMaxParityShards) return -1;
+    if ((data_shards_count + parity_shards_count) > 255) return -1;
+    if (!erased_indices && erased_count > 0) return -1;
+    if (erased_count == 0) return 0;
+    if (erased_count > parity_shards_count) return -2;
+
+    static fec::ReedSolomonSimd fec_engine;
+    return fec_engine.Reconstruct(shards, data_shards_count, parity_shards_count, shard_size, erased_indices, erased_count);
+}
+
 MOONSHINE_API int MOONSHINE_CONV moonshine_fec_recover_simd(
     uint8_t** shards,
     int shard_count,

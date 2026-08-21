@@ -49,6 +49,27 @@ public static unsafe partial class MoonshineNativeMethods
     // SIMD FEC APIs
     // ========================================================================
 
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_fec_encode_simd")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int FecEncodeSimd(
+        byte** dataShards,
+        int dataShardsCount,
+        byte** parityShards,
+        int parityShardsCount,
+        int shardSize
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_fec_reconstruct_simd")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int FecReconstructSimd(
+        byte** shards,
+        int dataShardsCount,
+        int parityShardsCount,
+        int shardSize,
+        int* erasedIndices,
+        int erasedCount
+    );
+
     [LibraryImport(LibraryName, EntryPoint = "moonshine_fec_recover_simd")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int FecRecoverSimd(

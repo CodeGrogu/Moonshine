@@ -14,6 +14,10 @@ enum class SimdArchitecture : uint32_t {
     GfniAvx512 = 3
 };
 
+constexpr int kMaxDataShards = 64;
+constexpr int kMaxParityShards = 32;
+constexpr int kMaxTotalShards = 96;
+
 /**
  * @brief Ultra-low-latency Galois Field GF(2^8) Reed-Solomon Codec.
  * 
@@ -41,7 +45,43 @@ public:
     static void VectorGfMulAdd(uint8_t* dest, const uint8_t* src, uint8_t coeff, size_t length) noexcept;
 
     /**
-     * @brief Reconstructs lost data shards using parity shards.
+     * @brief Encodes parity shards from data shards using the Cauchy systematic generator matrix.
+     * @param data_shards Array of pointers to data shards.
+     * @param data_shards_count Number of data shards (K <= 64).
+     * @param parity_shards Array of pointers to parity shards.
+     * @param parity_shards_count Number of parity shards (M <= 32).
+     * @param shard_size Size in bytes of each shard.
+     * @return 0 on success, non-zero on invalid arguments.
+     */
+    int Encode(
+        const uint8_t* const* data_shards,
+        int data_shards_count,
+        uint8_t** parity_shards,
+        int parity_shards_count,
+        int shard_size
+    ) noexcept;
+
+    /**
+     * @brief Reconstructs lost data and parity shards using genuine GF(2^8) Gauss-Jordan matrix inversion.
+     * @param shards Array of pointers to all shards (K data followed by M parity shards).
+     * @param data_shards_count Number of data shards (K <= 64).
+     * @param parity_shards_count Number of parity shards (M <= 32).
+     * @param shard_size Size in bytes of each shard.
+     * @param erased_indices Indices of lost shards to reconstruct.
+     * @param erased_count Number of lost shards (must be <= M).
+     * @return 0 on success, -1 on invalid argument, -2 on unrecoverable/too many erasures, -3 on singular matrix.
+     */
+    int Reconstruct(
+        uint8_t** shards,
+        int data_shards_count,
+        int parity_shards_count,
+        int shard_size,
+        const int* erased_indices,
+        int erased_count
+    ) noexcept;
+
+    /**
+     * @brief Backward compatibility overload assuming data_shards = total_shards - erased_count when E <= total_shards/2.
      */
     int Reconstruct(
         uint8_t** shards,
@@ -50,6 +90,18 @@ public:
         const int* erased_indices,
         int erased_count
     ) noexcept;
+
+    /**
+     * @brief Builds the (K+M) x K systematic Cauchy generator matrix in GF(2^8).
+     * Top K x K is Identity matrix. Bottom M x K is Cauchy matrix: 1 / (p ^ (M + j)).
+     */
+    static bool BuildGeneratorMatrix(uint8_t* matrix, int k, int m) noexcept;
+
+    /**
+     * @brief Inverts a K x K matrix in GF(2^8) using Gauss-Jordan elimination.
+     * Returns false if matrix is singular.
+     */
+    static bool InvertMatrixGf256(const uint8_t* src, uint8_t* dst, int k) noexcept;
 
     /**
      * @brief Returns the active SIMD architecture detected on the current CPU.
