@@ -26,6 +26,7 @@
 - [NVIDIA NVENC Hardware Pipeline](NVENC-Hardware-Pipeline)
 - [AMD AMF & Intel QuickSync](AMF-and-QuickSync-Hardware-Pipelines)
 - [WASAPI Loopback Audio](WASAPI-Loopback-Audio)
+- [Opus Audio Compression](Opus-Audio-Compression)
 - [Virtual Input & Injection](Virtual-Input-Driver-Injection)
 - [GameStream HTTPS & RTSP Host Server](GameStream-HTTPS-RTSP-Host-Server)
 - [Authenticated Remote Control Plane](Authenticated-Remote-Control-Plane)

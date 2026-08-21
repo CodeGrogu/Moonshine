@@ -30,7 +30,8 @@ Moonshine is a next-generation, ultra-low-latency game streaming client engineer
 - **[GPU Hardware Video Encoding](GPU-Hardware-Video-Encoding)**: Native NVENC, AMF, and QuickSync low-latency GPU encoders for HEVC/AV1.
 - **[NVIDIA NVENC Hardware Pipeline](NVENC-Hardware-Pipeline)**: Dedicated NVENC SDK encoder, P1/P2 ultra-low latency presets, and progressive intra-refresh.
 - **[AMD AMF & Intel QuickSync Pipelines](AMF-and-QuickSync-Hardware-Pipelines)**: Dedicated AMD VCN and Intel oneVPL/QSV hardware encoder pipelines.
-- **[WASAPI Loopback Audio Engine](WASAPI-Loopback-Audio)**: Low-latency master audio mix capture and Opus multi-channel streaming.
+- **[WASAPI Loopback Audio Engine](WASAPI-Loopback-Audio)**: Low-latency master audio mix capture and multi-channel audio streaming.
+- **[Opus Audio Compression Engine](Opus-Audio-Compression)**: Ultra-low latency multi-channel Opus audio compression and multi-stream encoding.
 - **[Virtual Input & Driver Injection](Virtual-Input-Driver-Injection)**: ViGEmBus controller emulation and kernel-level mouse/keyboard injection.
 - **[GameStream HTTPS & RTSP Host Server](GameStream-HTTPS-RTSP-Host-Server)**: Embedded pairing, discovery, and RTSP stream orchestration.
 - **[Authenticated Remote Control Plane](Authenticated-Remote-Control-Plane)**: Secure client-to-host RPC, dynamic display mode adaptation, and zero-overhead coordinator.
