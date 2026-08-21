@@ -5,27 +5,55 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
 
 jobs:
   run-benchmarks:
     name: BenchmarkDotNet on Windows 11
     runs-on: windows-2022
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Set up .NET 9 SDK
+      - name: Set up .NET SDK from global.json
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.0.x'
+          dotnet-version-file: global.json
 
       - name: Set up Ninja
         uses: ashutoshvarma/setup-ninja@v1.1
         with:
           version: '1.11.1'
 
-      - name: Set up MSVC C++23 environment
+      - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Capture benchmark provenance
+        shell: pwsh
+        run: |
+          $sha = git rev-parse HEAD
+          $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+          $cpu = (Get-CimInstance Win32_Processor | Select-Object -First 1).Name
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          if (Test-Path $vswhere) {
+            $vs = & $vswhere -latest -products * -property installationVersion
+          } else {
+            $vs = 'unknown'
+          }
+
+          @(
+            "commit=$sha"
+            "os=$([System.Environment]::OSVersion.VersionString)"
+            "architecture=$arch"
+            "cpu=$cpu"
+            "visual_studio=$vs"
+            "timestamp=$([DateTimeOffset]::UtcNow.ToString('O'))"
+          ) | Set-Content benchmark-provenance.txt
 
       - name: Run standardised Windows 11 benchmarks
         shell: pwsh
@@ -34,5 +62,8 @@ jobs:
       - name: Upload BenchmarkDotNet results
         uses: actions/upload-artifact@v4
         with:
-          name: benchmark-results
-          path: ./BenchmarkDotNet.Artifacts/results/*
+          name: benchmark-results-${{ github.sha }}
+          path: |
+            ./BenchmarkDotNet.Artifacts/results/*
+            ./benchmark-provenance.txt
+          if-no-files-found: error

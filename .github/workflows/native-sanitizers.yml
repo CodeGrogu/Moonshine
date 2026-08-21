@@ -7,14 +7,23 @@ on:
     branches: [ main ]
   schedule:
     - cron: '0 2 * * *'
+  workflow_dispatch:
 
 jobs:
   address-sanitizer:
     name: MSVC AddressSanitizer (Windows 11)
     runs-on: windows-2022
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET SDK from global.json
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version-file: global.json
 
       - name: Set up Ninja
         uses: ashutoshvarma/setup-ninja@v1.1
@@ -24,13 +33,33 @@ jobs:
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
 
+      - name: Verify Windows toolchain
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File .\scripts\verify_environment.ps1
+
       - name: Configure MSVC AddressSanitizer build
         shell: pwsh
-        run: >
-          cmake -B build-asan -S . -G Ninja
-          -DCMAKE_BUILD_TYPE=Debug
-          -DCMAKE_CXX_FLAGS="/fsanitize=address /Zi"
-          -DMOONSHINE_BUILD_TESTS=ON
+        run: |
+          cmake -B build-asan -S . -G Ninja `
+            -DCMAKE_BUILD_TYPE=Debug `
+            -DCMAKE_CXX_FLAGS="/fsanitize=address /Zi /W4 /WX" `
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON `
+            -DMOONSHINE_BUILD_TESTS=ON
+
+      - name: Verify AddressSanitizer instrumentation
+        shell: pwsh
+        run: |
+          $compileCommands = "./build-asan/compile_commands.json"
+          if (-not (Test-Path $compileCommands)) {
+            throw "CMake did not generate compile_commands.json."
+          }
+
+          $content = Get-Content $compileCommands -Raw
+          if ($content -notmatch '/fsanitize:address|/fsanitize=address') {
+            throw "AddressSanitizer instrumentation was not present in generated compile commands."
+          }
+
+          Write-Host "Verified AddressSanitizer instrumentation in generated compile commands."
 
       - name: Compile AddressSanitizer build
         run: cmake --build build-asan --parallel
