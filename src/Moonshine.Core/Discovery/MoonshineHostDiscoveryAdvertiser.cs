@@ -208,8 +208,8 @@ public sealed class MoonshineHostDiscoveryAdvertiser : IDisposable
                     {
                         await socket.SendToAsync(buffer.AsMemory(0, bytesWritten), SocketFlags.None, multicastTarget, _cts.Token).ConfigureAwait(false);
                     }
-                    // ALLOWED_EXCEPTION: Transient network send failure on disconnected multicast interface.
-                    catch (SocketException)
+                    // ALLOWED_EXCEPTION: Transient network send failure or shutdown socket closure on multicast interface.
+                    catch (Exception ex) when (ex is SocketException or ObjectDisposedException or OperationCanceledException)
                     {
                     }
 
@@ -217,8 +217,8 @@ public sealed class MoonshineHostDiscoveryAdvertiser : IDisposable
                     {
                         await socket.SendToAsync(buffer.AsMemory(0, bytesWritten), SocketFlags.None, broadcastTarget, _cts.Token).ConfigureAwait(false);
                     }
-                    // ALLOWED_EXCEPTION: Transient broadcast failure on restricted subnet.
-                    catch (SocketException)
+                    // ALLOWED_EXCEPTION: Transient broadcast failure or shutdown socket closure on restricted subnet.
+                    catch (Exception ex) when (ex is SocketException or ObjectDisposedException or OperationCanceledException)
                     {
                     }
                 }
@@ -252,7 +252,14 @@ public sealed class MoonshineHostDiscoveryAdvertiser : IDisposable
 
             if (socket == null)
             {
-                await Task.Delay(250, _cts.Token).ConfigureAwait(false);
+                try
+                {
+                    await Task.Delay(250, _cts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
                 continue;
             }
 
@@ -288,10 +295,23 @@ public sealed class MoonshineHostDiscoveryAdvertiser : IDisposable
             {
                 break;
             }
+            // ALLOWED_EXCEPTION: Socket disposed during teardown sweep.
+            catch (ObjectDisposedException)
+            {
+                break;
+            }
             // ALLOWED_EXCEPTION: Transient socket error or malformed packet in receive loop.
             catch (SocketException)
             {
-                await Task.Delay(50, _cts.Token).ConfigureAwait(false);
+                if (_cts.Token.IsCancellationRequested) break;
+                try
+                {
+                    await Task.Delay(50, _cts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
             }
         }
     }
@@ -311,8 +331,8 @@ public sealed class MoonshineHostDiscoveryAdvertiser : IDisposable
         {
             _announceTask?.GetAwaiter().GetResult();
         }
-        // ALLOWED_EXCEPTION: Ignore task cancellation during cleanup.
-        catch (OperationCanceledException)
+        // ALLOWED_EXCEPTION: Ignore task cancellation or socket disposal during advertiser cleanup.
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
         {
         }
 
@@ -320,8 +340,8 @@ public sealed class MoonshineHostDiscoveryAdvertiser : IDisposable
         {
             _probeListenerTask?.GetAwaiter().GetResult();
         }
-        // ALLOWED_EXCEPTION: Ignore task cancellation during cleanup.
-        catch (OperationCanceledException)
+        // ALLOWED_EXCEPTION: Ignore task cancellation or socket disposal during advertiser cleanup.
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
         {
         }
 

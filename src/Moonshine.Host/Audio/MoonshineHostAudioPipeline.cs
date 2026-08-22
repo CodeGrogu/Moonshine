@@ -55,6 +55,7 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
     private bool _isRunning;
     private bool _disposed;
     private int _inFlightOperations;
+    private readonly ManualResetEventSlim _drainCompletedEvent = new(initialState: true);
 
     private readonly Lock _stateLock = new();
 
@@ -233,6 +234,8 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
     /// <summary>
     /// Starts the asynchronous high-priority audio capture and transmission worker thread.
     /// </summary>
+    /// <param name="packetSink">The audio packet delivery sink. The sink delegate and its captured state must remain valid for the duration of the streaming session or until Stop() / Dispose() completes.</param>
+    /// <param name="preferMoonshineFraming">True to packetise in native Moonshine format; false for standard RFC 3550 RTP.</param>
     public bool Start(AudioPacketSink packetSink, bool preferMoonshineFraming = true)
     {
         ArgumentNullException.ThrowIfNull(packetSink);
@@ -544,14 +547,20 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
             {
                 return false;
             }
-            Interlocked.Increment(ref _inFlightOperations);
+            if (Interlocked.Increment(ref _inFlightOperations) == 1)
+            {
+                _drainCompletedEvent.Reset();
+            }
             return true;
         }
     }
 
     private void ExitOperation()
     {
-        Interlocked.Decrement(ref _inFlightOperations);
+        if (Interlocked.Decrement(ref _inFlightOperations) == 0)
+        {
+            _drainCompletedEvent.Set();
+        }
     }
 
     private void ThrowIfDisposed()
@@ -571,12 +580,8 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
             _disposed = true;
         }
 
-        // Synchronise with any in-flight synchronous stepped callers
-        var spin = new SpinWait();
-        while (Volatile.Read(ref _inFlightOperations) > 0)
-        {
-            spin.SpinOnce();
-        }
+        // Bounded kernel wait ensuring teardown releases CPU and never hangs indefinitely
+        _drainCompletedEvent.Wait(TimeSpan.FromSeconds(5));
 
         lock (_stateLock)
         {
@@ -593,5 +598,7 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
 
             _activeBackend = HostAudioBackend.Disabled;
         }
+
+        _drainCompletedEvent.Dispose();
     }
 }
