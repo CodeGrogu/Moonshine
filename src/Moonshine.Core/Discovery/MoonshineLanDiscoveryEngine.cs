@@ -140,6 +140,10 @@ public sealed class MoonshineLanDiscoveryEngine : IAsyncDisposable
         lock (_lock)
         {
             if (_disposed) return;
+            if (_rxSocket == null)
+            {
+                InitSocketsNoLock();
+            }
             socket = _rxSocket;
         }
 
@@ -201,12 +205,16 @@ public sealed class MoonshineLanDiscoveryEngine : IAsyncDisposable
             lock (_lock)
             {
                 if (_disposed) break;
+                if (_rxSocket == null)
+                {
+                    InitSocketsNoLock();
+                }
                 socket = _rxSocket;
             }
 
             if (socket == null)
             {
-                await Task.Delay(100, _cts.Token).ConfigureAwait(false);
+                await Task.Delay(250, _cts.Token).ConfigureAwait(false);
                 continue;
             }
 

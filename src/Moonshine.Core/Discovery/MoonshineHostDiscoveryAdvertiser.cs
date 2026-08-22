@@ -50,13 +50,15 @@ public sealed class MoonshineHostDiscoveryAdvertiser : IDisposable
     private Task? _probeListenerTask;
     private bool _disposed;
     private ulong _advertisementSeq;
+    private ulong _announcementsEmitted;
     private ulong _probesResponded;
 
     public DiscoveryAdvertiserHealth Health { get; private set; } = DiscoveryAdvertiserHealth.Uninitialised;
     public string? LastError { get; private set; }
     public bool IsMulticastActive { get; private set; }
-    public ulong TotalAnnouncementsEmitted => _advertisementSeq;
+    public ulong TotalAnnouncementsEmitted => _announcementsEmitted;
     public ulong TotalProbesResponded => _probesResponded;
+    public ulong TotalDiscoveryPacketsEmitted => _announcementsEmitted + _probesResponded;
 
     public MoonshineHostDiscoveryAdvertiser(
         HostEndpointConfig? endpointConfig = null,
@@ -201,6 +203,7 @@ public sealed class MoonshineHostDiscoveryAdvertiser : IDisposable
 
                 if (MoonshineDiscoveryCodec.TryWriteAnnouncement(payload, buffer, out int bytesWritten, seq))
                 {
+                    Interlocked.Increment(ref _announcementsEmitted);
                     try
                     {
                         await socket.SendToAsync(buffer.AsMemory(0, bytesWritten), SocketFlags.None, multicastTarget, _cts.Token).ConfigureAwait(false);
