@@ -222,4 +222,56 @@ public class HostAudioPipelineTests
         Action act = () => pipeline.ProcessNextAudioFrame(_ => { });
         act.Should().Throw<ObjectDisposedException>();
     }
+
+    [Theory]
+    [InlineData(AudioChannelTopology.Mono, 1)]
+    [InlineData(AudioChannelTopology.Stereo, 2)]
+    [InlineData(AudioChannelTopology.Surround51, 6)]
+    [InlineData(AudioChannelTopology.Surround71, 8)]
+    public void HostAudioPipeline_ProcessPcmFrame_ValidBuffers_EncodesAndEmitsAcrossTopologies(AudioChannelTopology topology, int channels)
+    {
+        using var pipeline = new MoonshineHostAudioPipeline(
+            sampleRate: 48000,
+            topology: topology,
+            bitrate: 160000,
+            frameDurationMs: 5
+        );
+
+        int totalSamples = 240 * channels;
+        var pcm = new float[totalSamples];
+        for (int i = 0; i < pcm.Length; i++)
+        {
+            pcm[i] = (float)Math.Sin(2.0 * Math.PI * 440.0 * i / 48000.0);
+        }
+
+        bool packetEmitted = false;
+        bool ok = pipeline.ProcessPcmFrame(pcm, datagram =>
+        {
+            packetEmitted = true;
+            datagram.Length.Should().BeGreaterThan(56);
+        }, preferMoonshineFraming: true);
+
+        ok.Should().BeTrue();
+        packetEmitted.Should().BeTrue();
+    }
+
+    [Fact]
+    public void HostAudioPipeline_ProcessPcmFrame_TruncatedBuffers_FailsClosedSafely()
+    {
+        using var pipeline = new MoonshineHostAudioPipeline(
+            sampleRate: 48000,
+            topology: AudioChannelTopology.Stereo,
+            bitrate: 160000,
+            frameDurationMs: 5
+        );
+
+        // Required: 240 samples * 2 channels = 480 floats. Provide truncated buffer of 100 floats.
+        var truncatedPcm = new float[100];
+        bool packetEmitted = false;
+
+        bool ok = pipeline.ProcessPcmFrame(truncatedPcm, _ => packetEmitted = true, preferMoonshineFraming: true);
+
+        ok.Should().BeFalse();
+        packetEmitted.Should().BeFalse();
+    }
 }

@@ -302,7 +302,7 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
     }
 
     /// <summary>
-    /// Processes a single audio frame synchronously with zero GC allocations.
+    /// Processes a single audio frame synchronously with zero GC allocations without holding the state lock across audio execution.
     /// Used for precise stepped streaming iterations and microbenchmarks.
     /// </summary>
     public bool ProcessNextAudioFrame(AudioPacketSink packetSink, bool preferMoonshineFraming = true)
@@ -312,23 +312,32 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
         lock (_stateLock)
         {
             ThrowIfDisposed();
-            return ExecuteAudioFrameStep(packetSink, preferMoonshineFraming);
         }
+
+        return ExecuteAudioFrameStep(packetSink, preferMoonshineFraming);
     }
 
     /// <summary>
-    /// Processes a caller-provided PCM buffer synchronously through the full encode, packetise, and dispatch pipeline.
-    /// Used for explicit active-signal benchmarking and virtual pipeline injection.
+    /// Synchronously processes a caller-provided PCM buffer through the full encode, packetise, and dispatch pipeline
+    /// without holding the internal state lock during audio execution.
+    /// Intended for synchronous testing, microbenchmarks, and virtual PCM feed.
     /// </summary>
     public bool ProcessPcmFrame(ReadOnlySpan<float> pcmSamples, AudioPacketSink packetSink, bool preferMoonshineFraming = true)
     {
         ArgumentNullException.ThrowIfNull(packetSink);
 
+        uint requiredSamples = _samplesPerFrame * _channels;
+        if ((uint)pcmSamples.Length < requiredSamples)
+        {
+            return false;
+        }
+
         lock (_stateLock)
         {
             ThrowIfDisposed();
-            return ExecutePcmFrameStep(pcmSamples, packetSink, preferMoonshineFraming);
         }
+
+        return ExecutePcmFrameStep(pcmSamples[..(int)requiredSamples], packetSink, preferMoonshineFraming);
     }
 
     private bool ExecuteAudioFrameStep(AudioPacketSink packetSink, bool preferMoonshineFraming)
@@ -384,6 +393,14 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
 
     private bool ExecutePcmFrameStep(ReadOnlySpan<float> pcmSpan, AudioPacketSink packetSink, bool preferMoonshineFraming)
     {
+        uint requiredSamples = _samplesPerFrame * _channels;
+        if ((uint)pcmSpan.Length < requiredSamples)
+        {
+            return false;
+        }
+
+        ReadOnlySpan<float> validPcm = pcmSpan[..(int)requiredSamples];
+
         // Encode via low-latency Opus
         long encodeStart = Stopwatch.GetTimestamp();
         Span<byte> encodedPayload = _encodedPayloadBuffer.AsSpan();
@@ -392,7 +409,7 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
         if (_encoder is not null)
         {
             _encoder.TryEncode(
-                pcmSpan,
+                validPcm,
                 _samplesPerFrame,
                 encodedPayload,
                 out bytesEncoded
