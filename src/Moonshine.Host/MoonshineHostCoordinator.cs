@@ -1,5 +1,6 @@
 using Moonshine.Core.Network;
 using Moonshine.Core.Runtime;
+using Moonshine.Host.Input;
 
 namespace Moonshine.Host;
 
@@ -21,6 +22,7 @@ public sealed class MoonshineHostCoordinator : IMoonshineHostService
 {
     private readonly IMoonshineHostNetworkManager _networkManager;
     private readonly HostEndpointConfig _endpointConfig;
+    private MoonshineHostInputPipeline? _inputPipeline;
     private HostState _state = HostState.Disabled;
     private int _activeSessions;
     private int _activeWorkers;
@@ -61,13 +63,21 @@ public sealed class MoonshineHostCoordinator : IMoonshineHostService
 
     public bool IsRunning => State == HostState.Running;
 
+    public MoonshineHostInputPipeline? InputPipeline
+    {
+        get
+        {
+            lock (_lock) return _inputPipeline;
+        }
+    }
+
     public bool HasActiveResources
     {
         get
         {
             lock (_lock)
             {
-                return _activeSessions > 0 || _networkManager.ActiveListenerCount > 0 || _activeWorkers > 0 || _activeBuffers > 0;
+                return _activeSessions > 0 || _networkManager.ActiveListenerCount > 0 || _activeWorkers > 0 || _activeBuffers > 0 || _inputPipeline is not null;
             }
         }
     }
@@ -189,6 +199,12 @@ public sealed class MoonshineHostCoordinator : IMoonshineHostService
             await _workerCts.CancelAsync().ConfigureAwait(false);
             _workerCts.Dispose();
             _workerCts = null;
+        }
+
+        if (_inputPipeline is not null)
+        {
+            _inputPipeline.Dispose();
+            _inputPipeline = null;
         }
 
         await _networkManager.StopListenersAsync().ConfigureAwait(false);

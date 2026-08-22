@@ -11,6 +11,7 @@
     <ProjectReference Include="..\Moonshine.Protocol\Moonshine.Protocol.csproj" />
     <ProjectReference Include="..\Moonshine.Interop\Moonshine.Interop.csproj" />
     <ProjectReference Include="..\Moonshine.Core\Moonshine.Core.csproj" />
+    <ProjectReference Include="..\Moonshine.Host\Moonshine.Host.csproj" />
   </ItemGroup>
 
   <ItemGroup>

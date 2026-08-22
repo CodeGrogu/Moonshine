@@ -66,6 +66,48 @@ public struct RAWINPUT
 
 #endregion
 
+#region SendInput Structs
+
+[StructLayout(LayoutKind.Sequential)]
+public struct MOUSEINPUT
+{
+    public int dx;
+    public int dy;
+    public uint mouseData;
+    public uint dwFlags;
+    public uint time;
+    public UIntPtr dwExtraInfo;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public struct KEYBDINPUT
+{
+    public ushort wVk;
+    public ushort wScan;
+    public uint dwFlags;
+    public uint time;
+    public UIntPtr dwExtraInfo;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public struct HARDWAREINPUT
+{
+    public uint uMsg;
+    public ushort wParamL;
+    public ushort wParamH;
+}
+
+[StructLayout(LayoutKind.Explicit, Size = 40)]
+public struct INPUT
+{
+    [FieldOffset(0)] public uint type;
+    [FieldOffset(8)] public MOUSEINPUT mi;
+    [FieldOffset(8)] public KEYBDINPUT ki;
+    [FieldOffset(8)] public HARDWAREINPUT hi;
+}
+
+#endregion
+
 #region XInput Structs
 
 [StructLayout(LayoutKind.Sequential)]
@@ -192,7 +234,45 @@ public static unsafe partial class WindowsInputNativeMethods
     public const short XINPUT_GAMEPAD_RIGHT_THUMB_DEADZONE = 8689;
     public const byte XINPUT_GAMEPAD_TRIGGER_THRESHOLD = 30;
 
-    #region User32 Raw Input P/Invoke
+    #region User32 Raw Input and SendInput P/Invoke
+
+    // SendInput Types
+    public const uint INPUT_MOUSE = 0;
+    public const uint INPUT_KEYBOARD = 1;
+    public const uint INPUT_HARDWARE = 2;
+
+    // SendInput Mouse Flags
+    public const uint MOUSEEVENTF_MOVE = 0x0001;
+    public const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
+    public const uint MOUSEEVENTF_LEFTUP = 0x0004;
+    public const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
+    public const uint MOUSEEVENTF_RIGHTUP = 0x0010;
+    public const uint MOUSEEVENTF_MIDDLEDOWN = 0x0020;
+    public const uint MOUSEEVENTF_MIDDLEUP = 0x0040;
+    public const uint MOUSEEVENTF_XDOWN = 0x0080;
+    public const uint MOUSEEVENTF_XUP = 0x0100;
+    public const uint MOUSEEVENTF_WHEEL = 0x0800;
+    public const uint MOUSEEVENTF_HWHEEL = 0x1000;
+    public const uint MOUSEEVENTF_MOVE_NOCOALESCE = 0x2000;
+    public const uint MOUSEEVENTF_VIRTUALDESK = 0x4000;
+    public const uint MOUSEEVENTF_ABSOLUTE = 0x8000;
+
+    public const uint XBUTTON1 = 0x0001;
+    public const uint XBUTTON2 = 0x0002;
+    public const int WHEEL_DELTA = 120;
+
+    // SendInput Keyboard Flags
+    public const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
+    public const uint KEYEVENTF_KEYUP = 0x0002;
+    public const uint KEYEVENTF_UNICODE = 0x0004;
+    public const uint KEYEVENTF_SCANCODE = 0x0008;
+
+    [LibraryImport("user32.dll", EntryPoint = "SendInput", SetLastError = true)]
+    public static partial uint SendInput(
+        uint cInputs,
+        INPUT* pInputs,
+        int cbSize
+    );
 
     [LibraryImport("user32.dll", EntryPoint = "RegisterRawInputDevices", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

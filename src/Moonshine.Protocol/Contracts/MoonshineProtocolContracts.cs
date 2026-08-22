@@ -547,4 +547,124 @@ public static class MoonshineProtocolCodec
 
         return true;
     }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool TryWriteKeyboardInput(in MoonshineInputKeyboardPayload payload, Span<byte> destination)
+    {
+        if (destination.Length < 12) return false;
+
+        BinaryPrimitives.WriteUInt16BigEndian(destination[..2], payload.KeyCode);
+        BinaryPrimitives.WriteUInt16BigEndian(destination[2..4], payload.ScanCode);
+        destination[4] = payload.IsDown;
+        destination[5] = payload.Modifiers;
+        BinaryPrimitives.WriteUInt16BigEndian(destination[6..8], payload.Reserved);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[8..12], payload.TimestampOffsetUs);
+
+        return true;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static MoonshineErrorCode TryReadKeyboardInput(ReadOnlySpan<byte> source, out MoonshineInputKeyboardPayload payload)
+    {
+        payload = default;
+        if (source.Length < 12) return MoonshineErrorCode.BufferTooSmall;
+
+        payload = new MoonshineInputKeyboardPayload
+        {
+            KeyCode = BinaryPrimitives.ReadUInt16BigEndian(source[..2]),
+            ScanCode = BinaryPrimitives.ReadUInt16BigEndian(source[2..4]),
+            IsDown = source[4],
+            Modifiers = source[5],
+            Reserved = BinaryPrimitives.ReadUInt16BigEndian(source[6..8]),
+            TimestampOffsetUs = BinaryPrimitives.ReadUInt32BigEndian(source[8..12])
+        };
+
+        return MoonshineErrorCode.Success;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool TryWriteMouseInput(in MoonshineInputMousePayload payload, Span<byte> destination)
+    {
+        if (destination.Length < 20) return false;
+
+        BinaryPrimitives.WriteInt32BigEndian(destination[..4], payload.X);
+        BinaryPrimitives.WriteInt32BigEndian(destination[4..8], payload.Y);
+        BinaryPrimitives.WriteInt16BigEndian(destination[8..10], payload.WheelDeltaY);
+        BinaryPrimitives.WriteInt16BigEndian(destination[10..12], payload.WheelDeltaX);
+        BinaryPrimitives.WriteUInt16BigEndian(destination[12..14], payload.ButtonFlags);
+        destination[14] = payload.IsAbsolute;
+        destination[15] = payload.Reserved;
+        BinaryPrimitives.WriteUInt32BigEndian(destination[16..20], payload.TimestampOffsetUs);
+
+        return true;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static MoonshineErrorCode TryReadMouseInput(ReadOnlySpan<byte> source, out MoonshineInputMousePayload payload)
+    {
+        payload = default;
+        if (source.Length < 20) return MoonshineErrorCode.BufferTooSmall;
+
+        payload = new MoonshineInputMousePayload
+        {
+            X = BinaryPrimitives.ReadInt32BigEndian(source[..4]),
+            Y = BinaryPrimitives.ReadInt32BigEndian(source[4..8]),
+            WheelDeltaY = BinaryPrimitives.ReadInt16BigEndian(source[8..10]),
+            WheelDeltaX = BinaryPrimitives.ReadInt16BigEndian(source[10..12]),
+            ButtonFlags = BinaryPrimitives.ReadUInt16BigEndian(source[12..14]),
+            IsAbsolute = source[14],
+            Reserved = source[15],
+            TimestampOffsetUs = BinaryPrimitives.ReadUInt32BigEndian(source[16..20])
+        };
+
+        return MoonshineErrorCode.Success;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool TryWriteGamepadInput(in MoonshineInputGamepadPayload payload, Span<byte> destination)
+    {
+        if (destination.Length < 24) return false;
+
+        destination[0] = payload.GamepadIndex;
+        destination[1] = payload.Reserved;
+        BinaryPrimitives.WriteUInt16BigEndian(destination[2..4], payload.ButtonMask);
+        destination[4] = payload.LeftTrigger;
+        destination[5] = payload.RightTrigger;
+        BinaryPrimitives.WriteInt16BigEndian(destination[6..8], payload.ThumbLx);
+        BinaryPrimitives.WriteInt16BigEndian(destination[8..10], payload.ThumbLy);
+        BinaryPrimitives.WriteInt16BigEndian(destination[10..12], payload.ThumbRx);
+        BinaryPrimitives.WriteInt16BigEndian(destination[12..14], payload.ThumbRy);
+        BinaryPrimitives.WriteUInt16BigEndian(destination[14..16], payload.MotorLeft);
+        BinaryPrimitives.WriteUInt16BigEndian(destination[16..18], payload.MotorRight);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[18..22], payload.TimestampOffsetUs);
+        BinaryPrimitives.WriteUInt16BigEndian(destination[22..24], payload.Reserved2);
+
+        return true;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static MoonshineErrorCode TryReadGamepadInput(ReadOnlySpan<byte> source, out MoonshineInputGamepadPayload payload)
+    {
+        payload = default;
+        if (source.Length < 24) return MoonshineErrorCode.BufferTooSmall;
+
+        payload = new MoonshineInputGamepadPayload
+        {
+            GamepadIndex = source[0],
+            Reserved = source[1],
+            ButtonMask = BinaryPrimitives.ReadUInt16BigEndian(source[2..4]),
+            LeftTrigger = source[4],
+            RightTrigger = source[5],
+            ThumbLx = BinaryPrimitives.ReadInt16BigEndian(source[6..8]),
+            ThumbLy = BinaryPrimitives.ReadInt16BigEndian(source[8..10]),
+            ThumbRx = BinaryPrimitives.ReadInt16BigEndian(source[10..12]),
+            ThumbRy = BinaryPrimitives.ReadInt16BigEndian(source[12..14]),
+            MotorLeft = BinaryPrimitives.ReadUInt16BigEndian(source[14..16]),
+            MotorRight = BinaryPrimitives.ReadUInt16BigEndian(source[16..18]),
+            TimestampOffsetUs = BinaryPrimitives.ReadUInt32BigEndian(source[18..22]),
+            Reserved2 = BinaryPrimitives.ReadUInt16BigEndian(source[22..24])
+        };
+
+        return MoonshineErrorCode.Success;
+    }
 }
