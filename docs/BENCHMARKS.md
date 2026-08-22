@@ -49,13 +49,18 @@ flowchart LR
 - **Measured Range**: **3.53 ns to 30.64 ns** per packet operation.
 - **GC Allocation**: **0 B** steady-state.
 
-### 6. Host-Side Video Frame Slicing, FEC & Session Ingest Overhead (Issue #79)
+### 6. Hardware Video Encoder Synchronous Dispatch Overhead (Issue #79 & #81)
+- **Scope**: Measures the synchronous CPU execution time spent inside the `EncoderEncodeFrame` dispatch call (managed-to-native P/Invoke marshaling, GPU descriptor preparation, and command queue submission).
+- **Semantics Distinction**: This metric measures the synchronous CPU submission slice. It does not represent asynchronous GPU ASIC silicon encoding flight time (which is tracked via DXGI/QPC hardware completion timestamps and end-to-end telemetry in Issue #81).
+- **GC Allocation**: **0 B** steady-state.
+
+### 7. Host-Side Video Frame Slicing, FEC & Session Ingest Overhead (Issue #79)
 - **Scope**: Local host-side real-time video frame packetisation (64 KB 4K HEVC/AV1 P-frame slices), Reed-Solomon GF(2^8) parity shard generation, `MSHN` header attachment, and socket dispatch.
-- **Measured Range**: **16.40 μs to 16.61 μs** per complete 64 KB compressed video frame.
+- **Measured Range**: **16.40 μs to 17.18 μs** per complete 64 KB compressed video frame.
 - **GC Allocation**: **0 B** steady-state hot path.
 
-### 7. Distributed End-to-End Glass-to-Glass Input Latency (Issue #81 & #82)
-- **Scope**: Total physical action to remote OS reception across the entire network and rendering pipeline.
+### 8. Distributed End-to-End Glass-to-Glass Latency (Issue #81 & #82)
+- **Scope**: Total physical action to remote OS reception, hardware encoding, network flight, client hardware decoding, and swapchain presentation.
 - **Target Budget**: **2.0 ms to 8.0 ms** over local Gigabit / Wi-Fi 6 networks.
 
 ---

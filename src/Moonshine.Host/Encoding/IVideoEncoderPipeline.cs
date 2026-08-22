@@ -14,6 +14,11 @@ public interface IVideoEncoderPipeline : IDisposable
     VideoCodec Codec { get; }
     EncoderVendor Vendor { get; }
     bool IsActive { get; }
+
+    /// <summary>
+    /// Gets the average synchronous execution time in microseconds spent inside the native encoder call.
+    /// Note: This measures the host dispatch and CPU-to-hardware submission duration; asynchronous GPU silicon pipeline flight time is instrumented separately via frame completion timestamps.
+    /// </summary>
     double AverageEncodingLatencyMicroseconds { get; }
 
     bool TryEncodeFrame(
