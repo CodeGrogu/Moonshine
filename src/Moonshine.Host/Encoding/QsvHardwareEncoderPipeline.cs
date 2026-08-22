@@ -22,6 +22,8 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
     private bool _intraRefreshEnabled;
     private uint _intraRefreshCycleSize;
     private int _intraRefreshQpDelta;
+    private ulong _framesEncoded;
+    private ulong _totalEncodingTimeQpc;
     private bool _disposed;
     private readonly Lock _lock = new();
 
@@ -34,7 +36,15 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
     public QsvTargetUsage TargetUsage => _targetUsage;
     public bool LowPowerVdenc => _lowPowerVdenc;
     public bool IsActive => _handle != IntPtr.Zero && !_disposed;
-    public double AverageEncodingLatencyMicroseconds => 0.0;
+    public double AverageEncodingLatencyMicroseconds
+    {
+        get
+        {
+            ulong frames = Volatile.Read(ref _framesEncoded);
+            ulong totalQpc = Volatile.Read(ref _totalEncodingTimeQpc);
+            return frames > 0 ? (double)totalQpc / frames * (1_000_000.0 / System.Diagnostics.Stopwatch.Frequency) : 0.0;
+        }
+    }
 
     public QsvHardwareEncoderPipeline(
         uint width,
@@ -93,6 +103,7 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
     {
         desc = default;
         bytesWritten = 0;
+        long startQpc = System.Diagnostics.Stopwatch.GetTimestamp();
 
         lock (_lock)
         {
@@ -113,6 +124,9 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
                 if (res > 0)
                 {
                     bytesWritten = (int)written;
+                    long elapsed = System.Diagnostics.Stopwatch.GetTimestamp() - startQpc;
+                    Interlocked.Increment(ref _framesEncoded);
+                    Interlocked.Add(ref _totalEncodingTimeQpc, (ulong)elapsed);
                     return true;
                 }
 

@@ -194,7 +194,7 @@ BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
 
 | Method                                    | Mean Latency | Error     | StdDev    | Median    | Allocated Memory |
 | :---------------------------------------- | -----------: | --------: | --------: | --------: | ---------------: |
-| Session_VideoFramePacketise_DirectHotPath |     16.40 μs | 0.3230 μs | 0.7990 μs |  16.12 μs |          3.67 KB |
+| Session_VideoFramePacketise_DirectHotPath |     17.18 μs | 0.6820 μs | 1.9580 μs |  16.48 μs |              0 B |
 ```
 
 

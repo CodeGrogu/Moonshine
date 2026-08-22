@@ -25,6 +25,8 @@ public sealed class MoonshineVideoPacketiser
     private readonly int _mtuPayloadSize;
     private readonly int _fecDataShards;
     private readonly int _fecParityShards;
+    private readonly byte[]? _fecParityArena;
+    private readonly byte[]? _fecZeroShard;
     private uint _sequenceNumber;
 
     public uint StreamId => _streamId;
@@ -47,6 +49,8 @@ public sealed class MoonshineVideoPacketiser
         if (fecDataShards > 0 && fecParityShards > 0)
         {
             ArgumentOutOfRangeException.ThrowIfGreaterThan(fecDataShards + fecParityShards, 255, nameof(fecDataShards));
+            _fecParityArena = new byte[fecParityShards * mtuPayloadSize];
+            _fecZeroShard = new byte[mtuPayloadSize];
         }
 
         _streamId = streamId;
@@ -164,11 +168,11 @@ public sealed class MoonshineVideoPacketiser
         int shardSize = _mtuPayloadSize;
         int numBlocks = (totalPackets + _fecDataShards - 1) / _fecDataShards;
 
-        byte*[] dataShardsPtrs = new byte*[_fecDataShards];
-        byte*[] parityShardsPtrs = new byte*[_fecParityShards];
+        byte** dataShardsPtrs = stackalloc byte*[_fecDataShards];
+        byte** parityShardsPtrs = stackalloc byte*[_fecParityShards];
 
-        byte[] parityArena = new byte[_fecParityShards * shardSize];
-        byte[] zeroShard = new byte[shardSize];
+        byte[] parityArena = _fecParityArena ?? new byte[_fecParityShards * shardSize];
+        byte[] zeroShard = _fecZeroShard ?? new byte[shardSize];
 
         // Allocate stack buffer outside loops to prevent stack overflow (CA2014)
         Span<byte> packetBuffer = stackalloc byte[2048];
@@ -215,19 +219,15 @@ public sealed class MoonshineVideoPacketiser
                 // Clear parity arena before SIMD encoding
                 new Span<byte>(pParity, _fecParityShards * shardSize).Clear();
 
-                fixed (byte** pDataList = dataShardsPtrs)
-                fixed (byte** pParityList = parityShardsPtrs)
-                {
-                    int fecRes = MoonshineNativeMethods.FecEncodeSimd(
-                        pDataList,
-                        _fecDataShards,
-                        pParityList,
-                        _fecParityShards,
-                        shardSize
-                    );
+                int fecRes = MoonshineNativeMethods.FecEncodeSimd(
+                    dataShardsPtrs,
+                    _fecDataShards,
+                    parityShardsPtrs,
+                    _fecParityShards,
+                    shardSize
+                );
 
-                    if (fecRes != 0) continue;
-                }
+                if (fecRes != 0) continue;
 
                 // Emit Parity Packets
                 for (int p = 0; p < _fecParityShards; p++)
