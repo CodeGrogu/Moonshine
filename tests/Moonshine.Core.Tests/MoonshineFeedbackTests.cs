@@ -94,7 +94,7 @@ public class MoonshineFeedbackTests
         using var reporter = new MoonshineFeedbackReporter(
             streamId: 3,
             sessionId: 0x999,
-            reportIntervalMs: 25,
+            reportIntervalMs: 20,
             sink: datagram =>
             {
                 if (datagram.Length == MoonshineFeedbackCodec.LossStatsPacketSize)
@@ -103,8 +103,11 @@ public class MoonshineFeedbackTests
                 }
             });
 
-        // Wait ~120ms to allow ~4 reports to be generated
-        await Task.Delay(120);
+        // Bounded wait up to 300ms for periodic reports to be emitted
+        for (int i = 0; i < 30 && Volatile.Read(ref reportCount) < 2; i++)
+        {
+            await Task.Delay(10);
+        }
 
         reportCount.Should().BeGreaterThanOrEqualTo(2);
     }

@@ -168,13 +168,21 @@ public class CongestionControllerTests
             hysteresisHoldMs: 0,
             onBitrateChanged: b => bitrates.Add(b));
 
+        ulong frameIndex = 1;
+        uint totalReceived = 0;
+        uint totalLost = 0;
+
         // Phase 1: Clean network for 5 intervals
         for (int i = 0; i < 5; i++)
         {
+            totalReceived += 1000;
+            frameIndex += 10;
             controller.ProcessFeedback(new MoonshineFeedbackLossStatsPayload
             {
-                PacketsReceived = 1000,
-                PacketsLost = 0,
+                StreamId = 1,
+                LastReceivedFrameIndex = frameIndex,
+                PacketsReceived = totalReceived,
+                PacketsLost = totalLost,
                 RoundTripTimeUs = 5000,
                 ReceiveQueueDepth = 1
             });
@@ -185,10 +193,15 @@ public class CongestionControllerTests
         // Phase 2: Sudden network congestion and 10% packet loss for 3 intervals
         for (int i = 0; i < 3; i++)
         {
+            totalReceived += 900;
+            totalLost += 100;
+            frameIndex += 10;
             controller.ProcessFeedback(new MoonshineFeedbackLossStatsPayload
             {
-                PacketsReceived = 900,
-                PacketsLost = 100,
+                StreamId = 1,
+                LastReceivedFrameIndex = frameIndex,
+                PacketsReceived = totalReceived,
+                PacketsLost = totalLost,
                 RoundTripTimeUs = 25000,
                 ReceiveQueueDepth = 6
             });
@@ -200,10 +213,14 @@ public class CongestionControllerTests
         // Phase 3: Network clears and stabilizes for 35 intervals
         for (int i = 0; i < 35; i++)
         {
+            totalReceived += 1000;
+            frameIndex += 10;
             controller.ProcessFeedback(new MoonshineFeedbackLossStatsPayload
             {
-                PacketsReceived = 1000,
-                PacketsLost = 0,
+                StreamId = 1,
+                LastReceivedFrameIndex = frameIndex,
+                PacketsReceived = totalReceived,
+                PacketsLost = totalLost,
                 RoundTripTimeUs = 5000,
                 ReceiveQueueDepth = 1
             });
@@ -233,4 +250,88 @@ public class CongestionControllerTests
         idrRequested.Should().BeTrue();
         controller.IdrRequestsSent.Should().Be(1);
     }
+
+    [Fact]
+    public void CongestionController_OutOfOrderStaleFeedback_IsDiscardedSafely()
+    {
+        var controller = new CongestionController(
+            initialBitrateKbps: 50000,
+            hysteresisHoldMs: 0);
+
+        // Report 1: Frame 100, 1000 packets received, 0 lost -> clean network
+        controller.ProcessFeedback(new MoonshineFeedbackLossStatsPayload
+        {
+            StreamId = 1,
+            LastReceivedFrameIndex = 100,
+            PacketsReceived = 1000,
+            PacketsLost = 0,
+            RoundTripTimeUs = 5000,
+            ReceiveQueueDepth = 0
+        });
+
+        uint bitrateAfterClean = controller.CurrentBitrateKbps;
+        bitrateAfterClean.Should().BeGreaterThanOrEqualTo(50000);
+
+        // Report 2: Stale / Out-of-Order report from Frame 80 delayed in network with 50% simulated loss
+        controller.ProcessFeedback(new MoonshineFeedbackLossStatsPayload
+        {
+            StreamId = 1,
+            LastReceivedFrameIndex = 80, // Stale!
+            PacketsReceived = 800,
+            PacketsLost = 400,
+            RoundTripTimeUs = 250000,
+            ReceiveQueueDepth = 10
+        });
+
+        // Stale report must be discarded without degrading current bitrate or inflating queue depth
+        controller.CurrentBitrateKbps.Should().Be(bitrateAfterClean);
+        controller.CongestionEventsCount.Should().Be(0);
+
+        // Report 3: In-order newer report Frame 110 continues cleanly
+        controller.ProcessFeedback(new MoonshineFeedbackLossStatsPayload
+        {
+            StreamId = 1,
+            LastReceivedFrameIndex = 110,
+            PacketsReceived = 1100,
+            PacketsLost = 0,
+            RoundTripTimeUs = 5000,
+            ReceiveQueueDepth = 0
+        });
+
+        controller.CurrentBitrateKbps.Should().BeGreaterThanOrEqualTo(bitrateAfterClean);
+    }
+
+    [Fact]
+    public void CongestionController_StreamChangeAndSessionReset_ReanchorsBaseline()
+    {
+        var controller = new CongestionController(
+            initialBitrateKbps: 50000,
+            hysteresisHoldMs: 0);
+
+        // Stream 1: High packet counters
+        controller.ProcessFeedback(new MoonshineFeedbackLossStatsPayload
+        {
+            StreamId = 100,
+            LastReceivedFrameIndex = 5000,
+            PacketsReceived = 50000,
+            PacketsLost = 10,
+            RoundTripTimeUs = 5000,
+            ReceiveQueueDepth = 0
+        });
+
+        // Stream 2: Fresh session resets counters to low initial values
+        controller.ProcessFeedback(new MoonshineFeedbackLossStatsPayload
+        {
+            StreamId = 101, // New stream!
+            LastReceivedFrameIndex = 1,
+            PacketsReceived = 10,
+            PacketsLost = 0,
+            RoundTripTimeUs = 4000,
+            ReceiveQueueDepth = 0
+        });
+
+        controller.CurrentBitrateKbps.Should().BeGreaterThanOrEqualTo(50000);
+        controller.CongestionEventsCount.Should().Be(0);
+    }
 }
+

@@ -221,3 +221,7 @@ BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
 | ParseMoonshineIdrRequest       |     3.309 ns | 0.1429 ns | 0.4053 ns |  3.201 ns |              0 B |
 | ProcessFeedbackAndAdaptBitrate |    41.412 ns | 0.7667 ns | 1.0494 ns | 41.297 ns |              0 B |
 ```
+
+> [!NOTE]
+> **Measurement Semantics & Benchmark Scope**: The `ProcessFeedbackAndAdaptBitrate` microbenchmark evaluates single-invocation execution cost under an active adaptation configuration (`hysteresisHoldMs: 0`) to measure worst-case synchronous compute and zero-allocation characteristics (41.4 ns, 0 B GC heap allocation). In production runtime sessions, rate adjustments are subject to a 500 ms hysteresis hold window to prevent frequency oscillation.
+

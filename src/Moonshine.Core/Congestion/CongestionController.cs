@@ -53,6 +53,9 @@ public sealed class CongestionController
     private ulong _congestionEventsCount;
 
     private bool _hasLossSample;
+    private uint _lastStreamId;
+    private ulong _lastFrameIndex;
+    private uint _lastPacketsReceived;
     private uint _lastPacketsLost;
     private uint _lastPacketsRecovered;
     private long _lastBitrateIncreaseTimestamp;
@@ -111,34 +114,92 @@ public sealed class CongestionController
 
     /// <summary>
     /// Processes incoming Moonshine-native feedback report with loss, RTT, jitter, and queue depth.
+    /// Safely handles stream switches, counter rollovers, and out-of-order / stale feedback datagrams.
     /// </summary>
     public void ProcessFeedback(in MoonshineFeedbackLossStatsPayload stats)
     {
-        double rttMs = stats.RoundTripTimeUs / 1000.0;
-        double instantLossRate = 0.0;
-        uint totalExpected = stats.PacketsReceived + stats.PacketsLost;
-        if (totalExpected > 0)
+        lock (_lock)
         {
-            uint unrecoverable = stats.PacketsLost >= stats.PacketsRecoveredFec
-                ? stats.PacketsLost - stats.PacketsRecoveredFec
-                : 0;
-            instantLossRate = (double)unrecoverable / totalExpected;
+            // 1. Guard against stream ID changes / session resets
+            if (_hasLossSample && stats.StreamId != 0 && _lastStreamId != 0 && stats.StreamId != _lastStreamId)
+            {
+                _hasLossSample = false;
+                _lastStreamId = stats.StreamId;
+                _lastFrameIndex = stats.LastReceivedFrameIndex;
+                _lastPacketsReceived = stats.PacketsReceived;
+                _lastPacketsLost = stats.PacketsLost;
+                _lastPacketsRecovered = stats.PacketsRecoveredFec;
+            }
+
+            // 2. Filter out-of-order or stale feedback arriving after newer feedback
+            if (_hasLossSample && stats.StreamId == _lastStreamId)
+            {
+                if (stats.LastReceivedFrameIndex > 0 && _lastFrameIndex > 0)
+                {
+                    if (stats.LastReceivedFrameIndex < _lastFrameIndex)
+                    {
+                        // Discard stale datagram delayed in transit to prevent polluting moving averages
+                        return;
+                    }
+
+                    if (stats.LastReceivedFrameIndex == _lastFrameIndex && stats.PacketsReceived < _lastPacketsReceived)
+                    {
+                        // Duplicate or stale sub-frame packet sample
+                        return;
+                    }
+                }
+            }
+
+            // 3. Calculate safe monotonic deltas across intervals
+            uint lostDelta = stats.PacketsLost >= _lastPacketsLost
+                ? stats.PacketsLost - _lastPacketsLost
+                : stats.PacketsLost;
+
+            uint recoveredDelta = stats.PacketsRecoveredFec >= _lastPacketsRecovered
+                ? stats.PacketsRecoveredFec - _lastPacketsRecovered
+                : stats.PacketsRecoveredFec;
+
+            uint receivedDelta = stats.PacketsReceived >= _lastPacketsReceived
+                ? stats.PacketsReceived - _lastPacketsReceived
+                : stats.PacketsReceived;
+
+            double rttMs = stats.RoundTripTimeUs / 1000.0;
+            double instantLossRate = 0.0;
+            uint intervalExpected = receivedDelta + lostDelta;
+            if (intervalExpected > 0)
+            {
+                uint unrecoverableDelta = lostDelta >= recoveredDelta
+                    ? lostDelta - recoveredDelta
+                    : 0;
+                instantLossRate = (double)unrecoverableDelta / intervalExpected;
+            }
+            else
+            {
+                uint totalExpected = stats.PacketsReceived + stats.PacketsLost;
+                if (totalExpected > 0)
+                {
+                    uint unrecoverable = stats.PacketsLost >= stats.PacketsRecoveredFec
+                        ? stats.PacketsLost - stats.PacketsRecoveredFec
+                        : 0;
+                    instantLossRate = (double)unrecoverable / totalExpected;
+                }
+            }
+
+            ProcessFeedbackInternalNoLock(
+                instantLossRate,
+                rttMs,
+                stats.JitterUs,
+                stats.EstimatedBandwidthKbps,
+                stats.ReceiveQueueDepth,
+                lostDelta,
+                recoveredDelta);
+
+            _lastStreamId = stats.StreamId;
+            _lastFrameIndex = stats.LastReceivedFrameIndex;
+            _lastPacketsReceived = stats.PacketsReceived;
+            _lastPacketsLost = stats.PacketsLost;
+            _lastPacketsRecovered = stats.PacketsRecoveredFec;
         }
-
-        uint lostDelta = stats.PacketsLost >= _lastPacketsLost ? stats.PacketsLost - _lastPacketsLost : stats.PacketsLost;
-        uint recoveredDelta = stats.PacketsRecoveredFec >= _lastPacketsRecovered ? stats.PacketsRecoveredFec - _lastPacketsRecovered : stats.PacketsRecoveredFec;
-
-        ProcessFeedbackInternal(
-            instantLossRate,
-            rttMs,
-            stats.JitterUs,
-            stats.EstimatedBandwidthKbps,
-            stats.ReceiveQueueDepth,
-            lostDelta,
-            recoveredDelta);
-
-        _lastPacketsLost = stats.PacketsLost;
-        _lastPacketsRecovered = stats.PacketsRecoveredFec;
     }
 
     /// <summary>
@@ -146,21 +207,24 @@ public sealed class CongestionController
     /// </summary>
     public void ProcessFeedback(in RtcpLossStatsPacket stats, double rttMs = 0)
     {
-        double instantLossRate = stats.UnrecoverableLossRate;
-        uint lostDelta = stats.PacketsLost >= _lastPacketsLost ? stats.PacketsLost - _lastPacketsLost : stats.PacketsLost;
-        uint recoveredDelta = stats.PacketsRecovered >= _lastPacketsRecovered ? stats.PacketsRecovered - _lastPacketsRecovered : stats.PacketsRecovered;
+        lock (_lock)
+        {
+            double instantLossRate = stats.UnrecoverableLossRate;
+            uint lostDelta = stats.PacketsLost >= _lastPacketsLost ? stats.PacketsLost - _lastPacketsLost : stats.PacketsLost;
+            uint recoveredDelta = stats.PacketsRecovered >= _lastPacketsRecovered ? stats.PacketsRecovered - _lastPacketsRecovered : stats.PacketsRecovered;
 
-        ProcessFeedbackInternal(
-            instantLossRate,
-            rttMs,
-            stats.JitterMicros,
-            0,
-            0,
-            lostDelta,
-            recoveredDelta);
+            ProcessFeedbackInternalNoLock(
+                instantLossRate,
+                rttMs,
+                stats.JitterMicros,
+                0,
+                0,
+                lostDelta,
+                recoveredDelta);
 
-        _lastPacketsLost = stats.PacketsLost;
-        _lastPacketsRecovered = stats.PacketsRecovered;
+            _lastPacketsLost = stats.PacketsLost;
+            _lastPacketsRecovered = stats.PacketsRecovered;
+        }
     }
 
     /// <summary>
@@ -171,7 +235,7 @@ public sealed class CongestionController
         RequestIdr();
     }
 
-    private void ProcessFeedbackInternal(
+    private void ProcessFeedbackInternalNoLock(
         double instantLossRate,
         double rttMs,
         uint jitterUs,
@@ -180,9 +244,7 @@ public sealed class CongestionController
         uint lostDelta,
         uint recoveredDelta)
     {
-        lock (_lock)
-        {
-            long now = Stopwatch.GetTimestamp();
+        long now = Stopwatch.GetTimestamp();
 
             // 1. Smooth RTT (EMA with 0.7 historical / 0.3 new)
             if (rttMs > 0)
@@ -274,7 +336,6 @@ public sealed class CongestionController
             {
                 RequestIdr();
             }
-        }
     }
 
     /// <summary>
