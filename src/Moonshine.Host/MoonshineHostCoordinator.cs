@@ -73,6 +73,14 @@ public sealed class MoonshineHostCoordinator : IMoonshineHostService
         }
     }
 
+    public MoonshineHostDiscoveryAdvertiser? DiscoveryAdvertiser
+    {
+        get
+        {
+            lock (_lock) return _discoveryAdvertiser;
+        }
+    }
+
     public bool HasActiveResources
     {
         get

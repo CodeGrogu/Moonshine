@@ -195,4 +195,43 @@ public class MoonshineLanDiscoveryTests
         await Task.Delay(100);
         discoveryEngine.ActiveHosts.Should().BeEmpty();
     }
+
+    [Fact]
+    public async Task HostDiscoveryAdvertiser_HealthAndTelemetry_ReportsAccurately()
+    {
+        int testPort = 56000 + Random.Shared.Next(0, 500);
+        var config = HostEndpointConfig.Custom(IPAddress.Loopback, 48010, testPort, 48011, 48012, 48013, 48014);
+
+        using var advertiser = new MoonshineHostDiscoveryAdvertiser(
+            endpointConfig: config,
+            advertisementInterval: TimeSpan.FromMilliseconds(50));
+
+        advertiser.Health.Should().Be(DiscoveryAdvertiserHealth.Uninitialised);
+
+        advertiser.Start();
+        advertiser.Health.Should().BeOneOf(DiscoveryAdvertiserHealth.Active, DiscoveryAdvertiserHealth.Degraded);
+
+        await Task.Delay(150);
+        advertiser.TotalAnnouncementsEmitted.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public void HostDiscoveryAdvertiser_PortConflict_ReportsFaultedState()
+    {
+        int testPort = 56600 + Random.Shared.Next(0, 500);
+
+        // Occupy the port with exclusive access
+        using var blockingSocket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+        blockingSocket.ExclusiveAddressUse = true;
+        blockingSocket.Bind(new IPEndPoint(IPAddress.Any, testPort));
+
+        var config = HostEndpointConfig.Custom(IPAddress.Any, 48010, testPort, 48011, 48012, 48013, 48014);
+
+        using var advertiser = new MoonshineHostDiscoveryAdvertiser(endpointConfig: config);
+        advertiser.Start();
+
+        advertiser.Health.Should().Be(DiscoveryAdvertiserHealth.Faulted);
+        advertiser.LastError.Should().NotBeNullOrWhiteSpace();
+        advertiser.LastError.Should().Contain("bind failed");
+    }
 }

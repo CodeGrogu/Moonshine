@@ -8,6 +8,24 @@ using Moonshine.Protocol.Discovery;
 namespace Moonshine.Core.Discovery;
 
 /// <summary>
+/// Operational health status of the host discovery advertiser.
+/// </summary>
+public enum DiscoveryAdvertiserHealth
+{
+    /// <summary>Advertiser has not started or socket is unbound.</summary>
+    Uninitialised = 0,
+
+    /// <summary>Advertiser bound to port and joined multicast group successfully.</summary>
+    Active = 1,
+
+    /// <summary>Advertiser bound to port, but multicast failed; falling back to broadcast/unicast.</summary>
+    Degraded = 2,
+
+    /// <summary>Advertiser failed to bind port (e.g. port conflict or permission denied).</summary>
+    Faulted = 3
+}
+
+/// <summary>
 /// Host-side discovery advertiser that emits periodic Moonshine UDP LAN announcements and responds
 /// immediately to incoming client DiscoveryProbe requests. Runs only while Host mode is active.
 /// </summary>
@@ -32,6 +50,13 @@ public sealed class MoonshineHostDiscoveryAdvertiser : IDisposable
     private Task? _probeListenerTask;
     private bool _disposed;
     private ulong _advertisementSeq;
+    private ulong _probesResponded;
+
+    public DiscoveryAdvertiserHealth Health { get; private set; } = DiscoveryAdvertiserHealth.Uninitialised;
+    public string? LastError { get; private set; }
+    public bool IsMulticastActive { get; private set; }
+    public ulong TotalAnnouncementsEmitted => _advertisementSeq;
+    public ulong TotalProbesResponded => _probesResponded;
 
     public MoonshineHostDiscoveryAdvertiser(
         HostEndpointConfig? endpointConfig = null,
@@ -89,21 +114,32 @@ public sealed class MoonshineHostDiscoveryAdvertiser : IDisposable
             _discoverySocket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
             _discoverySocket.Bind(new IPEndPoint(_endpointConfig.BindAddress, _endpointConfig.DiscoveryUdpPort));
 
+            bool multicastJoined = false;
             try
             {
                 _discoverySocket.SetSocketOption(
                     SocketOptionLevel.IP,
                     SocketOptionName.AddMembership,
                     new MulticastOption(MoonshineLanDiscoveryEngine.MulticastIPv4, IPAddress.Any));
+                multicastJoined = true;
             }
             // ALLOWED_EXCEPTION: Multicast group joining may fail on restricted loopback adapters.
             catch (SocketException)
             {
             }
+
+            IsMulticastActive = multicastJoined;
+            Health = multicastJoined ? DiscoveryAdvertiserHealth.Active : DiscoveryAdvertiserHealth.Degraded;
+            LastError = multicastJoined ? null : "Multicast group membership failed; operating in broadcast/unicast fallback mode.";
         }
         // ALLOWED_EXCEPTION: Fallback if socket creation encounters port conflicts or permissions.
-        catch (SocketException)
+        catch (SocketException ex)
         {
+            _discoverySocket?.Dispose();
+            _discoverySocket = null;
+            IsMulticastActive = false;
+            Health = DiscoveryAdvertiserHealth.Faulted;
+            LastError = $"Discovery UDP port {_endpointConfig.DiscoveryUdpPort} bind failed ({ex.SocketErrorCode}): {ex.Message}";
         }
     }
 
@@ -151,6 +187,10 @@ public sealed class MoonshineHostDiscoveryAdvertiser : IDisposable
             lock (_lock)
             {
                 if (_disposed) break;
+                if (_discoverySocket == null)
+                {
+                    InitSocketNoLock();
+                }
                 socket = _discoverySocket;
             }
 
@@ -209,7 +249,7 @@ public sealed class MoonshineHostDiscoveryAdvertiser : IDisposable
 
             if (socket == null)
             {
-                await Task.Delay(100, _cts.Token).ConfigureAwait(false);
+                await Task.Delay(250, _cts.Token).ConfigureAwait(false);
                 continue;
             }
 
@@ -231,6 +271,7 @@ public sealed class MoonshineHostDiscoveryAdvertiser : IDisposable
                     if (err == MoonshineErrorCode.Success)
                     {
                         uint seq = (uint)Interlocked.Increment(ref _advertisementSeq);
+                        Interlocked.Increment(ref _probesResponded);
                         var responsePayload = BuildPayload();
 
                         if (MoonshineDiscoveryCodec.TryWriteResponse(responsePayload, txBuffer, out int written, seq, header.SessionId))

@@ -30,6 +30,13 @@ public sealed class MoonshineLanDiscoveryEngine : IAsyncDisposable
     private Task? _sweepTask;
     private bool _disposed;
     private readonly Lock _lock = new();
+    private ulong _probesSent;
+    private ulong _announcementsReceived;
+
+    public bool IsMulticastActive { get; private set; }
+    public string? LastError { get; private set; }
+    public ulong TotalProbesSent => _probesSent;
+    public ulong TotalAnnouncementsReceived => _announcementsReceived;
 
     public event Action<MoonshineDiscoveredHost>? HostDiscovered;
     public event Action<MoonshineDiscoveredHost>? HostUpdated;
@@ -88,21 +95,30 @@ public sealed class MoonshineLanDiscoveryEngine : IAsyncDisposable
             _rxSocket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
             _rxSocket.Bind(new IPEndPoint(IPAddress.Any, 0)); // Ephemeral client receiving port
 
+            bool multicastJoined = false;
             try
             {
                 _rxSocket.SetSocketOption(
                     SocketOptionLevel.IP,
                     SocketOptionName.AddMembership,
                     new MulticastOption(MulticastIPv4, IPAddress.Any));
+                multicastJoined = true;
             }
             // ALLOWED_EXCEPTION: Multicast group joining may fail on loopback-only or restricted interfaces.
             catch (SocketException)
             {
             }
+
+            IsMulticastActive = multicastJoined;
+            LastError = multicastJoined ? null : "Multicast group membership unavailable on active interfaces.";
         }
         // ALLOWED_EXCEPTION: Socket setup fallback when port or permissions fail.
-        catch (SocketException)
+        catch (SocketException ex)
         {
+            _rxSocket?.Dispose();
+            _rxSocket = null;
+            IsMulticastActive = false;
+            LastError = $"Client discovery receive socket creation failed ({ex.SocketErrorCode}): {ex.Message}";
         }
     }
 
@@ -165,6 +181,7 @@ public sealed class MoonshineLanDiscoveryEngine : IAsyncDisposable
             try
             {
                 await socket.SendToAsync(packetBuffer.AsMemory(0, bytesWritten), SocketFlags.None, dest, cancellationToken).ConfigureAwait(false);
+                Interlocked.Increment(ref _probesSent);
             }
             // ALLOWED_EXCEPTION: Ignore transient network send failure on individual multicast or broadcast targets.
             catch (SocketException)
@@ -229,6 +246,8 @@ public sealed class MoonshineLanDiscoveryEngine : IAsyncDisposable
         {
             return;
         }
+
+        Interlocked.Increment(ref _announcementsReceived);
 
         string hostname = MoonshineDiscoveryCodec.GetFixedUtf8String(payload.Hostname, 64);
         string gpuName = MoonshineDiscoveryCodec.GetFixedUtf8String(payload.GpuName, 64);
