@@ -54,6 +54,7 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
     private bool _preferMoonshineFraming = true;
     private bool _isRunning;
     private bool _disposed;
+    private int _inFlightOperations;
 
     private readonly Lock _stateLock = new();
 
@@ -309,12 +310,20 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
     {
         ArgumentNullException.ThrowIfNull(packetSink);
 
-        lock (_stateLock)
+        if (!TryEnterOperation())
         {
             ThrowIfDisposed();
+            return false;
         }
 
-        return ExecuteAudioFrameStep(packetSink, preferMoonshineFraming);
+        try
+        {
+            return ExecuteAudioFrameStep(packetSink, preferMoonshineFraming);
+        }
+        finally
+        {
+            ExitOperation();
+        }
     }
 
     /// <summary>
@@ -332,12 +341,20 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
             return false;
         }
 
-        lock (_stateLock)
+        if (!TryEnterOperation())
         {
             ThrowIfDisposed();
+            return false;
         }
 
-        return ExecutePcmFrameStep(pcmSamples[..(int)requiredSamples], packetSink, preferMoonshineFraming);
+        try
+        {
+            return ExecutePcmFrameStep(pcmSamples[..(int)requiredSamples], packetSink, preferMoonshineFraming);
+        }
+        finally
+        {
+            ExitOperation();
+        }
     }
 
     private bool ExecuteAudioFrameStep(AudioPacketSink packetSink, bool preferMoonshineFraming)
@@ -482,7 +499,17 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
 
             if (sink is not null)
             {
-                ExecuteAudioFrameStep(sink, preferMoonshine);
+                if (TryEnterOperation())
+                {
+                    try
+                    {
+                        ExecuteAudioFrameStep(sink, preferMoonshine);
+                    }
+                    finally
+                    {
+                        ExitOperation();
+                    }
+                }
             }
 
             nextTick += ticksPerFrame;
@@ -509,6 +536,24 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
         }
     }
 
+    private bool TryEnterOperation()
+    {
+        lock (_stateLock)
+        {
+            if (_disposed)
+            {
+                return false;
+            }
+            Interlocked.Increment(ref _inFlightOperations);
+            return true;
+        }
+    }
+
+    private void ExitOperation()
+    {
+        Interlocked.Decrement(ref _inFlightOperations);
+    }
+
     private void ThrowIfDisposed()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -522,8 +567,19 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
 
         lock (_stateLock)
         {
+            if (_disposed) return;
             _disposed = true;
+        }
 
+        // Synchronise with any in-flight synchronous stepped callers
+        var spin = new SpinWait();
+        while (Volatile.Read(ref _inFlightOperations) > 0)
+        {
+            spin.SpinOnce();
+        }
+
+        lock (_stateLock)
+        {
             _ipcBridge?.Dispose();
             _ipcBridge = null;
 

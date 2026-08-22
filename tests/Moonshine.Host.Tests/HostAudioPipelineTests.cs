@@ -274,4 +274,60 @@ public class HostAudioPipelineTests
         ok.Should().BeFalse();
         packetEmitted.Should().BeFalse();
     }
+
+    [Fact]
+    public void HostAudioPipeline_ConcurrentProcessAndDispose_IsThreadSafeAndClean()
+    {
+        for (int iteration = 0; iteration < 10; iteration++)
+        {
+            var pipeline = new MoonshineHostAudioPipeline(
+                sampleRate: 48000,
+                topology: AudioChannelTopology.Stereo,
+                bitrate: 160000,
+                frameDurationMs: 5
+            );
+
+            var pcm = new float[480];
+            for (int i = 0; i < pcm.Length; i++)
+            {
+                pcm[i] = (float)Math.Sin(2.0 * Math.PI * 440.0 * i / 48000.0);
+            }
+
+            var barrier = new Barrier(2);
+            var exceptions = new System.Collections.Concurrent.ConcurrentBag<Exception>();
+
+            var worker = new Thread(() =>
+            {
+                barrier.SignalAndWait();
+                try
+                {
+                    for (int i = 0; i < 50; i++)
+                    {
+                        try
+                        {
+                            pipeline.ProcessPcmFrame(pcm, _ => { }, preferMoonshineFraming: true);
+                        }
+                        catch (ObjectDisposedException)
+                        {
+                            // ALLOWED_EXCEPTION: Pipeline disposal is expected during concurrency teardown sweep
+                            break;
+                        }
+                    }
+                }
+                // ALLOWED_EXCEPTION: Captures unexpected exceptions into thread-safe bag for assertion
+                catch (Exception ex)
+                {
+                    exceptions.Add(ex);
+                }
+            });
+
+            worker.Start();
+            barrier.SignalAndWait();
+            Thread.Sleep(1);
+            pipeline.Dispose();
+            worker.Join();
+
+            exceptions.Should().BeEmpty();
+        }
+    }
 }
