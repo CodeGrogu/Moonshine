@@ -1,3 +1,5 @@
+using Moonshine.Core.Input;
+
 namespace Moonshine.Core.Runtime;
 
 /// <summary>
@@ -13,9 +15,17 @@ public sealed class MoonshineClientCoordinator : IMoonshineClientService
     private int _activeBuffers;
     private string? _lastError;
     private CancellationTokenSource? _workerCts;
+    private MoonshineClientInputPipeline? _inputPipeline;
     private bool _disposed;
 
     public ApplicationRole Role => ApplicationRole.Client;
+    public MoonshineClientInputPipeline? InputPipeline
+    {
+        get
+        {
+            lock (_lock) return _inputPipeline;
+        }
+    }
 
     public RuntimeState State
     {
@@ -124,6 +134,12 @@ public sealed class MoonshineClientCoordinator : IMoonshineClientService
             _workerCts.Cancel();
             _workerCts.Dispose();
             _workerCts = null;
+        }
+
+        if (_inputPipeline is not null)
+        {
+            _inputPipeline.Dispose();
+            _inputPipeline = null;
         }
 
         _activeWorkers = 0;
