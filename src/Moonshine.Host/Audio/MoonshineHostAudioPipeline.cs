@@ -603,6 +603,24 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
     }
 
+    /// <summary>
+    /// Disposes the audio pipeline and releases all unmanaged encoder, WASAPI, driver, and IPC resources.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Disposal Return Semantics:</b>
+    /// <list type="bullet">
+    ///   <item>
+    ///     <term>External Caller (<c>t_inFlightDepth == 0</c>)</term>
+    ///     <description>Unconditionally waits for all in-flight audio frame operations to exit and tears down all unmanaged resources before returning.</description>
+    ///   </item>
+    ///   <item>
+    ///     <term>In-Flight / Re-entrant Caller (<c>t_inFlightDepth &gt; 0</c>)</term>
+    ///     <description>Initiates disposal and returns immediately without blocking, deferring unmanaged resource teardown to the final ExitOperation when the active audio frame finishes unwinding. This deliberately avoids self-deadlock while ensuring resources remain fully intact during in-flight callback execution.</description>
+    ///   </item>
+    /// </list>
+    /// </para>
+    /// </remarks>
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposeInitiated, 1) != 0)
