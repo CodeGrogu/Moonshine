@@ -351,6 +351,24 @@ public sealed class MoonshineMediaReassemblyPipeline : IDisposable
         return pushRes;
     }
 
+    /// <summary>
+    /// Attempts to pop the next complete reassembled frame from the jitter buffer.
+    /// </summary>
+    public bool TryPopFrame(out MoonshineFrameDesc frame)
+    {
+        lock (_lock)
+        {
+            if (_disposed || _nativeJitterHandle == IntPtr.Zero)
+            {
+                frame = default;
+                return false;
+            }
+
+            int result = MoonshineNativeMethods.JitterPopFrame(_nativeJitterHandle, out frame);
+            return result == 1;
+        }
+    }
+
     public void Dispose()
     {
         lock (_lock)

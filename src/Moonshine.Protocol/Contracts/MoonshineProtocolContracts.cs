@@ -757,6 +757,176 @@ public static class MoonshineProtocolCodec
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool TryWriteHelloResponse(in MoonshineHelloResponsePayload payload, Span<byte> destination)
+    {
+        if (destination.Length < 48) return false;
+
+        BinaryPrimitives.WriteUInt16BigEndian(destination[..2], payload.ServerVersionMajor);
+        BinaryPrimitives.WriteUInt16BigEndian(destination[2..4], payload.ServerVersionMinor);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[4..8], (uint)payload.NegotiatedCapabilities);
+        BinaryPrimitives.WriteUInt64BigEndian(destination[8..16], payload.AssignedSessionId);
+        BinaryPrimitives.WriteUInt64BigEndian(destination[16..24], payload.ServerNonce);
+        payload.ChallengeSalt.AsSpan().CopyTo(destination[24..40]);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[40..44], payload.SessionLeaseSeconds);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[44..48], payload.Reserved);
+
+        return true;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static MoonshineErrorCode TryReadHelloResponse(ReadOnlySpan<byte> source, out MoonshineHelloResponsePayload payload)
+    {
+        payload = default;
+        if (source.Length < 48) return MoonshineErrorCode.BufferTooSmall;
+
+        payload = new MoonshineHelloResponsePayload
+        {
+            ServerVersionMajor = BinaryPrimitives.ReadUInt16BigEndian(source[..2]),
+            ServerVersionMinor = BinaryPrimitives.ReadUInt16BigEndian(source[2..4]),
+            NegotiatedCapabilities = (MoonshineCapabilities)BinaryPrimitives.ReadUInt32BigEndian(source[4..8]),
+            AssignedSessionId = BinaryPrimitives.ReadUInt64BigEndian(source[8..16]),
+            ServerNonce = BinaryPrimitives.ReadUInt64BigEndian(source[16..24]),
+            ChallengeSalt = new MoonshineUuid128(source[24..40]),
+            SessionLeaseSeconds = BinaryPrimitives.ReadUInt32BigEndian(source[40..44]),
+            Reserved = BinaryPrimitives.ReadUInt32BigEndian(source[44..48])
+        };
+
+        return MoonshineErrorCode.Success;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool TryWriteSessionSetup(in MoonshineSessionSetupPayload payload, Span<byte> destination)
+    {
+        if (destination.Length < 40) return false;
+
+        BinaryPrimitives.WriteUInt32BigEndian(destination[..4], payload.VideoWidth);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[4..8], payload.VideoHeight);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[8..12], payload.VideoFps);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[12..16], payload.VideoBitrateKbps);
+        destination[16] = (byte)payload.VideoCodec;
+        destination[17] = (byte)payload.VideoColorFormat;
+        destination[18] = payload.AudioChannels;
+        destination[19] = (byte)payload.AudioCodec;
+        BinaryPrimitives.WriteUInt32BigEndian(destination[20..24], payload.AudioSampleRate);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[24..28], payload.AudioBitrateKbps);
+        BinaryPrimitives.WriteUInt16BigEndian(destination[28..30], payload.ClientUdpVideoPort);
+        BinaryPrimitives.WriteUInt16BigEndian(destination[30..32], payload.ClientUdpAudioPort);
+        BinaryPrimitives.WriteUInt16BigEndian(destination[32..34], payload.ClientUdpFeedbackPort);
+        BinaryPrimitives.WriteUInt16BigEndian(destination[34..36], payload.Reserved);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[36..40], payload.MtuPayloadSize);
+
+        return true;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static MoonshineErrorCode TryReadSessionSetup(ReadOnlySpan<byte> source, out MoonshineSessionSetupPayload payload)
+    {
+        payload = default;
+        if (source.Length < 40) return MoonshineErrorCode.BufferTooSmall;
+
+        payload = new MoonshineSessionSetupPayload
+        {
+            VideoWidth = BinaryPrimitives.ReadUInt32BigEndian(source[..4]),
+            VideoHeight = BinaryPrimitives.ReadUInt32BigEndian(source[4..8]),
+            VideoFps = BinaryPrimitives.ReadUInt32BigEndian(source[8..12]),
+            VideoBitrateKbps = BinaryPrimitives.ReadUInt32BigEndian(source[12..16]),
+            VideoCodec = (MoonshineVideoCodec)source[16],
+            VideoColorFormat = (MoonshineColorFormat)source[17],
+            AudioChannels = source[18],
+            AudioCodec = (MoonshineAudioCodec)source[19],
+            AudioSampleRate = BinaryPrimitives.ReadUInt32BigEndian(source[20..24]),
+            AudioBitrateKbps = BinaryPrimitives.ReadUInt32BigEndian(source[24..28]),
+            ClientUdpVideoPort = BinaryPrimitives.ReadUInt16BigEndian(source[28..30]),
+            ClientUdpAudioPort = BinaryPrimitives.ReadUInt16BigEndian(source[30..32]),
+            ClientUdpFeedbackPort = BinaryPrimitives.ReadUInt16BigEndian(source[32..34]),
+            Reserved = BinaryPrimitives.ReadUInt16BigEndian(source[34..36]),
+            MtuPayloadSize = BinaryPrimitives.ReadUInt32BigEndian(source[36..40])
+        };
+
+        return MoonshineErrorCode.Success;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool TryWriteSessionSetupResponse(in MoonshineSessionSetupResponsePayload payload, Span<byte> destination)
+    {
+        if (destination.Length < 32) return false;
+
+        BinaryPrimitives.WriteUInt32BigEndian(destination[..4], (uint)payload.StatusCode);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[4..8], payload.VideoStreamId);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[8..12], payload.AudioStreamId);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[12..16], payload.FeedbackStreamId);
+        BinaryPrimitives.WriteUInt16BigEndian(destination[16..18], payload.HostUdpVideoPort);
+        BinaryPrimitives.WriteUInt16BigEndian(destination[18..20], payload.HostUdpAudioPort);
+        BinaryPrimitives.WriteUInt16BigEndian(destination[20..22], payload.HostUdpFeedbackPort);
+        BinaryPrimitives.WriteUInt16BigEndian(destination[22..24], payload.HostUdpInputPort);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[24..28], payload.NegotiatedMtu);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[28..32], payload.Reserved);
+
+        return true;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static MoonshineErrorCode TryReadSessionSetupResponse(ReadOnlySpan<byte> source, out MoonshineSessionSetupResponsePayload payload)
+    {
+        payload = default;
+        if (source.Length < 32) return MoonshineErrorCode.BufferTooSmall;
+
+        payload = new MoonshineSessionSetupResponsePayload
+        {
+            StatusCode = (MoonshineErrorCode)BinaryPrimitives.ReadUInt32BigEndian(source[..4]),
+            VideoStreamId = BinaryPrimitives.ReadUInt32BigEndian(source[4..8]),
+            AudioStreamId = BinaryPrimitives.ReadUInt32BigEndian(source[8..12]),
+            FeedbackStreamId = BinaryPrimitives.ReadUInt32BigEndian(source[12..16]),
+            HostUdpVideoPort = BinaryPrimitives.ReadUInt16BigEndian(source[16..18]),
+            HostUdpAudioPort = BinaryPrimitives.ReadUInt16BigEndian(source[18..20]),
+            HostUdpFeedbackPort = BinaryPrimitives.ReadUInt16BigEndian(source[20..22]),
+            HostUdpInputPort = BinaryPrimitives.ReadUInt16BigEndian(source[22..24]),
+            NegotiatedMtu = BinaryPrimitives.ReadUInt32BigEndian(source[24..28]),
+            Reserved = BinaryPrimitives.ReadUInt32BigEndian(source[28..32])
+        };
+
+        return MoonshineErrorCode.Success;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool TryWriteTelemetryReport(in MoonshineTelemetryReportPayload payload, Span<byte> destination)
+    {
+        if (destination.Length < 32) return false;
+
+        BinaryPrimitives.WriteUInt32BigEndian(destination[..4], payload.EncodeLatencyUs);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[4..8], payload.DecodeLatencyUs);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[8..12], payload.RenderLatencyUs);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[12..16], payload.NetworkLatencyUs);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[16..20], payload.FramesRendered);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[20..24], payload.FramesDropped);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[24..28], payload.FecRecoveredFrames);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[28..32], payload.Reserved);
+
+        return true;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static MoonshineErrorCode TryReadTelemetryReport(ReadOnlySpan<byte> source, out MoonshineTelemetryReportPayload payload)
+    {
+        payload = default;
+        if (source.Length < 32) return MoonshineErrorCode.BufferTooSmall;
+
+        payload = new MoonshineTelemetryReportPayload
+        {
+            EncodeLatencyUs = BinaryPrimitives.ReadUInt32BigEndian(source[..4]),
+            DecodeLatencyUs = BinaryPrimitives.ReadUInt32BigEndian(source[4..8]),
+            RenderLatencyUs = BinaryPrimitives.ReadUInt32BigEndian(source[8..12]),
+            NetworkLatencyUs = BinaryPrimitives.ReadUInt32BigEndian(source[12..16]),
+            FramesRendered = BinaryPrimitives.ReadUInt32BigEndian(source[16..20]),
+            FramesDropped = BinaryPrimitives.ReadUInt32BigEndian(source[20..24]),
+            FecRecoveredFrames = BinaryPrimitives.ReadUInt32BigEndian(source[24..28]),
+            Reserved = BinaryPrimitives.ReadUInt32BigEndian(source[28..32])
+        };
+
+        return MoonshineErrorCode.Success;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool TryWriteIdrRequest(in MoonshineIdrRequestPayload payload, Span<byte> destination)
     {
         if (destination.Length < 16) return false;

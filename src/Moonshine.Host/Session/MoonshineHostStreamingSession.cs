@@ -88,6 +88,17 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
 
     public bool IsStreaming => State == HostSessionState.Streaming;
 
+    public int BoundLocalVideoPort => (_videoSocket?.LocalEndPoint as IPEndPoint)?.Port ?? 0;
+    public int BoundLocalAudioPort => (_audioSocket?.LocalEndPoint as IPEndPoint)?.Port ?? 0;
+    public int BoundLocalControlPort => (_controlSocket?.LocalEndPoint as IPEndPoint)?.Port ?? 0;
+
+    public void SetClientEndpoints(IPEndPoint videoEp, IPEndPoint audioEp, IPEndPoint controlEp)
+    {
+        _clientVideoEndpoint = videoEp;
+        _clientAudioEndpoint = audioEp;
+        _clientControlEndpoint = controlEp;
+    }
+
     public HostSessionMetrics Metrics => new(
         Interlocked.Read(ref _totalFramesCaptured),
         Interlocked.Read(ref _totalFramesEncoded),
@@ -305,6 +316,8 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
         return result;
     }
 
+    public void SendAudioPacket(ReadOnlySpan<byte> audioDatagram) => OnAudioPacketEncoded(audioDatagram);
+
     private void OnAudioPacketEncoded(ReadOnlySpan<byte> audioDatagram)
     {
         if (_disposed || State != HostSessionState.Streaming || _audioSocket == null) return;
@@ -467,6 +480,7 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
     private async Task ControlFeedbackLoopAsync()
     {
         byte[] buffer = new byte[2048];
+        byte[] ackBuffer = new byte[MoonshineProtocolConstants.HeaderSize];
         var remoteEp = new IPEndPoint(IPAddress.Any, 0);
 
         while (!_cts.Token.IsCancellationRequested)
@@ -506,6 +520,45 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                                 RequestKeyframe();
                             }
                             continue;
+                        }
+                        else if (packetHeader.MessageType is MoonshineMessageType.InputKeyboard
+                                                           or MoonshineMessageType.InputMouse
+                                                           or MoonshineMessageType.InputGamepad)
+                        {
+                            if (_inputPipeline?.ProcessInputPacket(datagram) == true)
+                            {
+                                Interlocked.Increment(ref _totalInputPacketsProcessed);
+                            }
+                            continue;
+                        }
+                        else if (packetHeader.MessageType == MoonshineMessageType.KeepAlive)
+                        {
+                            var ackHeader = new MoonshinePacketHeader(
+                                Magic: MoonshineProtocolConstants.Magic,
+                                Version: MoonshineProtocolConstants.Version10,
+                                MessageType: MoonshineMessageType.KeepAliveAck,
+                                PayloadSize: 0,
+                                SequenceNumber: packetHeader.SequenceNumber,
+                                SessionId: _config.SessionId,
+                                TimestampUs: (ulong)Stopwatch.GetTimestamp());
+
+                            if (MoonshineProtocolCodec.TryWriteHeader(in ackHeader, ackBuffer))
+                            {
+                                try
+                                {
+                                    _controlSocket?.SendTo(ackBuffer, result.RemoteEndPoint);
+                                }
+                                // ALLOWED_EXCEPTION: Transient socket exception on keep-alive ACK send.
+                                catch (SocketException)
+                                {
+                                }
+                            }
+                            continue;
+                        }
+                        else if (packetHeader.MessageType == MoonshineMessageType.Teardown)
+                        {
+                            _ = Task.Run(() => StopAsync(CancellationToken.None));
+                            break;
                         }
                     }
                 }

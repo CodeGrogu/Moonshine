@@ -218,6 +218,165 @@ public class MoonshineProtocolContractsTests
     }
 
     [Fact]
+    public void HelloResponsePayload_Serialization_RoundtripMatchesExactFields()
+    {
+        var original = new MoonshineHelloResponsePayload
+        {
+            ServerVersionMajor = 1,
+            ServerVersionMinor = 0,
+            NegotiatedCapabilities = MoonshineCapabilities.Av1 | MoonshineCapabilities.ReedSolomonFec,
+            AssignedSessionId = 0x1122334455667788UL,
+            ServerNonce = 0x99AABBCCDDEEFF00UL,
+            ChallengeSalt = new MoonshineUuid128(Guid.NewGuid()),
+            SessionLeaseSeconds = 3600,
+            Reserved = 0
+        };
+
+        byte[] buffer = new byte[48];
+        bool writeSuccess = MoonshineProtocolCodec.TryWriteHelloResponse(original, buffer);
+        writeSuccess.Should().BeTrue();
+
+        MoonshineErrorCode readResult = MoonshineProtocolCodec.TryReadHelloResponse(buffer, out MoonshineHelloResponsePayload decoded);
+        readResult.Should().Be(MoonshineErrorCode.Success);
+        decoded.ServerVersionMajor.Should().Be(original.ServerVersionMajor);
+        decoded.ServerVersionMinor.Should().Be(original.ServerVersionMinor);
+        decoded.NegotiatedCapabilities.Should().Be(original.NegotiatedCapabilities);
+        decoded.AssignedSessionId.Should().Be(original.AssignedSessionId);
+        decoded.ServerNonce.Should().Be(original.ServerNonce);
+        decoded.ChallengeSalt.Should().Be(original.ChallengeSalt);
+        decoded.SessionLeaseSeconds.Should().Be(original.SessionLeaseSeconds);
+    }
+
+    [Fact]
+    public void SessionSetupPayload_Serialization_RoundtripMatchesExactFields()
+    {
+        var original = new MoonshineSessionSetupPayload
+        {
+            VideoWidth = 2560,
+            VideoHeight = 1440,
+            VideoFps = 120,
+            VideoBitrateKbps = 50000,
+            VideoCodec = MoonshineVideoCodec.Av1,
+            VideoColorFormat = MoonshineColorFormat.P010Hdr10,
+            AudioChannels = 6,
+            AudioCodec = MoonshineAudioCodec.Opus,
+            AudioSampleRate = 48000,
+            AudioBitrateKbps = 256,
+            ClientUdpVideoPort = 48011,
+            ClientUdpAudioPort = 48012,
+            ClientUdpFeedbackPort = 48013,
+            Reserved = 0,
+            MtuPayloadSize = 1188
+        };
+
+        byte[] buffer = new byte[40];
+        bool writeSuccess = MoonshineProtocolCodec.TryWriteSessionSetup(original, buffer);
+        writeSuccess.Should().BeTrue();
+
+        MoonshineErrorCode readResult = MoonshineProtocolCodec.TryReadSessionSetup(buffer, out MoonshineSessionSetupPayload decoded);
+        readResult.Should().Be(MoonshineErrorCode.Success);
+        decoded.VideoWidth.Should().Be(2560);
+        decoded.VideoHeight.Should().Be(1440);
+        decoded.VideoFps.Should().Be(120);
+        decoded.VideoBitrateKbps.Should().Be(50000);
+        decoded.VideoCodec.Should().Be(MoonshineVideoCodec.Av1);
+        decoded.VideoColorFormat.Should().Be(MoonshineColorFormat.P010Hdr10);
+        decoded.AudioChannels.Should().Be(6);
+        decoded.AudioCodec.Should().Be(MoonshineAudioCodec.Opus);
+        decoded.AudioSampleRate.Should().Be(48000);
+        decoded.AudioBitrateKbps.Should().Be(256);
+        decoded.ClientUdpVideoPort.Should().Be(48011);
+        decoded.ClientUdpAudioPort.Should().Be(48012);
+        decoded.ClientUdpFeedbackPort.Should().Be(48013);
+        decoded.MtuPayloadSize.Should().Be(1188);
+    }
+
+    [Fact]
+    public void SessionSetupResponsePayload_Serialization_RoundtripMatchesExactFields()
+    {
+        var original = new MoonshineSessionSetupResponsePayload
+        {
+            StatusCode = MoonshineErrorCode.Success,
+            VideoStreamId = 101,
+            AudioStreamId = 102,
+            FeedbackStreamId = 103,
+            HostUdpVideoPort = 48011,
+            HostUdpAudioPort = 48012,
+            HostUdpFeedbackPort = 48013,
+            HostUdpInputPort = 48014,
+            NegotiatedMtu = 1188,
+            Reserved = 0
+        };
+
+        byte[] buffer = new byte[32];
+        bool writeSuccess = MoonshineProtocolCodec.TryWriteSessionSetupResponse(original, buffer);
+        writeSuccess.Should().BeTrue();
+
+        MoonshineErrorCode readResult = MoonshineProtocolCodec.TryReadSessionSetupResponse(buffer, out MoonshineSessionSetupResponsePayload decoded);
+        readResult.Should().Be(MoonshineErrorCode.Success);
+        decoded.StatusCode.Should().Be(MoonshineErrorCode.Success);
+        decoded.VideoStreamId.Should().Be(101);
+        decoded.AudioStreamId.Should().Be(102);
+        decoded.FeedbackStreamId.Should().Be(103);
+        decoded.HostUdpVideoPort.Should().Be(48011);
+        decoded.HostUdpAudioPort.Should().Be(48012);
+        decoded.HostUdpFeedbackPort.Should().Be(48013);
+        decoded.HostUdpInputPort.Should().Be(48014);
+        decoded.NegotiatedMtu.Should().Be(1188);
+    }
+
+    [Fact]
+    public void TelemetryReportPayload_Serialization_RoundtripMatchesExactFields()
+    {
+        var original = new MoonshineTelemetryReportPayload
+        {
+            EncodeLatencyUs = 250,
+            DecodeLatencyUs = 800,
+            RenderLatencyUs = 400,
+            NetworkLatencyUs = 1200,
+            FramesRendered = 6000,
+            FramesDropped = 2,
+            FecRecoveredFrames = 5,
+            Reserved = 0
+        };
+
+        byte[] buffer = new byte[32];
+        bool writeSuccess = MoonshineProtocolCodec.TryWriteTelemetryReport(original, buffer);
+        writeSuccess.Should().BeTrue();
+
+        MoonshineErrorCode readResult = MoonshineProtocolCodec.TryReadTelemetryReport(buffer, out MoonshineTelemetryReportPayload decoded);
+        readResult.Should().Be(MoonshineErrorCode.Success);
+        decoded.EncodeLatencyUs.Should().Be(250);
+        decoded.DecodeLatencyUs.Should().Be(800);
+        decoded.RenderLatencyUs.Should().Be(400);
+        decoded.NetworkLatencyUs.Should().Be(1200);
+        decoded.FramesRendered.Should().Be(6000);
+        decoded.FramesDropped.Should().Be(2);
+        decoded.FecRecoveredFrames.Should().Be(5);
+    }
+
+    [Fact]
+    public void IdrRequestPayload_Serialization_RoundtripMatchesExactFields()
+    {
+        var original = new MoonshineIdrRequestPayload
+        {
+            StreamId = 1,
+            LastValidFrameIndex = 500,
+            ReasonCode = 2
+        };
+
+        byte[] buffer = new byte[16];
+        bool writeSuccess = MoonshineProtocolCodec.TryWriteIdrRequest(original, buffer);
+        writeSuccess.Should().BeTrue();
+
+        MoonshineErrorCode readResult = MoonshineProtocolCodec.TryReadIdrRequest(buffer, out MoonshineIdrRequestPayload decoded);
+        readResult.Should().Be(MoonshineErrorCode.Success);
+        decoded.StreamId.Should().Be(1);
+        decoded.LastValidFrameIndex.Should().Be(500);
+        decoded.ReasonCode.Should().Be(2);
+    }
+
+    [Fact]
     public void AllMessageFamilyEnums_HaveExactExpectedWireCodes()
     {
         ((ushort)MoonshineMessageType.Hello).Should().Be(0x0101);
