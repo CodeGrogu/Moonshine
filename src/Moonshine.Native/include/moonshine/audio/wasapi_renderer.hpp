@@ -5,6 +5,17 @@
 #include <memory>
 #include <vector>
 
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <mmdeviceapi.h>
+#include <audioclient.h>
+#include <wrl/client.h>
+#include <ksmedia.h>
+#endif
+
 namespace moonshine::audio {
 
 /**
@@ -25,15 +36,29 @@ public:
     [[nodiscard]] bool IsExclusive() const noexcept { return exclusive_; }
     [[nodiscard]] uint32_t GetSampleRate() const noexcept { return sample_rate_; }
     [[nodiscard]] uint16_t GetChannels() const noexcept { return channels_; }
+    [[nodiscard]] bool IsDeviceInvalidated() const noexcept { return device_invalidated_; }
 
 private:
     uint32_t sample_rate_{48000};
     uint16_t channels_{2};
     bool exclusive_{false};
     bool initialized_{false};
+    bool device_invalidated_{false};
     uint64_t frames_rendered_{0};
     uint32_t underruns_{0};
     std::vector<float> staging_buffer_;
+
+#if defined(_WIN32)
+    Microsoft::WRL::ComPtr<IMMDeviceEnumerator> enumerator_;
+    Microsoft::WRL::ComPtr<IMMDevice> device_;
+    Microsoft::WRL::ComPtr<IAudioClient> audio_client_;
+    Microsoft::WRL::ComPtr<IAudioRenderClient> render_client_;
+    UINT32 buffer_frame_count_{0};
+    bool is_float_format_{true};
+    uint32_t device_channels_{2};
+    uint32_t device_sample_rate_{48000};
+    uint16_t bits_per_sample_{32};
+#endif
 };
 
 } // namespace moonshine::audio

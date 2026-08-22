@@ -366,6 +366,58 @@ public static unsafe partial class MoonshineNativeMethods
     );
 
     // ========================================================================
+    // Low-Latency Multi-Channel Opus Audio Decoder APIs
+    // ========================================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_opus_decoder_create")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial IntPtr OpusDecoderCreate(uint sampleRate, uint channels);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_opus_decoder_destroy")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void OpusDecoderDestroy(IntPtr handle);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_opus_decoder_decode_float")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int OpusDecoderDecodeFloat(
+        IntPtr handle,
+        byte* opusPayload,
+        uint payloadBytes,
+        float* outPcmSamples,
+        uint maxSamples,
+        out uint outSamplesDecoded,
+        int decodeFec
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_opus_decoder_decode_pcm16")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int OpusDecoderDecodePcm16(
+        IntPtr handle,
+        byte* opusPayload,
+        uint payloadBytes,
+        short* outPcmSamples,
+        uint maxSamples,
+        out uint outSamplesDecoded,
+        int decodeFec
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_opus_decoder_reset")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void OpusDecoderReset(IntPtr handle);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_opus_decoder_get_metrics")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void OpusDecoderGetMetrics(
+        IntPtr handle,
+        out ulong outFramesDecoded,
+        out ulong outSamplesDecoded,
+        out uint outDecodeErrors,
+        out uint outConcealmentFrames,
+        out double outAvgDecodeTimeUs,
+        out uint outStreamsCount
+    );
+
+    // ========================================================================
     // Low-Latency Client-to-Host Microphone Virtual Audio Sink APIs
     // ========================================================================
 

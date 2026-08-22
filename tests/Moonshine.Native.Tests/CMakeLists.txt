@@ -85,6 +85,21 @@ add_executable(test_opus_encoder
 target_link_libraries(test_opus_encoder PRIVATE Moonshine.Native)
 add_test(NAME test_opus_encoder COMMAND test_opus_encoder)
 
+add_executable(test_opus_decoder 
+    test_opus_decoder.cpp
+    ${CMAKE_SOURCE_DIR}/src/Moonshine.Native/src/audio/opus_audio_decoder.cpp
+    ${CMAKE_SOURCE_DIR}/src/Moonshine.Native/src/audio/opus_audio_encoder.cpp
+)
+target_link_libraries(test_opus_decoder PRIVATE Moonshine.Native)
+add_test(NAME test_opus_decoder COMMAND test_opus_decoder)
+
+add_executable(test_wasapi_renderer 
+    test_wasapi_renderer.cpp
+    ${CMAKE_SOURCE_DIR}/src/Moonshine.Native/src/audio/wasapi_renderer.cpp
+)
+target_link_libraries(test_wasapi_renderer PRIVATE Moonshine.Native $<$<BOOL:${WIN32}>:avrt>)
+add_test(NAME test_wasapi_renderer COMMAND test_wasapi_renderer)
+
 add_executable(test_mic_sink 
     test_mic_sink.cpp
     ${CMAKE_SOURCE_DIR}/src/Moonshine.Native/src/audio/mic_audio_sink.cpp

@@ -433,6 +433,55 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_opus_encoder_get_metrics(
 );
 
 // ============================================================================
+// Low-Latency Multi-Channel Opus Audio Decoder APIs
+// ============================================================================
+
+typedef void* MoonshineOpusDecoderHandle;
+
+MOONSHINE_API MoonshineOpusDecoderHandle MOONSHINE_CONV moonshine_opus_decoder_create(
+    uint32_t sample_rate,
+    uint32_t channels
+);
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_opus_decoder_destroy(
+    MoonshineOpusDecoderHandle handle
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_opus_decoder_decode_float(
+    MoonshineOpusDecoderHandle handle,
+    const uint8_t* opus_payload,
+    uint32_t payload_bytes,
+    float* out_pcm_samples,
+    uint32_t max_samples,
+    uint32_t* out_samples_decoded,
+    int32_t decode_fec
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_opus_decoder_decode_pcm16(
+    MoonshineOpusDecoderHandle handle,
+    const uint8_t* opus_payload,
+    uint32_t payload_bytes,
+    int16_t* out_pcm_samples,
+    uint32_t max_samples,
+    uint32_t* out_samples_decoded,
+    int32_t decode_fec
+);
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_opus_decoder_reset(
+    MoonshineOpusDecoderHandle handle
+);
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_opus_decoder_get_metrics(
+    MoonshineOpusDecoderHandle handle,
+    uint64_t* out_frames_decoded,
+    uint64_t* out_samples_decoded,
+    uint32_t* out_decode_errors,
+    uint32_t* out_concealment_frames,
+    double* out_avg_decode_time_us,
+    uint32_t* out_streams_count
+);
+
+// ============================================================================
 // Low-Latency Client-to-Host Microphone Virtual Audio Sink APIs
 // ============================================================================
 

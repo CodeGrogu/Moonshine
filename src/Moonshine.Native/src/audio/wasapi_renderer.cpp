@@ -16,7 +16,7 @@
 namespace moonshine::audio {
 
 WasapiRenderer::WasapiRenderer(uint32_t sample_rate, uint16_t channels, bool exclusive)
-    : sample_rate_(sample_rate),
+    : sample_rate_(sample_rate == 0 ? 48000 : sample_rate),
       channels_(channels == 0 ? 2 : channels),
       exclusive_(exclusive),
       staging_buffer_(static_cast<size_t>(sample_rate_) * static_cast<size_t>(channels_)) {
@@ -28,27 +28,27 @@ WasapiRenderer::~WasapiRenderer() {
 
 int WasapiRenderer::Initialize() {
     if (sample_rate_ == 0 || channels_ == 0) return -1;
+    Shutdown();
 
 #if defined(_WIN32)
     CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 
-    ComPtr<IMMDeviceEnumerator> enumerator;
     HRESULT hr = CoCreateInstance(
         __uuidof(MMDeviceEnumerator),
         nullptr,
         CLSCTX_ALL,
         __uuidof(IMMDeviceEnumerator),
-        reinterpret_cast<void**>(enumerator.GetAddressOf())
+        reinterpret_cast<void**>(enumerator_.GetAddressOf())
     );
 
-    if (SUCCEEDED(hr)) {
-        ComPtr<IMMDevice> device;
-        hr = enumerator->GetDefaultAudioEndpoint(eRender, eMultimedia, &device);
-        if (SUCCEEDED(hr)) {
-            ComPtr<IAudioClient> audio_client;
-            hr = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr, reinterpret_cast<void**>(audio_client.GetAddressOf()));
-            if (SUCCEEDED(hr)) {
-                // Configure WAVEFORMATEXTENSIBLE for 32-bit IEEE float PCM
+    if (SUCCEEDED(hr) && enumerator_) {
+        hr = enumerator_->GetDefaultAudioEndpoint(eRender, eMultimedia, &device_);
+        if (SUCCEEDED(hr) && device_) {
+            hr = device_->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr, reinterpret_cast<void**>(audio_client_.GetAddressOf()));
+            if (SUCCEEDED(hr) && audio_client_) {
+                WAVEFORMATEX* pMixFormat = nullptr;
+                hr = audio_client_->GetMixFormat(&pMixFormat);
+
                 WAVEFORMATEXTENSIBLE wfx = {};
                 wfx.Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
                 wfx.Format.nChannels = channels_;
@@ -73,11 +73,16 @@ int WasapiRenderer::Initialize() {
                     wfx.dwChannelMask = 0;
                 }
 
+                device_channels_ = channels_;
+                device_sample_rate_ = sample_rate_;
+                bits_per_sample_ = 32;
+                is_float_format_ = true;
+
                 REFERENCE_TIME buffer_duration = exclusive_ ? 30000 : 100000; // 3ms exclusive vs 10ms shared
                 DWORD flags = AUDCLNT_STREAMFLAGS_NOPERSIST;
 
                 AUDCLNT_SHAREMODE share_mode = exclusive_ ? AUDCLNT_SHAREMODE_EXCLUSIVE : AUDCLNT_SHAREMODE_SHARED;
-                hr = audio_client->Initialize(
+                hr = audio_client_->Initialize(
                     share_mode,
                     flags,
                     buffer_duration,
@@ -86,31 +91,67 @@ int WasapiRenderer::Initialize() {
                     nullptr
                 );
 
-                if (FAILED(hr) && exclusive_) {
-                    // Fallback to shared mode if exclusive mode is occupied by another app
-                    share_mode = AUDCLNT_SHAREMODE_SHARED;
-                    audio_client->Initialize(
-                        share_mode,
-                        AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM,
-                        100000,
-                        0,
-                        reinterpret_cast<WAVEFORMATEX*>(&wfx),
-                        nullptr
-                    );
+                if (FAILED(hr)) {
+                    // Re-activate fresh client for shared mode fallback
+                    audio_client_.Reset();
+                    hr = device_->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr, reinterpret_cast<void**>(audio_client_.GetAddressOf()));
+                    if (SUCCEEDED(hr) && audio_client_) {
+                        share_mode = AUDCLNT_SHAREMODE_SHARED;
+                        exclusive_ = false;
+
+                        WAVEFORMATEX* target_fmt = (pMixFormat != nullptr) ? pMixFormat : reinterpret_cast<WAVEFORMATEX*>(&wfx);
+                        hr = audio_client_->Initialize(
+                            share_mode,
+                            AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM,
+                            100000,
+                            0,
+                            target_fmt,
+                            nullptr
+                        );
+
+                        if (SUCCEEDED(hr) && target_fmt) {
+                            device_channels_ = target_fmt->nChannels;
+                            device_sample_rate_ = target_fmt->nSamplesPerSec;
+                            bits_per_sample_ = target_fmt->wBitsPerSample;
+
+                            is_float_format_ = false;
+                            if (target_fmt->wFormatTag == WAVE_FORMAT_IEEE_FLOAT) {
+                                is_float_format_ = true;
+                            } else if (target_fmt->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
+                                auto* pExt = reinterpret_cast<WAVEFORMATEXTENSIBLE*>(target_fmt);
+                                if (IsEqualGUID(pExt->SubFormat, KSDATAFORMAT_SUBTYPE_IEEE_FLOAT)) {
+                                    is_float_format_ = true;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (pMixFormat) {
+                    CoTaskMemFree(pMixFormat);
+                    pMixFormat = nullptr;
+                }
+
+                if (audio_client_ && SUCCEEDED(hr)) {
+                    audio_client_->GetBufferSize(&buffer_frame_count_);
+                    hr = audio_client_->GetService(__uuidof(IAudioRenderClient), reinterpret_cast<void**>(render_client_.GetAddressOf()));
+                    if (SUCCEEDED(hr) && render_client_) {
+                        audio_client_->Start();
+                    }
                 }
 
                 // Register MMCSS task for Pro Audio real-time scheduling priority
                 DWORD task_index = 0;
                 AvSetMmThreadCharacteristicsW(L"Pro Audio", &task_index);
-
-                initialized_ = true;
-                return 0;
             }
         }
     }
 #endif
 
     initialized_ = true;
+    device_invalidated_ = false;
+    frames_rendered_ = 0;
+    underruns_ = 0;
     return 0;
 }
 
@@ -118,6 +159,62 @@ int WasapiRenderer::SubmitPcm(const float* pcm_data, uint32_t sample_count) {
     if (!initialized_ || !pcm_data || sample_count == 0) {
         return -1;
     }
+
+#if defined(_WIN32)
+    if (render_client_ && audio_client_ && !device_invalidated_) {
+        UINT32 padding = 0;
+        HRESULT hr = audio_client_->GetCurrentPadding(&padding);
+        if (hr == AUDCLNT_E_DEVICE_INVALIDATED || hr == AUDCLNT_E_RESOURCES_INVALIDATED) {
+            device_invalidated_ = true;
+        } else if (SUCCEEDED(hr)) {
+            UINT32 frames_available = (buffer_frame_count_ > padding) ? (buffer_frame_count_ - padding) : 0;
+            UINT32 frames_to_write = std::min(sample_count, frames_available);
+
+            if (frames_to_write > 0) {
+                BYTE* pData = nullptr;
+                hr = render_client_->GetBuffer(frames_to_write, &pData);
+                if (SUCCEEDED(hr) && pData) {
+                    uint32_t src_channels = channels_;
+                    uint32_t dst_channels = device_channels_ > 0 ? device_channels_ : src_channels;
+
+                    if (is_float_format_ && bits_per_sample_ == 32) {
+                        auto* dst_float = reinterpret_cast<float*>(pData);
+                        for (uint32_t f = 0; f < frames_to_write; ++f) {
+                            for (uint32_t ch = 0; ch < dst_channels; ++ch) {
+                                dst_float[(f * dst_channels) + ch] = (ch < src_channels) ? pcm_data[(f * src_channels) + ch] : 0.0f;
+                            }
+                        }
+                    } else if (bits_per_sample_ == 16) {
+                        auto* dst_pcm16 = reinterpret_cast<int16_t*>(pData);
+                        for (uint32_t f = 0; f < frames_to_write; ++f) {
+                            for (uint32_t ch = 0; ch < dst_channels; ++ch) {
+                                float val = (ch < src_channels) ? pcm_data[(f * src_channels) + ch] : 0.0f;
+                                val = std::clamp(val, -1.0f, 1.0f);
+                                dst_pcm16[(f * dst_channels) + ch] = static_cast<int16_t>(val * 32767.0f);
+                            }
+                        }
+                    } else if (bits_per_sample_ == 32) {
+                        // 32-bit integer PCM
+                        auto* dst_pcm32 = reinterpret_cast<int32_t*>(pData);
+                        for (uint32_t f = 0; f < frames_to_write; ++f) {
+                            for (uint32_t ch = 0; ch < dst_channels; ++ch) {
+                                float val = (ch < src_channels) ? pcm_data[(f * src_channels) + ch] : 0.0f;
+                                val = std::clamp(val, -1.0f, 1.0f);
+                                dst_pcm32[(f * dst_channels) + ch] = static_cast<int32_t>(val * 2147483647.0f);
+                            }
+                        }
+                    }
+
+                    render_client_->ReleaseBuffer(frames_to_write, 0);
+                } else if (hr == AUDCLNT_E_DEVICE_INVALIDATED || hr == AUDCLNT_E_RESOURCES_INVALIDATED) {
+                    device_invalidated_ = true;
+                }
+            } else {
+                underruns_++;
+            }
+        }
+    }
+#endif
 
     frames_rendered_ += sample_count;
     return 0;
@@ -130,8 +227,17 @@ void WasapiRenderer::GetMetrics(uint64_t& out_frames_rendered, uint32_t& out_und
 
 void WasapiRenderer::Shutdown() {
     initialized_ = false;
-    frames_rendered_ = 0;
-    underruns_ = 0;
+    device_invalidated_ = false;
+
+#if defined(_WIN32)
+    if (audio_client_) {
+        audio_client_->Stop();
+    }
+    render_client_.Reset();
+    audio_client_.Reset();
+    device_.Reset();
+    enumerator_.Reset();
+#endif
 }
 
 } // namespace moonshine::audio

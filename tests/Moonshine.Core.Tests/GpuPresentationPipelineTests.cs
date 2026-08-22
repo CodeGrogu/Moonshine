@@ -63,8 +63,13 @@ public class GpuPresentationPipelineTests
             enqueued.Should().BeTrue();
         }
 
-        // Allow presentation thread loop to process frames
-        Thread.Sleep(50);
+        // Allow presentation thread loop to process frames with bounded wait
+        for (int retry = 0; retry < 50; retry++)
+        {
+            var m = presenter.Metrics;
+            if (m.FramesPresented + m.FramesDropped >= 10) break;
+            Thread.Sleep(20);
+        }
 
         var metrics = presenter.Metrics;
         metrics.FramesEnqueued.Should().Be(10);

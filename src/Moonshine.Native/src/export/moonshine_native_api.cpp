@@ -13,6 +13,7 @@
 #include "moonshine/audio/wasapi_renderer.hpp"
 #include "moonshine/audio/wasapi_loopback_capture.hpp"
 #include "moonshine/audio/opus_audio_encoder.hpp"
+#include "moonshine/audio/opus_audio_decoder.hpp"
 #include "moonshine/audio/mic_audio_sink.hpp"
 #include "moonshine/audio/virtual_audio_driver.hpp"
 #include "moonshine/audio/virtual_audio_ipc.hpp"
@@ -552,6 +553,97 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_opus_encoder_get_metrics(
     if (out_bytes_encoded) *out_bytes_encoded = metrics.total_bytes_encoded;
     if (out_avg_encode_time_us) *out_avg_encode_time_us = metrics.avg_encode_time_us;
     if (out_bitrate) *out_bitrate = metrics.current_bitrate;
+    if (out_streams_count) *out_streams_count = metrics.streams_count;
+}
+
+// ============================================================================
+// Low-Latency Multi-Channel Opus Audio Decoder APIs
+// ============================================================================
+
+MOONSHINE_API MoonshineOpusDecoderHandle MOONSHINE_CONV moonshine_opus_decoder_create(
+    uint32_t sample_rate,
+    uint32_t channels
+) {
+    auto* decoder = new audio::OpusAudioDecoder(sample_rate, channels);
+    if (!decoder->is_initialized()) {
+        delete decoder;
+        return nullptr;
+    }
+    return static_cast<MoonshineOpusDecoderHandle>(decoder);
+}
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_opus_decoder_destroy(
+    MoonshineOpusDecoderHandle handle
+) {
+    if (!handle) return;
+    auto* decoder = static_cast<audio::OpusAudioDecoder*>(handle);
+    delete decoder;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_opus_decoder_decode_float(
+    MoonshineOpusDecoderHandle handle,
+    const uint8_t* opus_payload,
+    uint32_t payload_bytes,
+    float* out_pcm_samples,
+    uint32_t max_samples,
+    uint32_t* out_samples_decoded,
+    int32_t decode_fec
+) {
+    if (!handle || !out_pcm_samples || !out_samples_decoded) return 0;
+    auto* decoder = static_cast<audio::OpusAudioDecoder*>(handle);
+    uint32_t decoded = 0;
+    if (!decoder->decode_float(opus_payload, payload_bytes, out_pcm_samples, max_samples, decoded, decode_fec)) {
+        return 0;
+    }
+    *out_samples_decoded = decoded;
+    return 1;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_opus_decoder_decode_pcm16(
+    MoonshineOpusDecoderHandle handle,
+    const uint8_t* opus_payload,
+    uint32_t payload_bytes,
+    int16_t* out_pcm_samples,
+    uint32_t max_samples,
+    uint32_t* out_samples_decoded,
+    int32_t decode_fec
+) {
+    if (!handle || !out_pcm_samples || !out_samples_decoded) return 0;
+    auto* decoder = static_cast<audio::OpusAudioDecoder*>(handle);
+    uint32_t decoded = 0;
+    if (!decoder->decode_pcm16(opus_payload, payload_bytes, out_pcm_samples, max_samples, decoded, decode_fec)) {
+        return 0;
+    }
+    *out_samples_decoded = decoded;
+    return 1;
+}
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_opus_decoder_reset(
+    MoonshineOpusDecoderHandle handle
+) {
+    if (!handle) return;
+    auto* decoder = static_cast<audio::OpusAudioDecoder*>(handle);
+    decoder->reset();
+}
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_opus_decoder_get_metrics(
+    MoonshineOpusDecoderHandle handle,
+    uint64_t* out_frames_decoded,
+    uint64_t* out_samples_decoded,
+    uint32_t* out_decode_errors,
+    uint32_t* out_concealment_frames,
+    double* out_avg_decode_time_us,
+    uint32_t* out_streams_count
+) {
+    if (!handle) return;
+    auto* decoder = static_cast<audio::OpusAudioDecoder*>(handle);
+    audio::OpusDecoderMetrics metrics{};
+    decoder->get_metrics(metrics);
+    if (out_frames_decoded) *out_frames_decoded = metrics.total_frames_decoded;
+    if (out_samples_decoded) *out_samples_decoded = metrics.total_samples_decoded;
+    if (out_decode_errors) *out_decode_errors = metrics.decode_errors;
+    if (out_concealment_frames) *out_concealment_frames = metrics.concealment_frames;
+    if (out_avg_decode_time_us) *out_avg_decode_time_us = metrics.avg_decode_time_us;
     if (out_streams_count) *out_streams_count = metrics.streams_count;
 }
 

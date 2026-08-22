@@ -39,7 +39,12 @@ flowchart LR
 - **Measured Range**: **1.06 μs to 1.48 μs** total processing overhead per 5ms audio frame.
 - **GC Allocation**: **0 B** steady-state.
 
-### 4. Distributed End-to-End Glass-to-Glass Input Latency (Issue #81 & #82)
+### 4. Client-Side Audio Ingest, Opus Decoding & WASAPI Playback Overhead (Issue #75)
+- **Scope**: Client-side local media datagram / RTP parsing, jitter buffer resequencing, native Opus multi-channel decoding (Stereo / Surround 5.1 / Surround 7.1), and low-latency WASAPI Exclusive/Shared rendering.
+- **Measured Range**: **0.96 μs to 1.25 μs** per Stereo frame (5ms / 240 samples per channel), **2.84 μs to 3.13 μs** per Surround 5.1 frame.
+- **GC Allocation**: **0 B** steady-state.
+
+### 5. Distributed End-to-End Glass-to-Glass Input Latency (Issue #81 & #82)
 - **Scope**: Total physical action to remote OS reception across the entire network and rendering pipeline.
 - **Target Budget**: **2.0 ms to 8.0 ms** over local Gigabit / Wi-Fi 6 networks.
 
@@ -133,3 +138,21 @@ BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
 | RtpAudioPacketiser_Packetise_DirectHotPath                 |     32.27 ns | 0.8570 ns |  2.5280 ns |    31.63 ns |              0 B |
 | HostAudioPipeline_EndToEnd_CaptureEncodePacketise_HotPath  |     1.478 μs | 0.0791 μs |  0.2332 μs |    1.483 μs |              0 B |
 ```
+
+---
+
+### Client Remote Audio Decode & WASAPI Playback Pipeline (Issue #75)
+<!-- VERIFIED: 2026-08-22, via `dotnet run -c Release --project src/Moonshine.Benchmarks -- --filter *ClientAudioBenchmarks* --inProcess` in Windows 11 Pro build 26200, x64 RyuJIT AVX-512 -->
+
+```
+BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
+.NET SDK 10.0.400 / Host: .NET 9.0.19 (9.0.1926.36724), X64 RyuJIT AVX-512F+CD+BW+DQ+VL+VBMI
+
+| Method                                                  | Mean Latency | Error     | StdDev    | Median      | Allocated Memory |
+| :------------------------------------------------------ | -----------: | --------: | --------: | ----------: | ---------------: |
+| OpusDecoder_DecodeStereo_DirectHotPath                  |    960.88 ns | 38.840 ns | 107.63 ns |   952.39 ns |              0 B |
+| OpusDecoder_Decode51Surround_DirectHotPath              |     2.845 μs | 0.1383 μs | 0.4035 μs |    2.696 μs |              0 B |
+| WasapiRenderer_SubmitPcm_DirectHotPath                  |    115.87 ns |  3.571 ns | 10.360 ns |   113.46 ns |              0 B |
+| ClientAudioPipeline_EndToEnd_IngestDecodeRender_HotPath |     1.096 μs | 0.0221 μs | 0.0620 μs |    1.090 μs |              0 B |
+```
+
