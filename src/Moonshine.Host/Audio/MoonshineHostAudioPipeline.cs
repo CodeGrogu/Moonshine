@@ -54,6 +54,7 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
     private bool _preferMoonshineFraming = true;
     private bool _isRunning;
     private bool _disposed;
+    private int _disposeInitiated;
     private int _inFlightOperations;
     private readonly ManualResetEventSlim _drainCompletedEvent = new(initialState: true);
 
@@ -570,18 +571,26 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
 
     public void Dispose()
     {
-        if (_disposed) return;
+        if (Interlocked.Exchange(ref _disposeInitiated, 1) != 0)
+        {
+            // Disposal already initiated by another thread; wait for state teardown to complete
+            lock (_stateLock)
+            {
+                // Unblocks once the disposing thread finishes state teardown
+            }
+            return;
+        }
 
         Stop();
 
         lock (_stateLock)
         {
-            if (_disposed) return;
             _disposed = true;
         }
 
-        // Bounded kernel wait ensuring teardown releases CPU and never hangs indefinitely
-        _drainCompletedEvent.Wait(TimeSpan.FromSeconds(5));
+        // Unconditionally wait until all in-flight operations have completely exited.
+        // Guarantees zero unmanaged resource destruction while an audio frame is being processed.
+        _drainCompletedEvent.Wait();
 
         lock (_stateLock)
         {

@@ -330,4 +330,43 @@ public class HostAudioPipelineTests
             exceptions.Should().BeEmpty();
         }
     }
+
+    [Fact]
+    public void HostAudioPipeline_ConcurrentMultiThreadDispose_IsSafeAndIdempotent()
+    {
+        for (int iteration = 0; iteration < 10; iteration++)
+        {
+            var pipeline = new MoonshineHostAudioPipeline();
+            var barrier = new Barrier(8);
+            var exceptions = new System.Collections.Concurrent.ConcurrentBag<Exception>();
+            var threads = new Thread[8];
+
+            for (int i = 0; i < threads.Length; i++)
+            {
+                threads[i] = new Thread(() =>
+                {
+                    barrier.SignalAndWait();
+                    try
+                    {
+                        pipeline.Dispose();
+                    }
+                    // ALLOWED_EXCEPTION: Captures any unexpected exceptions into thread-safe bag for assertion
+                    catch (Exception ex)
+                    {
+                        exceptions.Add(ex);
+                    }
+                });
+                threads[i].Start();
+            }
+
+            for (int i = 0; i < threads.Length; i++)
+            {
+                threads[i].Join();
+            }
+
+            exceptions.Should().BeEmpty();
+            pipeline.ActiveBackend.Should().Be(HostAudioBackend.Disabled);
+            pipeline.IsRunning.Should().BeFalse();
+        }
+    }
 }
