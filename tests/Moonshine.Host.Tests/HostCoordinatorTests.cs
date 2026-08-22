@@ -25,12 +25,12 @@ public class HostCoordinatorTests
     }
 
     [Fact]
-    public void MoonshineHostCoordinator_Enable_ReportsUnsupportedUntilNativeTransportExists()
+    public void MoonshineHostCoordinator_Enable_ReportsRunning()
     {
         using var coordinator = new MoonshineHostCoordinator();
         coordinator.Enable();
-        coordinator.State.Should().Be(HostState.Unsupported);
-        coordinator.IsRunning.Should().BeFalse();
+        coordinator.State.Should().Be(HostState.Running);
+        coordinator.IsRunning.Should().BeTrue();
 
         coordinator.Disable();
         coordinator.State.Should().Be(HostState.Disabled);
@@ -44,11 +44,12 @@ public class HostCoordinatorTests
         using var coordinator = new MoonshineHostCoordinator();
 
         await coordinator.StartAsync();
-        coordinator.State.Should().Be(HostState.Unsupported);
-        coordinator.IsRunning.Should().BeFalse();
+        coordinator.State.Should().Be(HostState.Running);
+        coordinator.IsRunning.Should().BeTrue();
+        coordinator.HasActiveResources.Should().BeTrue();
 
         await coordinator.RestartAsync();
-        coordinator.State.Should().Be(HostState.Unsupported);
+        coordinator.State.Should().Be(HostState.Running);
 
         await coordinator.StopAsync();
         coordinator.State.Should().Be(HostState.Disabled);

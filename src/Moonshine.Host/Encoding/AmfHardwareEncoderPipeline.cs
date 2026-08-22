@@ -33,6 +33,7 @@ public sealed class AmfHardwareEncoderPipeline : IVideoEncoderPipeline
     public AmfQualityPreset Preset => _preset;
     public AmfUsage Usage => _usage;
     public bool IsActive => _handle != IntPtr.Zero && !_disposed;
+    public double AverageEncodingLatencyMicroseconds => 0.0;
 
     public AmfHardwareEncoderPipeline(
         uint width,

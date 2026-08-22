@@ -9,7 +9,7 @@ namespace Moonshine.Host.Encoding;
 /// </summary>
 public sealed class UnifiedHardwareEncoderEngine : IDisposable
 {
-    private readonly HardwareVideoEncoderPipeline _pipeline;
+    private readonly IVideoEncoderPipeline _pipeline;
     private long _framesEncoded;
     private long _keyframesEmitted;
     private long _bytesEmitted;
@@ -30,6 +30,11 @@ public sealed class UnifiedHardwareEncoderEngine : IDisposable
     public long BytesEmitted => Interlocked.Read(ref _bytesEmitted);
     public long EncodingErrors => Interlocked.Read(ref _encodingErrors);
     public double AverageEncodingLatencyMicroseconds => _pipeline.AverageEncodingLatencyMicroseconds;
+
+    public UnifiedHardwareEncoderEngine(IVideoEncoderPipeline pipeline)
+    {
+        _pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
+    }
 
     public UnifiedHardwareEncoderEngine(
         uint width,

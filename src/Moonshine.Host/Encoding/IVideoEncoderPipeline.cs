@@ -14,6 +14,7 @@ public interface IVideoEncoderPipeline : IDisposable
     VideoCodec Codec { get; }
     EncoderVendor Vendor { get; }
     bool IsActive { get; }
+    double AverageEncodingLatencyMicroseconds { get; }
 
     bool TryEncodeFrame(
         IntPtr d3dTexture,

@@ -34,6 +34,7 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
     public QsvTargetUsage TargetUsage => _targetUsage;
     public bool LowPowerVdenc => _lowPowerVdenc;
     public bool IsActive => _handle != IntPtr.Zero && !_disposed;
+    public double AverageEncodingLatencyMicroseconds => 0.0;
 
     public QsvHardwareEncoderPipeline(
         uint width,

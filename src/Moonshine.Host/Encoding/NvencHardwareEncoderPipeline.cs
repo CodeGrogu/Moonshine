@@ -34,6 +34,7 @@ public sealed class NvencHardwareEncoderPipeline : IVideoEncoderPipeline
     public NvencPreset Preset => _preset;
     public NvencTuning Tuning => _tuning;
     public bool IsActive => _handle != IntPtr.Zero && !_disposed;
+    public double AverageEncodingLatencyMicroseconds => 0.0;
 
     public NvencHardwareEncoderPipeline(
         uint width,

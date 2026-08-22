@@ -1,7 +1,12 @@
+using System.Net.Sockets;
 using Moonshine.Core.Discovery;
 using Moonshine.Core.Network;
 using Moonshine.Core.Runtime;
+using Moonshine.Host.Audio;
+using Moonshine.Host.Capture;
+using Moonshine.Host.Encoding;
 using Moonshine.Host.Input;
+using Moonshine.Host.Session;
 
 namespace Moonshine.Host;
 
@@ -17,16 +22,16 @@ public enum HostState
 
 /// <summary>
 /// Coordinates the Host role state and manages host resources (listeners, workers, capture pipelines,
-/// encoder engines, and sessions) while guaranteeing deterministic resource disposal and zero leaks when disabled.
+/// encoder engines, and streaming sessions) while guaranteeing deterministic resource disposal and zero leaks when disabled.
 /// </summary>
 public sealed class MoonshineHostCoordinator : IMoonshineHostService
 {
     private readonly IMoonshineHostNetworkManager _networkManager;
     private readonly HostEndpointConfig _endpointConfig;
+    private readonly List<MoonshineHostStreamingSession> _sessions = new();
     private MoonshineHostInputPipeline? _inputPipeline;
     private MoonshineHostDiscoveryAdvertiser? _discoveryAdvertiser;
     private HostState _state = HostState.Disabled;
-    private int _activeSessions;
     private int _activeWorkers;
     private int _activeBuffers;
     private string? _lastError;
@@ -81,13 +86,21 @@ public sealed class MoonshineHostCoordinator : IMoonshineHostService
         }
     }
 
+    public IReadOnlyList<MoonshineHostStreamingSession> ActiveSessions
+    {
+        get
+        {
+            lock (_lock) return _sessions.ToList().AsReadOnly();
+        }
+    }
+
     public bool HasActiveResources
     {
         get
         {
             lock (_lock)
             {
-                return _activeSessions > 0 || _networkManager.ActiveListenerCount > 0 || _activeWorkers > 0 || _activeBuffers > 0 || _inputPipeline is not null || _discoveryAdvertiser is not null;
+                return _sessions.Count > 0 || _networkManager.ActiveListenerCount > 0 || _activeWorkers > 0 || _activeBuffers > 0 || _inputPipeline is not null || _discoveryAdvertiser is not null;
             }
         }
     }
@@ -96,9 +109,9 @@ public sealed class MoonshineHostCoordinator : IMoonshineHostService
     {
         lock (_lock)
         {
-            if (_state is HostState.Running or HostState.Starting or HostState.Unsupported) return;
-            _state = HostState.Unsupported;
-            _lastError = "Host media transport and session control are not yet implemented.";
+            if (_state is HostState.Running or HostState.Starting) return;
+            _state = HostState.Running;
+            _lastError = null;
         }
     }
 
@@ -143,10 +156,10 @@ public sealed class MoonshineHostCoordinator : IMoonshineHostService
             {
                 _discoveryAdvertiser = new MoonshineHostDiscoveryAdvertiser(_endpointConfig);
                 _discoveryAdvertiser.Start();
+                _inputPipeline = new MoonshineHostInputPipeline();
                 _workerCts = new CancellationTokenSource();
-                // Fail-closed baseline: reports Unsupported until native session control is implemented
-                _state = HostState.Unsupported;
-                _lastError = "Host media transport and session control are not yet implemented.";
+                _state = HostState.Running;
+                _lastError = null;
             }
         }
         // ALLOWED_EXCEPTION: Re-throws after capturing error state and cleaning up resources.
@@ -160,6 +173,64 @@ public sealed class MoonshineHostCoordinator : IMoonshineHostService
             await CleanupResourcesAsync().ConfigureAwait(false);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Creates and starts a unified host streaming session.
+    /// </summary>
+    public async ValueTask<MoonshineHostStreamingSession> CreateAndStartSessionAsync(
+        HostSessionConfig? sessionConfig = null,
+        IDesktopCapturePipeline? capturePipeline = null,
+        UnifiedHardwareEncoderEngine? encoderEngine = null,
+        MoonshineHostAudioPipeline? audioPipeline = null,
+        MoonshineHostInputPipeline? inputPipeline = null,
+        CancellationToken cancellationToken = default)
+    {
+        lock (_lock)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_state != HostState.Running)
+            {
+                throw new InvalidOperationException($"Host coordinator is in {_state} state and cannot create streaming sessions.");
+            }
+        }
+
+        var session = new MoonshineHostStreamingSession(
+            config: sessionConfig,
+            capturePipeline: capturePipeline,
+            encoderEngine: encoderEngine,
+            audioPipeline: audioPipeline,
+            inputPipeline: inputPipeline ?? _inputPipeline);
+
+        try
+        {
+            await session.StartAsync(cancellationToken).ConfigureAwait(false);
+            lock (_lock)
+            {
+                _sessions.Add(session);
+            }
+            return session;
+        }
+        // ALLOWED_EXCEPTION: Cleans up failed session and propagates initialization fault.
+        catch
+        {
+            await session.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Stops and removes an active streaming session.
+    /// </summary>
+    public async ValueTask StopSessionAsync(MoonshineHostStreamingSession session, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+
+        lock (_lock)
+        {
+            _sessions.Remove(session);
+        }
+        await session.DisposeAsync().ConfigureAwait(false);
     }
 
     public async ValueTask StopAsync(CancellationToken cancellationToken = default)
@@ -196,9 +267,9 @@ public sealed class MoonshineHostCoordinator : IMoonshineHostService
             return new HostStatus(
                 State: runtimeState,
                 IsRunning: _state == HostState.Running,
-                ActiveSessionCount: _activeSessions,
+                ActiveSessionCount: _sessions.Count,
                 ActiveListenerCount: _networkManager.ActiveListenerCount,
-                ActiveWorkerCount: _activeWorkers,
+                ActiveWorkerCount: (_discoveryAdvertiser != null ? 1 : 0) + _sessions.Count * 2,
                 ActiveBufferCount: _activeBuffers,
                 LastError: _lastError);
         }
@@ -206,6 +277,25 @@ public sealed class MoonshineHostCoordinator : IMoonshineHostService
 
     private async ValueTask CleanupResourcesAsync()
     {
+        List<MoonshineHostStreamingSession> sessionsToDispose;
+        lock (_lock)
+        {
+            sessionsToDispose = _sessions.ToList();
+            _sessions.Clear();
+        }
+
+        foreach (var session in sessionsToDispose)
+        {
+            try
+            {
+                await session.DisposeAsync().ConfigureAwait(false);
+            }
+            // ALLOWED_EXCEPTION: Ignore secondary socket/io errors during session cleanup.
+            catch (Exception ex) when (ex is SocketException or InvalidOperationException or IOException or ObjectDisposedException or System.Runtime.InteropServices.ExternalException)
+            {
+            }
+        }
+
         if (_discoveryAdvertiser is not null)
         {
             _discoveryAdvertiser.Dispose();
@@ -227,7 +317,6 @@ public sealed class MoonshineHostCoordinator : IMoonshineHostService
 
         await _networkManager.StopListenersAsync().ConfigureAwait(false);
 
-        _activeSessions = 0;
         _activeWorkers = 0;
         _activeBuffers = 0;
     }

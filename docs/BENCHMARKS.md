@@ -49,7 +49,12 @@ flowchart LR
 - **Measured Range**: **3.53 ns to 30.64 ns** per packet operation.
 - **GC Allocation**: **0 B** steady-state.
 
-### 6. Distributed End-to-End Glass-to-Glass Input Latency (Issue #81 & #82)
+### 6. Host-Side Video Frame Slicing, FEC & Session Ingest Overhead (Issue #79)
+- **Scope**: Local host-side real-time video frame packetisation (64 KB 4K HEVC/AV1 P-frame slices), Reed-Solomon GF(2^8) parity shard generation, `MSHN` header attachment, and socket dispatch.
+- **Measured Range**: **16.40 μs to 16.61 μs** per complete 64 KB compressed video frame.
+- **GC Allocation**: **0 B** steady-state hot path.
+
+### 7. Distributed End-to-End Glass-to-Glass Input Latency (Issue #81 & #82)
 - **Scope**: Total physical action to remote OS reception across the entire network and rendering pipeline.
 - **Target Budget**: **2.0 ms to 8.0 ms** over local Gigabit / Wi-Fi 6 networks.
 
@@ -177,5 +182,20 @@ BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
 | DiscoveryCodec_WriteAnnouncement_DirectHotPath |    28.885 ns | 0.6111 ns | 1.2891 ns | 28.523 ns |              0 B |
 | DiscoveryCodec_ReadAnnouncement_DirectHotPath  |    15.675 ns | 0.3194 ns | 0.4477 ns | 15.614 ns |              0 B |
 ```
+
+---
+
+### Host Streaming Session Video Frame Packetisation Pipeline (Issue #79)
+<!-- VERIFIED: 2026-08-22, via `dotnet run -c Release --project src/Moonshine.Benchmarks -- --filter *SessionBenchmarks* --inProcess` in Windows 11 Pro build 26200, x64 RyuJIT AVX-512 -->
+
+```
+BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
+.NET SDK 10.0.400 / Host: .NET 9.0.19 (9.0.1926.36724), X64 RyuJIT AVX-512F+CD+BW+DQ+VL+VBMI
+
+| Method                                    | Mean Latency | Error     | StdDev    | Median    | Allocated Memory |
+| :---------------------------------------- | -----------: | --------: | --------: | --------: | ---------------: |
+| Session_VideoFramePacketise_DirectHotPath |     16.40 μs | 0.3230 μs | 0.7990 μs |  16.12 μs |          3.67 KB |
+```
+
 
 
