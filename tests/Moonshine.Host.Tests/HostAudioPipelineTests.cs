@@ -369,4 +369,34 @@ public class HostAudioPipelineTests
             pipeline.IsRunning.Should().BeFalse();
         }
     }
+
+    [Fact]
+    public void HostAudioPipeline_ReentrantDisposeFromSinkCallback_DoesNotDeadlock()
+    {
+        var pipeline = new MoonshineHostAudioPipeline(
+            sampleRate: 48000,
+            topology: AudioChannelTopology.Stereo,
+            bitrate: 160000,
+            frameDurationMs: 5
+        );
+
+        var pcm = new float[480];
+        for (int i = 0; i < pcm.Length; i++)
+        {
+            pcm[i] = (float)Math.Sin(2.0 * Math.PI * 440.0 * i / 48000.0);
+        }
+
+        bool disposedInsideCallback = false;
+        bool ok = pipeline.ProcessPcmFrame(pcm, _ =>
+        {
+            // Trigger synchronous re-entrant disposal directly from within in-flight packet sink
+            pipeline.Dispose();
+            disposedInsideCallback = true;
+        }, preferMoonshineFraming: true);
+
+        ok.Should().BeTrue();
+        disposedInsideCallback.Should().BeTrue();
+        pipeline.ActiveBackend.Should().Be(HostAudioBackend.Disabled);
+        pipeline.IsRunning.Should().BeFalse();
+    }
 }

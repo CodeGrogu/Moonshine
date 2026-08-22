@@ -56,6 +56,7 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
     private bool _disposed;
     private int _disposeInitiated;
     private int _inFlightOperations;
+    [ThreadStatic] private static int t_inFlightDepth;
     private readonly ManualResetEventSlim _drainCompletedEvent = new(initialState: true);
 
     private readonly Lock _stateLock = new();
@@ -552,12 +553,14 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
             {
                 _drainCompletedEvent.Reset();
             }
+            t_inFlightDepth++;
             return true;
         }
     }
 
     private void ExitOperation()
     {
+        t_inFlightDepth--;
         if (Interlocked.Decrement(ref _inFlightOperations) == 0)
         {
             _drainCompletedEvent.Set();
@@ -588,9 +591,22 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
             _disposed = true;
         }
 
-        // Unconditionally wait until all in-flight operations have completely exited.
-        // Guarantees zero unmanaged resource destruction while an audio frame is being processed.
-        _drainCompletedEvent.Wait();
+        int localDepth = t_inFlightDepth;
+        if (localDepth > 0)
+        {
+            // Re-entrant disposal on an active audio processing thread (e.g. from within a packet sink callback):
+            // Wait until all OTHER in-flight threads have completely drained to prevent self-deadlock.
+            while (Volatile.Read(ref _inFlightOperations) > localDepth)
+            {
+                Thread.Yield();
+            }
+        }
+        else
+        {
+            // Unconditionally wait until all in-flight operations have completely exited.
+            // Guarantees zero unmanaged resource destruction while an audio frame is being processed.
+            _drainCompletedEvent.Wait();
+        }
 
         lock (_stateLock)
         {
