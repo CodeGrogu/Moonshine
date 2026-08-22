@@ -170,20 +170,28 @@ Codec-agnostic video transmission framing:
 
 ### 4.4 Feedback & Quality of Service Payloads
 
-#### `FeedbackLossStats` (`0x0501`, 36 bytes payload)
+#### `FeedbackLossStats` (`0x0501`, 40 bytes payload)
 - `uint32_t stream_id`
-- `uint64_t last_received_frame_index`
-- `uint32_t packets_received`
-- `uint32_t packets_lost`
-- `uint32_t packets_recovered_fec`
-- `uint32_t round_trip_time_us`
-- `uint32_t jitter_us`
-- `uint32_t estimated_bandwidth_kbps`
+- `uint64_t last_received_frame_index` (Highest monotonic frame index received / processed by client)
+- `uint32_t packets_received` (Cumulative packets received for active stream)
+- `uint32_t packets_lost` (Cumulative packets lost)
+- `uint32_t packets_recovered_fec` (Cumulative packets recovered via FEC)
+- `uint32_t round_trip_time_us` (Measured RTT in microseconds)
+- `uint32_t jitter_us` (Smoothed jitter in microseconds)
+- `uint32_t estimated_bandwidth_kbps` (Estimated throughput in Kbps)
+- `uint32_t receive_queue_depth` (Current client jitter/decode queue depth in frames)
 
 #### `IdrRequest` (`0x0502`, 16 bytes payload)
 - `uint32_t stream_id`
 - `uint64_t last_valid_frame_index`
 - `uint32_t reason_code` (1: UnrecoverableLoss, 2: SequenceGap, 3: DecoderError)
+
+#### 4.4.1 Feedback Ordering & Monotonic Stream Horizon Invariants
+
+1. **Monotonic Frame Indices**: Frame indices (`frame_index`) in MNBP video packets are strictly monotonically increasing per stream (`0, 1, 2, ...`). Even if individual video packet slices arrive out-of-order over UDP or are reconstructed after a delay via FEC, the client's `last_received_frame_index` represents the **stream horizon** (the highest frame index observed/processed).
+2. **Stale Feedback Filtering**: Because UDP feedback datagrams may experience reordering or transit delay, the host congestion controller enforces monotonic progression of `last_received_frame_index`. Any feedback datagram with `last_received_frame_index < last_processed_frame_index` is treated as a delayed/stale datagram and discarded without polluting moving averages or delta counters.
+3. **Session Re-Anchoring**: When `stream_id` changes, the baseline is reset, establishing a new monotonic horizon for the incoming stream.
+
 
 ---
 

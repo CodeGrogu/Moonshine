@@ -282,6 +282,14 @@ public struct MoonshineMicPacketHeader
     public uint SampleRate;
 }
 
+/// <summary>
+/// Quality of Service (QoS) and network loss statistics payload (40 bytes packed).
+/// <para>
+/// Invariant: <see cref="LastReceivedFrameIndex"/> represents the client's highest observed/processed
+/// monotonic stream frame index position. Media frames strictly advance monotonically per stream,
+/// ensuring out-of-order or delayed UDP feedback datagrams are deterministically detected and filtered.
+/// </para>
+/// </summary>
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
 public struct MoonshineFeedbackLossStatsPayload
 {

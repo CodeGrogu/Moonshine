@@ -199,6 +199,10 @@ struct MoonshineMicPacketHeader {
 
 /**
  * @brief Feedback loss and RTT statistics payload (40 bytes).
+ *
+ * Invariant: `last_received_frame_index` represents the client's highest observed
+ * monotonic stream frame index position. Media frames strictly advance monotonically
+ * per stream, enabling out-of-order/stale UDP feedback datagrams to be deterministically filtered.
  */
 struct MoonshineFeedbackLossStatsPayload {
     uint32_t stream_id;
