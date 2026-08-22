@@ -434,14 +434,18 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
 
         while (!ct.IsCancellationRequested && Volatile.Read(ref _isRunning))
         {
+            AudioPacketSink? sink;
+            bool preferMoonshine;
             lock (_stateLock)
             {
                 if (_disposed || !_isRunning || ct.IsCancellationRequested) break;
-                var sink = _activeSink;
-                if (sink is not null)
-                {
-                    ExecuteAudioFrameStep(sink, _preferMoonshineFraming);
-                }
+                sink = _activeSink;
+                preferMoonshine = _preferMoonshineFraming;
+            }
+
+            if (sink is not null)
+            {
+                ExecuteAudioFrameStep(sink, preferMoonshine);
             }
 
             nextTick += ticksPerFrame;
