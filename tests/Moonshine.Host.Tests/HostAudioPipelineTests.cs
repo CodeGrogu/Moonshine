@@ -349,6 +349,9 @@ public class HostAudioPipelineTests
                     try
                     {
                         pipeline.Dispose();
+                        // Prove that every individual thread returns only after disposal and teardown have fully completed
+                        pipeline.ActiveBackend.Should().Be(HostAudioBackend.Disabled);
+                        pipeline.IsRunning.Should().BeFalse();
                     }
                     // ALLOWED_EXCEPTION: Captures any unexpected exceptions into thread-safe bag for assertion
                     catch (Exception ex)

@@ -38,7 +38,7 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
     private readonly uint _samplesPerFrame; // per channel
     private uint _bitrate;
 
-    private readonly VirtualAudioDriverService? _driverService;
+    private VirtualAudioDriverService? _driverService;
     private VirtualAudioIpcBridgePipeline? _ipcBridge;
     private WasapiLoopbackAudioPipeline? _wasapiLoopback;
     private OpusAudioEncoderPipeline? _encoder;
@@ -60,7 +60,7 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
     [ThreadStatic] private static int t_inFlightDepth;
     private readonly ManualResetEventSlim _drainCompletedEvent = new(initialState: true);
 
-    private readonly Lock _stateLock = new();
+    private readonly object _stateLock = new();
 
     // Metrics tracking
     private ulong _totalFramesCaptured;
@@ -589,10 +589,12 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
             _encoder = null;
 
             _driverService?.Dispose();
+            _driverService = null;
 
             _activeBackend = HostAudioBackend.Disabled;
 
             _drainCompletedEvent.Dispose();
+            Monitor.PulseAll(_stateLock);
         }
     }
 
@@ -605,10 +607,17 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
     {
         if (Interlocked.Exchange(ref _disposeInitiated, 1) != 0)
         {
-            // Disposal already initiated by another thread; wait for state teardown to complete
-            lock (_stateLock)
+            // Disposal already initiated by another thread:
+            // If external caller, wait until teardown has completely finished so Dispose() returns only after teardown is complete.
+            if (t_inFlightDepth == 0)
             {
-                // Unblocks once the disposing thread finishes state teardown
+                lock (_stateLock)
+                {
+                    while (!_resourcesTeardownCompleted)
+                    {
+                        Monitor.Wait(_stateLock);
+                    }
+                }
             }
             return;
         }
