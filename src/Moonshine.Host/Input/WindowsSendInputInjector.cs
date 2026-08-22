@@ -7,10 +7,12 @@ namespace Moonshine.Host.Input;
 
 /// <summary>
 /// High-performance zero-allocation native Windows input injector using User32 SendInput.
-/// Tracks physical key and button state to guarantee deterministic stuck-key release on session loss.
+/// Features multi-monitor virtual-desktop coordinate mapping, extended key translation,
+/// hardware scan code fallback, single-call batched dispatch, and deterministic stuck-key release.
 /// </summary>
 public sealed unsafe class WindowsSendInputInjector : IWindowsInputInjector
 {
+    private VirtualDesktopGeometry _bounds;
     private ulong _heldKey0;
     private ulong _heldKey1;
     private ulong _heldKey2;
@@ -19,7 +21,43 @@ public sealed unsafe class WindowsSendInputInjector : IWindowsInputInjector
     private bool _disposed;
     private readonly Lock _syncRoot = new();
 
+    public WindowsSendInputInjector()
+    {
+        RefreshVirtualDesktopBounds();
+    }
+
     public bool IsDisposed => _disposed;
+
+    public VirtualDesktopGeometry GetVirtualDesktopBounds()
+    {
+        lock (_syncRoot)
+        {
+            return _bounds;
+        }
+    }
+
+    public void RefreshVirtualDesktopBounds()
+    {
+        lock (_syncRoot)
+        {
+            int x = WindowsInputNativeMethods.GetSystemMetrics(WindowsInputNativeMethods.SM_XVIRTUALSCREEN);
+            int y = WindowsInputNativeMethods.GetSystemMetrics(WindowsInputNativeMethods.SM_YVIRTUALSCREEN);
+            int cx = WindowsInputNativeMethods.GetSystemMetrics(WindowsInputNativeMethods.SM_CXVIRTUALSCREEN);
+            int cy = WindowsInputNativeMethods.GetSystemMetrics(WindowsInputNativeMethods.SM_CYVIRTUALSCREEN);
+
+            if (cx <= 0 || cy <= 0)
+            {
+                x = 0;
+                y = 0;
+                cx = WindowsInputNativeMethods.GetSystemMetrics(WindowsInputNativeMethods.SM_CXSCREEN);
+                cy = WindowsInputNativeMethods.GetSystemMetrics(WindowsInputNativeMethods.SM_CYSCREEN);
+                if (cx <= 0) cx = 1920;
+                if (cy <= 0) cy = 1080;
+            }
+
+            _bounds = new VirtualDesktopGeometry(x, y, cx, cy);
+        }
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool InjectMouseMove(short deltaX, short deltaY)
@@ -34,20 +72,47 @@ public sealed unsafe class WindowsSendInputInjector : IWindowsInputInjector
         input.mi.dwFlags = WindowsInputNativeMethods.MOUSEEVENTF_MOVE;
 
         uint sent = WindowsInputNativeMethods.SendInput(1, &input, sizeof(INPUT));
-        return sent == 1;
+        if (sent == 1) return true;
+        int err = Marshal.GetLastPInvokeError();
+        return err is 5 or 0;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool InjectMouseMoveAbsolute(int x, int y, int screenWidth, int screenHeight)
+    public bool InjectMouseMoveAbsolute(
+        int x,
+        int y,
+        int clientWidth,
+        int clientHeight,
+        int monitorOffsetX = 0,
+        int monitorOffsetY = 0,
+        int monitorWidth = 0,
+        int monitorHeight = 0)
     {
         if (_disposed) return false;
-        if (screenWidth <= 0 || screenHeight <= 0) return false;
+        if (clientWidth <= 0 || clientHeight <= 0) return false;
 
-        int clampedX = Math.Clamp(x, 0, screenWidth - 1);
-        int clampedY = Math.Clamp(y, 0, screenHeight - 1);
+        VirtualDesktopGeometry b;
+        lock (_syncRoot)
+        {
+            b = _bounds;
+        }
 
-        int normX = (int)((clampedX * 65535L) / (screenWidth - 1));
-        int normY = (int)((clampedY * 65535L) / (screenHeight - 1));
+        if (b.Width <= 1 || b.Height <= 1) return false;
+
+        if (monitorWidth <= 0) monitorWidth = b.Width;
+        if (monitorHeight <= 0) monitorHeight = b.Height;
+
+        int clampedX = Math.Clamp(x, 0, clientWidth - 1);
+        int clampedY = Math.Clamp(y, 0, clientHeight - 1);
+
+        long targetVirtX = monitorOffsetX + ((long)clampedX * monitorWidth) / clientWidth;
+        long targetVirtY = monitorOffsetY + ((long)clampedY * monitorHeight) / clientHeight;
+
+        int normX = (int)(((targetVirtX - b.X) * 65535L + ((b.Width - 1) / 2)) / (b.Width - 1));
+        int normY = (int)(((targetVirtY - b.Y) * 65535L + ((b.Height - 1) / 2)) / (b.Height - 1));
+
+        normX = Math.Clamp(normX, 0, 65535);
+        normY = Math.Clamp(normY, 0, 65535);
 
         INPUT input = default;
         input.type = WindowsInputNativeMethods.INPUT_MOUSE;
@@ -58,13 +123,16 @@ public sealed unsafe class WindowsSendInputInjector : IWindowsInputInjector
                            WindowsInputNativeMethods.MOUSEEVENTF_VIRTUALDESK;
 
         uint sent = WindowsInputNativeMethods.SendInput(1, &input, sizeof(INPUT));
-        return sent == 1;
+        if (sent == 1) return true;
+        int err = Marshal.GetLastPInvokeError();
+        return err is 5 or 0;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool InjectMouseButton(byte buttonIndex, bool isDown)
     {
         if (_disposed) return false;
+        if (buttonIndex is < 1 or > 5) return false;
 
         uint flags;
         uint mouseData = 0;
@@ -94,17 +162,14 @@ public sealed unsafe class WindowsSendInputInjector : IWindowsInputInjector
 
         lock (_syncRoot)
         {
-            if (buttonIndex is >= 1 and <= 5)
+            int bit = 1 << (buttonIndex - 1);
+            if (isDown)
             {
-                int bit = 1 << (buttonIndex - 1);
-                if (isDown)
-                {
-                    _heldButtons |= (byte)bit;
-                }
-                else
-                {
-                    _heldButtons &= (byte)~bit;
-                }
+                _heldButtons |= (byte)bit;
+            }
+            else
+            {
+                _heldButtons &= (byte)~bit;
             }
         }
 
@@ -114,7 +179,9 @@ public sealed unsafe class WindowsSendInputInjector : IWindowsInputInjector
         input.mi.dwFlags = flags;
 
         uint sent = WindowsInputNativeMethods.SendInput(1, &input, sizeof(INPUT));
-        return sent == 1;
+        if (sent == 1) return true;
+        int err = Marshal.GetLastPInvokeError();
+        return err is 5 or 0;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -129,7 +196,9 @@ public sealed unsafe class WindowsSendInputInjector : IWindowsInputInjector
         input.mi.dwFlags = isHorizontal ? WindowsInputNativeMethods.MOUSEEVENTF_HWHEEL : WindowsInputNativeMethods.MOUSEEVENTF_WHEEL;
 
         uint sent = WindowsInputNativeMethods.SendInput(1, &input, sizeof(INPUT));
-        return sent == 1;
+        if (sent == 1) return true;
+        int err = Marshal.GetLastPInvokeError();
+        return err is 5 or 0;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -141,13 +210,18 @@ public sealed unsafe class WindowsSendInputInjector : IWindowsInputInjector
         byte vkey = (byte)virtualKeyCode;
         uint flags = isDown ? 0 : WindowsInputNativeMethods.KEYEVENTF_KEYUP;
 
+        if (scanCode == 0)
+        {
+            scanCode = (short)WindowsInputNativeMethods.MapVirtualKeyW((uint)vkey, WindowsInputNativeMethods.MAPVK_VK_TO_VSC);
+        }
+
         if (scanCode != 0)
         {
             flags |= WindowsInputNativeMethods.KEYEVENTF_SCANCODE;
         }
 
-        // Extended key handling (Arrow keys, Insert, Delete, Home, End, PageUp, PageDown, Right Alt, Right Ctrl)
-        if (vkey is 0x21 or 0x22 or 0x23 or 0x24 or 0x25 or 0x26 or 0x27 or 0x28 or 0x2D or 0x2E or 0xA3 or 0xA5)
+        // Extended key handling (Arrow keys, Insert, Delete, Home, End, PageUp, PageDown, Right Alt, Right Ctrl, NumLock, Divide, PrintScreen)
+        if (vkey is 0x21 or 0x22 or 0x23 or 0x24 or 0x25 or 0x26 or 0x27 or 0x28 or 0x2D or 0x2E or 0xA3 or 0xA5 or 0x90 or 0x6F or 0x2C)
         {
             flags |= WindowsInputNativeMethods.KEYEVENTF_EXTENDEDKEY;
         }
@@ -187,7 +261,24 @@ public sealed unsafe class WindowsSendInputInjector : IWindowsInputInjector
         input.ki.dwFlags = flags;
 
         uint sent = WindowsInputNativeMethods.SendInput(1, &input, sizeof(INPUT));
-        return sent == 1;
+        if (sent == 1) return true;
+        int err = Marshal.GetLastPInvokeError();
+        return err is 5 or 0;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int InjectBatch(ReadOnlySpan<INPUT> inputs)
+    {
+        if (_disposed || inputs.IsEmpty) return 0;
+
+        fixed (INPUT* pInputs = inputs)
+        {
+            uint sent = WindowsInputNativeMethods.SendInput((uint)inputs.Length, pInputs, sizeof(INPUT));
+            if (sent == (uint)inputs.Length) return (int)sent;
+            int err = Marshal.GetLastPInvokeError();
+            if (err is 5 or 0) return inputs.Length;
+            return (int)sent;
+        }
     }
 
     public int ReleaseAllHeldInputs()
@@ -221,55 +312,66 @@ public sealed unsafe class WindowsSendInputInjector : IWindowsInputInjector
                         _ => 0
                     };
 
-                    INPUT input = default;
-                    input.type = WindowsInputNativeMethods.INPUT_MOUSE;
-                    input.mi.dwFlags = flags;
-                    input.mi.mouseData = mouseData;
-                    WindowsInputNativeMethods.SendInput(1, &input, sizeof(INPUT));
-                    releaseCount++;
+                    if (flags != 0 && releaseCount < 32)
+                    {
+                        ref INPUT inp = ref inputs[releaseCount++];
+                        inp.type = WindowsInputNativeMethods.INPUT_MOUSE;
+                        inp.mi.dx = 0;
+                        inp.mi.dy = 0;
+                        inp.mi.mouseData = mouseData;
+                        inp.mi.dwFlags = flags;
+                    }
                 }
             }
             _heldButtons = 0;
 
-            // Release held keyboard keys
-            ulong[] heldBlocks = [_heldKey0, _heldKey1, _heldKey2, _heldKey3];
-            for (int block = 0; block < 4; block++)
-            {
-                ulong bits = heldBlocks[block];
-                while (bits != 0)
-                {
-                    int bitIndex = BitOperations.TrailingZeroCount(bits);
-                    byte vkey = (byte)((block << 6) | bitIndex);
+            // Release held keyboard keys across 4 64-bit blocks
+            ReleaseBlock(ref _heldKey0, 0, inputs, ref releaseCount);
+            ReleaseBlock(ref _heldKey1, 1, inputs, ref releaseCount);
+            ReleaseBlock(ref _heldKey2, 2, inputs, ref releaseCount);
+            ReleaseBlock(ref _heldKey3, 3, inputs, ref releaseCount);
+        }
 
-                    uint flags = WindowsInputNativeMethods.KEYEVENTF_KEYUP;
-                    if (vkey is 0x21 or 0x22 or 0x23 or 0x24 or 0x25 or 0x26 or 0x27 or 0x28 or 0x2D or 0x2E or 0xA3 or 0xA5)
-                    {
-                        flags |= WindowsInputNativeMethods.KEYEVENTF_EXTENDEDKEY;
-                    }
-
-                    INPUT input = default;
-                    input.type = WindowsInputNativeMethods.INPUT_KEYBOARD;
-                    input.ki.wVk = vkey;
-                    input.ki.dwFlags = flags;
-                    WindowsInputNativeMethods.SendInput(1, &input, sizeof(INPUT));
-                    releaseCount++;
-
-                    bits &= bits - 1;
-                }
-            }
-
-            _heldKey0 = 0;
-            _heldKey1 = 0;
-            _heldKey2 = 0;
-            _heldKey3 = 0;
+        if (releaseCount > 0)
+        {
+            WindowsInputNativeMethods.SendInput((uint)releaseCount, inputs, sizeof(INPUT));
         }
 
         return releaseCount;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void ReleaseBlock(ref ulong blockValue, int blockIndex, INPUT* inputs, ref int releaseCount)
+    {
+        if (blockValue == 0) return;
+
+        while (blockValue != 0 && releaseCount < 32)
+        {
+            int bit = BitOperations.TrailingZeroCount(blockValue);
+            byte vkey = (byte)((blockIndex << 6) | bit);
+
+            uint flags = WindowsInputNativeMethods.KEYEVENTF_KEYUP;
+            if (vkey is 0x21 or 0x22 or 0x23 or 0x24 or 0x25 or 0x26 or 0x27 or 0x28 or 0x2D or 0x2E or 0xA3 or 0xA5 or 0x90 or 0x6F or 0x2C)
+            {
+                flags |= WindowsInputNativeMethods.KEYEVENTF_EXTENDEDKEY;
+            }
+
+            ref INPUT inp = ref inputs[releaseCount++];
+            inp.type = WindowsInputNativeMethods.INPUT_KEYBOARD;
+            inp.ki.wVk = vkey;
+            inp.ki.wScan = 0;
+            inp.ki.dwFlags = flags;
+
+            blockValue &= ~(1UL << bit);
+        }
+
+        blockValue = 0;
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
+
         lock (_syncRoot)
         {
             if (_disposed) return;

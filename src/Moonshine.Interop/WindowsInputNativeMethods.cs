@@ -106,6 +106,23 @@ public struct INPUT
     [FieldOffset(8)] public HARDWAREINPUT hi;
 }
 
+[StructLayout(LayoutKind.Sequential)]
+public struct VirtualDesktopGeometry
+{
+    public int X;
+    public int Y;
+    public int Width;
+    public int Height;
+
+    public VirtualDesktopGeometry(int x, int y, int width, int height)
+    {
+        X = x;
+        Y = y;
+        Width = width;
+        Height = height;
+    }
+}
+
 #endregion
 
 #region XInput Structs
@@ -261,6 +278,20 @@ public static unsafe partial class WindowsInputNativeMethods
     public const uint XBUTTON2 = 0x0002;
     public const int WHEEL_DELTA = 120;
 
+    // GetSystemMetrics Constants
+    public const int SM_CXSCREEN = 0;
+    public const int SM_CYSCREEN = 1;
+    public const int SM_XVIRTUALSCREEN = 76;
+    public const int SM_YVIRTUALSCREEN = 77;
+    public const int SM_CXVIRTUALSCREEN = 78;
+    public const int SM_CYVIRTUALSCREEN = 79;
+
+    // MapVirtualKey Translation Types
+    public const uint MAPVK_VK_TO_VSC = 0;
+    public const uint MAPVK_VSC_TO_VK = 1;
+    public const uint MAPVK_VK_TO_CHAR = 2;
+    public const uint MAPVK_VSC_TO_VK_EX = 3;
+
     // SendInput Keyboard Flags
     public const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
     public const uint KEYEVENTF_KEYUP = 0x0002;
@@ -273,6 +304,15 @@ public static unsafe partial class WindowsInputNativeMethods
         INPUT* pInputs,
         int cbSize
     );
+
+    [LibraryImport("user32.dll", EntryPoint = "GetSystemMetrics")]
+    public static partial int GetSystemMetrics(int nIndex);
+
+    [LibraryImport("user32.dll", EntryPoint = "MapVirtualKeyW")]
+    public static partial uint MapVirtualKeyW(uint uCode, uint uMapType);
+
+    [LibraryImport("user32.dll", EntryPoint = "GetDpiForSystem")]
+    public static partial uint GetDpiForSystem();
 
     [LibraryImport("user32.dll", EntryPoint = "RegisterRawInputDevices", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -307,6 +347,59 @@ public static unsafe partial class WindowsInputNativeMethods
         uint* puiNumDevices,
         uint cbSize
     );
+
+    #endregion
+
+    #region Moonshine Native Input Injector C-ABI
+
+    [LibraryImport("Moonshine.Native.dll", EntryPoint = "moonshine_input_injector_create")]
+    public static partial IntPtr NativeInputInjectorCreate();
+
+    [LibraryImport("Moonshine.Native.dll", EntryPoint = "moonshine_input_injector_destroy")]
+    public static partial void NativeInputInjectorDestroy(IntPtr injector);
+
+    [LibraryImport("Moonshine.Native.dll", EntryPoint = "moonshine_input_inject_mouse_move")]
+    public static partial int NativeInputInjectMouseMove(IntPtr injector, short deltaX, short deltaY);
+
+    [LibraryImport("Moonshine.Native.dll", EntryPoint = "moonshine_input_inject_mouse_abs")]
+    public static partial int NativeInputInjectMouseAbs(
+        IntPtr injector,
+        int x,
+        int y,
+        int clientWidth,
+        int clientHeight,
+        int monitorOffsetX,
+        int monitorOffsetY,
+        int monitorWidth,
+        int monitorHeight
+    );
+
+    [LibraryImport("Moonshine.Native.dll", EntryPoint = "moonshine_input_inject_mouse_button")]
+    public static partial int NativeInputInjectMouseButton(IntPtr injector, byte buttonIndex, int isDown);
+
+    [LibraryImport("Moonshine.Native.dll", EntryPoint = "moonshine_input_inject_mouse_scroll")]
+    public static partial int NativeInputInjectMouseScroll(IntPtr injector, short scrollDelta, int isHorizontal);
+
+    [LibraryImport("Moonshine.Native.dll", EntryPoint = "moonshine_input_inject_keyboard")]
+    public static partial int NativeInputInjectKeyboard(
+        IntPtr injector,
+        int virtualKeyCode,
+        int scanCode,
+        int isDown,
+        byte modifiers
+    );
+
+    [LibraryImport("Moonshine.Native.dll", EntryPoint = "moonshine_input_inject_batch")]
+    public static partial uint NativeInputInjectBatch(IntPtr injector, void* inputs, uint count);
+
+    [LibraryImport("Moonshine.Native.dll", EntryPoint = "moonshine_input_release_all_held")]
+    public static partial uint NativeInputReleaseAllHeld(IntPtr injector);
+
+    [LibraryImport("Moonshine.Native.dll", EntryPoint = "moonshine_input_get_virtual_desktop_bounds")]
+    public static partial int NativeInputGetVirtualDesktopBounds(IntPtr injector, VirtualDesktopGeometry* bounds);
+
+    [LibraryImport("Moonshine.Native.dll", EntryPoint = "moonshine_input_refresh_virtual_desktop_bounds")]
+    public static partial void NativeInputRefreshVirtualDesktopBounds(IntPtr injector);
 
     #endregion
 

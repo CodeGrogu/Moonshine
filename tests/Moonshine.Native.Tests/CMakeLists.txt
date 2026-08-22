@@ -121,6 +121,13 @@ add_executable(test_video_decoder
 target_link_libraries(test_video_decoder PRIVATE Moonshine.Native)
 add_test(NAME test_video_decoder COMMAND test_video_decoder)
 
+add_executable(test_input_injector
+    test_input_injector.cpp
+    ${CMAKE_SOURCE_DIR}/src/Moonshine.Native/src/input/windows_input_injector.cpp
+)
+target_link_libraries(test_input_injector PRIVATE Moonshine.Native)
+add_test(NAME test_input_injector COMMAND test_input_injector)
+
 if(WIN32)
     add_custom_command(TARGET test_c_abi_export POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different

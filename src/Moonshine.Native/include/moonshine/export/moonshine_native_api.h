@@ -822,6 +822,74 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_qsv_set_intra_refresh(
     int32_t qp_delta
 );
 
+// ============================================================================
+// Windows Mouse & Keyboard Input Injector APIs
+// ============================================================================
+
+typedef struct MoonshineVirtualDesktopBoundsC {
+    int32_t x_virtual_screen;
+    int32_t y_virtual_screen;
+    int32_t cx_virtual_screen;
+    int32_t cy_virtual_screen;
+} MoonshineVirtualDesktopBoundsC;
+
+MOONSHINE_API void* MOONSHINE_CONV moonshine_input_injector_create(void);
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_input_injector_destroy(void* injector);
+
+MOONSHINE_API int32_t MOONSHINE_CONV moonshine_input_inject_mouse_move(
+    void* injector,
+    int16_t delta_x,
+    int16_t delta_y
+);
+
+MOONSHINE_API int32_t MOONSHINE_CONV moonshine_input_inject_mouse_abs(
+    void* injector,
+    int32_t x,
+    int32_t y,
+    int32_t client_width,
+    int32_t client_height,
+    int32_t monitor_offset_x,
+    int32_t monitor_offset_y,
+    int32_t monitor_width,
+    int32_t monitor_height
+);
+
+MOONSHINE_API int32_t MOONSHINE_CONV moonshine_input_inject_mouse_button(
+    void* injector,
+    uint8_t button_index,
+    int32_t is_down
+);
+
+MOONSHINE_API int32_t MOONSHINE_CONV moonshine_input_inject_mouse_scroll(
+    void* injector,
+    int16_t scroll_delta,
+    int32_t is_horizontal
+);
+
+MOONSHINE_API int32_t MOONSHINE_CONV moonshine_input_inject_keyboard(
+    void* injector,
+    int16_t virtual_key_code,
+    int16_t scan_code,
+    int32_t is_down,
+    uint8_t modifiers
+);
+
+MOONSHINE_API uint32_t MOONSHINE_CONV moonshine_input_inject_batch(
+    void* injector,
+    const void* inputs,
+    uint32_t count
+);
+
+MOONSHINE_API uint32_t MOONSHINE_CONV moonshine_input_release_all_held(void* injector);
+
+MOONSHINE_API int32_t MOONSHINE_CONV moonshine_input_get_virtual_desktop_bounds(
+    void* injector,
+    MoonshineVirtualDesktopBoundsC* bounds
+);
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_input_refresh_virtual_desktop_bounds(void* injector);
+
 #ifdef __cplusplus
 }
 
@@ -959,6 +1027,12 @@ static_assert(offsetof(MoonshineDisplayInfo, is_attached_to_desktop) == 28, "Moo
 static_assert(offsetof(MoonshineDisplayInfo, is_hdr) == 29, "MoonshineDisplayInfo::is_hdr offset mismatch");
 static_assert(offsetof(MoonshineDisplayInfo, bits_per_color) == 30, "MoonshineDisplayInfo::bits_per_color offset mismatch");
 static_assert(offsetof(MoonshineDisplayInfo, reserved) == 31, "MoonshineDisplayInfo::reserved offset mismatch");
+
+static_assert(sizeof(MoonshineVirtualDesktopBoundsC) == 16, "MoonshineVirtualDesktopBoundsC size mismatch");
+static_assert(offsetof(MoonshineVirtualDesktopBoundsC, x_virtual_screen) == 0, "MoonshineVirtualDesktopBoundsC::x_virtual_screen offset mismatch");
+static_assert(offsetof(MoonshineVirtualDesktopBoundsC, y_virtual_screen) == 4, "MoonshineVirtualDesktopBoundsC::y_virtual_screen offset mismatch");
+static_assert(offsetof(MoonshineVirtualDesktopBoundsC, cx_virtual_screen) == 8, "MoonshineVirtualDesktopBoundsC::cx_virtual_screen offset mismatch");
+static_assert(offsetof(MoonshineVirtualDesktopBoundsC, cy_virtual_screen) == 12, "MoonshineVirtualDesktopBoundsC::cy_virtual_screen offset mismatch");
 
 #endif
 

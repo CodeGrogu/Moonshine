@@ -19,6 +19,7 @@ add_library(Moonshine.Native SHARED
     src/encoder/qsv_video_encoder.cpp
     src/encoder/d3d11_hardware_encoder.cpp
     src/encoder/unified_video_encoder.cpp
+    src/input/windows_input_injector.cpp
 )
 
 target_include_directories(Moonshine.Native

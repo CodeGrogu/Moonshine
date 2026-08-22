@@ -1,18 +1,19 @@
 using BenchmarkDotNet.Attributes;
-using BenchmarkDotNet.Jobs;
 using Moonshine.Host.Input;
+using Moonshine.Interop;
 using Moonshine.Protocol.Contracts;
 using Moonshine.Protocol.Input;
 
 namespace Moonshine.Benchmarks;
 
 [MemoryDiagnoser]
-public class HostInputBenchmarks : IDisposable
+public unsafe class HostInputBenchmarks : IDisposable
 {
     private WindowsSendInputInjector _injector = null!;
     private MoonshineHostInputPipeline _pipeline = null!;
     private byte[] _compactBuffer = null!;
     private byte[] _mnbpBuffer = null!;
+    private INPUT[] _batchInputs = null!;
 
     [GlobalSetup]
     public void Setup()
@@ -49,6 +50,16 @@ public class HostInputBenchmarks : IDisposable
             TimestampOffsetUs = 0
         };
         MoonshineProtocolCodec.TryWriteMouseInput(mousePayload, _mnbpBuffer.AsSpan(MoonshineProtocolConstants.HeaderSize));
+
+        _batchInputs = new INPUT[2];
+        _batchInputs[0].type = WindowsInputNativeMethods.INPUT_MOUSE;
+        _batchInputs[0].mi.dx = 2;
+        _batchInputs[0].mi.dy = -2;
+        _batchInputs[0].mi.dwFlags = WindowsInputNativeMethods.MOUSEEVENTF_MOVE;
+
+        _batchInputs[1].type = WindowsInputNativeMethods.INPUT_MOUSE;
+        _batchInputs[1].mi.mouseData = 120;
+        _batchInputs[1].mi.dwFlags = WindowsInputNativeMethods.MOUSEEVENTF_WHEEL;
     }
 
     [GlobalCleanup]
@@ -71,9 +82,39 @@ public class HostInputBenchmarks : IDisposable
     }
 
     [Benchmark]
+    public bool SendInput_MouseAbsolute_MultiMonitor_DirectHotPath()
+    {
+        return _injector.InjectMouseMoveAbsolute(960, 540, 1920, 1080, 1920, 0, 1920, 1080);
+    }
+
+    [Benchmark]
+    public bool SendInput_MouseButton_DirectHotPath()
+    {
+        return _injector.InjectMouseButton(1, false);
+    }
+
+    [Benchmark]
+    public bool SendInput_MouseScroll_Horizontal_DirectHotPath()
+    {
+        return _injector.InjectMouseScroll(120, isHorizontal: true);
+    }
+
+    [Benchmark]
     public bool SendInput_Keyboard_DirectHotPath()
     {
         return _injector.InjectKeyboardKey(0x41, 0, false);
+    }
+
+    [Benchmark]
+    public bool SendInput_Keyboard_ExtendedKey_DirectHotPath()
+    {
+        return _injector.InjectKeyboardKey(0x27, 0, false);
+    }
+
+    [Benchmark]
+    public int SendInput_BatchedInjection_DirectHotPath()
+    {
+        return _injector.InjectBatch(_batchInputs);
     }
 
     [Benchmark]

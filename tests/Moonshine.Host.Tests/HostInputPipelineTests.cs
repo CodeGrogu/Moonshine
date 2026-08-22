@@ -44,12 +44,34 @@ public sealed class HostInputPipelineTests
             return true;
         }
 
-        public bool InjectMouseMoveAbsolute(int x, int y, int screenWidth, int screenHeight)
+        public bool InjectMouseMoveAbsolute(
+            int x,
+            int y,
+            int clientWidth,
+            int clientHeight,
+            int monitorOffsetX = 0,
+            int monitorOffsetY = 0,
+            int monitorWidth = 0,
+            int monitorHeight = 0)
         {
             AbsoluteMoveCount++;
             LastAbsX = x;
             LastAbsY = y;
             return true;
+        }
+
+        public int InjectBatch(ReadOnlySpan<INPUT> inputs)
+        {
+            return inputs.Length;
+        }
+
+        public VirtualDesktopGeometry GetVirtualDesktopBounds()
+        {
+            return new VirtualDesktopGeometry(0, 0, 1920, 1080);
+        }
+
+        public void RefreshVirtualDesktopBounds()
+        {
         }
 
         public bool InjectMouseButton(byte buttonIndex, bool isDown)

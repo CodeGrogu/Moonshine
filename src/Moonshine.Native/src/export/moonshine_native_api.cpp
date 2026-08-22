@@ -24,6 +24,7 @@
 #include "moonshine/encoder/nvenc_video_encoder.hpp"
 #include "moonshine/encoder/amf_video_encoder.hpp"
 #include "moonshine/encoder/qsv_video_encoder.hpp"
+#include "moonshine/input/windows_input_injector.h"
 
 using namespace moonshine;
 
@@ -1377,6 +1378,122 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_qsv_set_intra_refresh(
     (void)cycle_size;
     (void)qp_delta;
     return 1;
+}
+
+// ============================================================================
+// Windows Mouse & Keyboard Input Injector APIs
+// ============================================================================
+
+MOONSHINE_API void* MOONSHINE_CONV moonshine_input_injector_create(void) {
+    return new (std::nothrow) input::WindowsInputInjector();
+}
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_input_injector_destroy(void* injector) {
+    if (injector) {
+        auto* inj = static_cast<input::WindowsInputInjector*>(injector);
+        delete inj;
+    }
+}
+
+MOONSHINE_API int32_t MOONSHINE_CONV moonshine_input_inject_mouse_move(
+    void* injector,
+    int16_t delta_x,
+    int16_t delta_y
+) {
+    if (!injector) return 0;
+    auto* inj = static_cast<input::WindowsInputInjector*>(injector);
+    return inj->inject_mouse_move(delta_x, delta_y) ? 1 : 0;
+}
+
+MOONSHINE_API int32_t MOONSHINE_CONV moonshine_input_inject_mouse_abs(
+    void* injector,
+    int32_t x,
+    int32_t y,
+    int32_t client_width,
+    int32_t client_height,
+    int32_t monitor_offset_x,
+    int32_t monitor_offset_y,
+    int32_t monitor_width,
+    int32_t monitor_height
+) {
+    if (!injector) return 0;
+    auto* inj = static_cast<input::WindowsInputInjector*>(injector);
+    return inj->inject_mouse_abs(x, y, client_width, client_height,
+                                 monitor_offset_x, monitor_offset_y,
+                                 monitor_width, monitor_height) ? 1 : 0;
+}
+
+MOONSHINE_API int32_t MOONSHINE_CONV moonshine_input_inject_mouse_button(
+    void* injector,
+    uint8_t button_index,
+    int32_t is_down
+) {
+    if (!injector) return 0;
+    auto* inj = static_cast<input::WindowsInputInjector*>(injector);
+    return inj->inject_mouse_button(button_index, is_down != 0) ? 1 : 0;
+}
+
+MOONSHINE_API int32_t MOONSHINE_CONV moonshine_input_inject_mouse_scroll(
+    void* injector,
+    int16_t scroll_delta,
+    int32_t is_horizontal
+) {
+    if (!injector) return 0;
+    auto* inj = static_cast<input::WindowsInputInjector*>(injector);
+    return inj->inject_mouse_scroll(scroll_delta, is_horizontal != 0) ? 1 : 0;
+}
+
+MOONSHINE_API int32_t MOONSHINE_CONV moonshine_input_inject_keyboard(
+    void* injector,
+    int16_t virtual_key_code,
+    int16_t scan_code,
+    int32_t is_down,
+    uint8_t modifiers
+) {
+    if (!injector) return 0;
+    auto* inj = static_cast<input::WindowsInputInjector*>(injector);
+    return inj->inject_keyboard_key(virtual_key_code, scan_code, is_down != 0, modifiers) ? 1 : 0;
+}
+
+MOONSHINE_API uint32_t MOONSHINE_CONV moonshine_input_inject_batch(
+    void* injector,
+    const void* inputs,
+    uint32_t count
+) {
+    if (!injector || !inputs || count == 0) return 0;
+#if defined(_WIN32)
+    auto* inj = static_cast<input::WindowsInputInjector*>(injector);
+    return inj->inject_batch(static_cast<const INPUT*>(inputs), count);
+#else
+    (void)injector; (void)inputs; (void)count;
+    return 0;
+#endif
+}
+
+MOONSHINE_API uint32_t MOONSHINE_CONV moonshine_input_release_all_held(void* injector) {
+    if (!injector) return 0;
+    auto* inj = static_cast<input::WindowsInputInjector*>(injector);
+    return inj->release_all_held_inputs();
+}
+
+MOONSHINE_API int32_t MOONSHINE_CONV moonshine_input_get_virtual_desktop_bounds(
+    void* injector,
+    MoonshineVirtualDesktopBoundsC* bounds
+) {
+    if (!injector || !bounds) return 0;
+    auto* inj = static_cast<input::WindowsInputInjector*>(injector);
+    auto b = inj->get_virtual_desktop_bounds();
+    bounds->x_virtual_screen = b.x_virtual_screen;
+    bounds->y_virtual_screen = b.y_virtual_screen;
+    bounds->cx_virtual_screen = b.cx_virtual_screen;
+    bounds->cy_virtual_screen = b.cy_virtual_screen;
+    return 1;
+}
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_input_refresh_virtual_desktop_bounds(void* injector) {
+    if (!injector) return;
+    auto* inj = static_cast<input::WindowsInputInjector*>(injector);
+    inj->refresh_virtual_desktop_bounds();
 }
 
 } // extern "C"
