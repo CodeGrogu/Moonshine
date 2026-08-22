@@ -44,7 +44,12 @@ flowchart LR
 - **Measured Range**: **0.96 μs to 1.25 μs** per Stereo frame (5ms / 240 samples per channel), **2.84 μs to 3.13 μs** per Surround 5.1 frame.
 - **GC Allocation**: **0 B** steady-state.
 
-### 5. Distributed End-to-End Glass-to-Glass Input Latency (Issue #81 & #82)
+### 5. LAN Discovery Probe & Announcement Codec Overhead (Issue #78)
+- **Scope**: Blittable encoding and decoding of Moonshine LAN discovery probes (68 B), announcements (224 B), and direct unicast responses with Big-Endian endianness conversion and fixed UTF-8 string copy.
+- **Measured Range**: **3.53 ns to 30.64 ns** per packet operation.
+- **GC Allocation**: **0 B** steady-state.
+
+### 6. Distributed End-to-End Glass-to-Glass Input Latency (Issue #81 & #82)
 - **Scope**: Total physical action to remote OS reception across the entire network and rendering pipeline.
 - **Target Budget**: **2.0 ms to 8.0 ms** over local Gigabit / Wi-Fi 6 networks.
 
@@ -155,4 +160,22 @@ BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
 | WasapiRenderer_SubmitPcm_DirectHotPath                  |    115.87 ns |  3.571 ns | 10.360 ns |   113.46 ns |              0 B |
 | ClientAudioPipeline_EndToEnd_IngestDecodeRender_HotPath |     1.096 μs | 0.0221 μs | 0.0620 μs |    1.090 μs |              0 B |
 ```
+
+---
+
+### Moonshine LAN Discovery & Endpoint Advertisement Codec (Issue #78)
+<!-- VERIFIED: 2026-08-22, via `dotnet run -c Release --project src/Moonshine.Benchmarks -- --filter *DiscoveryBenchmarks* --inProcess` in Windows 11 Pro build 26200, x64 RyuJIT AVX-512 -->
+
+```
+BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
+.NET SDK 10.0.400 / Host: .NET 9.0.19 (9.0.1926.36724), X64 RyuJIT AVX-512F+CD+BW+DQ+VL+VBMI
+
+| Method                                         | Mean Latency | Error     | StdDev    | Median    | Allocated Memory |
+| :--------------------------------------------- | -----------: | --------: | --------: | --------: | ---------------: |
+| DiscoveryCodec_WriteProbe_DirectHotPath        |    23.877 ns | 0.5115 ns | 0.7001 ns | 23.666 ns |              0 B |
+| DiscoveryCodec_ReadProbe_DirectHotPath         |     3.530 ns | 0.1471 ns | 0.4313 ns |  3.373 ns |              0 B |
+| DiscoveryCodec_WriteAnnouncement_DirectHotPath |    28.885 ns | 0.6111 ns | 1.2891 ns | 28.523 ns |              0 B |
+| DiscoveryCodec_ReadAnnouncement_DirectHotPath  |    15.675 ns | 0.3194 ns | 0.4477 ns | 15.614 ns |              0 B |
+```
+
 

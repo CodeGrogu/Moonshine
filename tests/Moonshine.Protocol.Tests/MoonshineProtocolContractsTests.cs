@@ -29,6 +29,8 @@ public class MoonshineProtocolContractsTests
         Marshal.SizeOf<MoonshineHostConfigurationPayload>().Should().Be(48);
         Marshal.SizeOf<MoonshineSetHostConfigurationResponsePayload>().Should().Be(8);
         Marshal.SizeOf<MoonshineConfigurationChangedPayload>().Should().Be(8);
+        Marshal.SizeOf<MoonshineDiscoveryProbePayload>().Should().Be(36);
+        Marshal.SizeOf<MoonshineDiscoveryAnnouncementPayload>().Should().Be(192);
     }
 
     [Fact]
@@ -241,5 +243,8 @@ public class MoonshineProtocolContractsTests
         ((ushort)MoonshineMessageType.SetHostConfiguration).Should().Be(0x0805);
         ((ushort)MoonshineMessageType.SetHostConfigurationResponse).Should().Be(0x0806);
         ((ushort)MoonshineMessageType.ConfigurationChanged).Should().Be(0x0807);
+        ((ushort)MoonshineMessageType.DiscoveryProbe).Should().Be(0x0901);
+        ((ushort)MoonshineMessageType.DiscoveryAnnouncement).Should().Be(0x0902);
+        ((ushort)MoonshineMessageType.DiscoveryResponse).Should().Be(0x0903);
     }
 }

@@ -48,7 +48,12 @@ public enum MoonshineMessageType : ushort
     HostConfigurationResponse = 0x0804,
     SetHostConfiguration = 0x0805,
     SetHostConfigurationResponse = 0x0806,
-    ConfigurationChanged = 0x0807
+    ConfigurationChanged = 0x0807,
+
+    // Discovery
+    DiscoveryProbe = 0x0901,
+    DiscoveryAnnouncement = 0x0902,
+    DiscoveryResponse = 0x0903
 }
 
 public enum MoonshineErrorCode : uint
@@ -403,6 +408,40 @@ public struct MoonshineConfigurationChangedPayload
 {
     public uint NewConfigVersion;
     public uint ChangeReasonFlags;
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct MoonshineDiscoveryProbePayload
+{
+    public ushort ClientVersionMajor;
+    public ushort ClientVersionMinor;
+    public MoonshineUuid128 ClientUuid;
+    public MoonshineCapabilities DesiredCapabilities;
+    public uint Reserved;
+    public ulong ProbeNonce;
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public unsafe struct MoonshineDiscoveryAnnouncementPayload
+{
+    public ushort HostVersionMajor;
+    public ushort HostVersionMinor;
+    public MoonshineUuid128 HostUuid;
+    public MoonshineCapabilities SupportedCapabilities;
+    public uint ControlTcpPort;
+    public uint DiscoveryUdpPort;
+    public uint VideoUdpPort;
+    public uint AudioUdpPort;
+    public uint ControlFeedbackUdpPort;
+    public uint MicUdpPort;
+    public uint MaxBitrateKbps;
+    public byte SupportsHdr10;
+    public byte SupportsVirtualAudio;
+    public byte SupportsMicBackchannel;
+    public byte IsPaired;
+    public fixed byte Hostname[64];
+    public fixed byte GpuName[64];
+    public ulong AdvertisementNonce;
 }
 
 #pragma warning restore CA1051

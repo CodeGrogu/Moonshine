@@ -1,3 +1,4 @@
+using Moonshine.Core.Discovery;
 using Moonshine.Core.Network;
 using Moonshine.Core.Runtime;
 using Moonshine.Host.Input;
@@ -23,6 +24,7 @@ public sealed class MoonshineHostCoordinator : IMoonshineHostService
     private readonly IMoonshineHostNetworkManager _networkManager;
     private readonly HostEndpointConfig _endpointConfig;
     private MoonshineHostInputPipeline? _inputPipeline;
+    private MoonshineHostDiscoveryAdvertiser? _discoveryAdvertiser;
     private HostState _state = HostState.Disabled;
     private int _activeSessions;
     private int _activeWorkers;
@@ -77,7 +79,7 @@ public sealed class MoonshineHostCoordinator : IMoonshineHostService
         {
             lock (_lock)
             {
-                return _activeSessions > 0 || _networkManager.ActiveListenerCount > 0 || _activeWorkers > 0 || _activeBuffers > 0 || _inputPipeline is not null;
+                return _activeSessions > 0 || _networkManager.ActiveListenerCount > 0 || _activeWorkers > 0 || _activeBuffers > 0 || _inputPipeline is not null || _discoveryAdvertiser is not null;
             }
         }
     }
@@ -131,6 +133,8 @@ public sealed class MoonshineHostCoordinator : IMoonshineHostService
 
             lock (_lock)
             {
+                _discoveryAdvertiser = new MoonshineHostDiscoveryAdvertiser(_endpointConfig);
+                _discoveryAdvertiser.Start();
                 _workerCts = new CancellationTokenSource();
                 // Fail-closed baseline: reports Unsupported until native session control is implemented
                 _state = HostState.Unsupported;
@@ -194,6 +198,12 @@ public sealed class MoonshineHostCoordinator : IMoonshineHostService
 
     private async ValueTask CleanupResourcesAsync()
     {
+        if (_discoveryAdvertiser is not null)
+        {
+            _discoveryAdvertiser.Dispose();
+            _discoveryAdvertiser = null;
+        }
+
         if (_workerCts is not null)
         {
             await _workerCts.CancelAsync().ConfigureAwait(false);
