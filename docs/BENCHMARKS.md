@@ -202,5 +202,22 @@ BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
 | Session_VideoFramePacketise_DirectHotPath |     17.18 μs | 0.6820 μs | 1.9580 μs |  16.48 μs |              0 B |
 ```
 
+---
 
+### Congestion Control, Feedback Codec & Adaptation Engine (Issue #80)
+<!-- VERIFIED: 2026-08-22, via `dotnet run -c Release --project src/Moonshine.Benchmarks -- --filter *Congestion* --inProcess` in Windows 11 Pro build 26200, x64 RyuJIT AVX-512 -->
 
+```
+BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
+.NET SDK 10.0.400 / Host: .NET 9.0.16 (9.0.1626.22923), X64 RyuJIT AVX-512F+CD+BW+DQ+VL+VBMI
+
+| Method                         | Mean Latency | Error     | StdDev    | Median    | Allocated Memory |
+| :----------------------------- | -----------: | --------: | --------: | --------: | ---------------: |
+| SerializeRtcpLossStats         |     3.354 ns | 0.1568 ns | 0.4422 ns |  3.252 ns |              0 B |
+| ParseRtcpLossStats             |     4.326 ns | 0.1652 ns | 0.4792 ns |  4.208 ns |              0 B |
+| SerializeMoonshineLossStats    |    24.586 ns | 0.5032 ns | 0.7532 ns | 24.502 ns |              0 B |
+| ParseMoonshineLossStats        |     4.414 ns | 0.2302 ns | 0.6714 ns |  4.206 ns |              0 B |
+| SerializeMoonshineIdrRequest   |    23.344 ns | 0.5065 ns | 0.4738 ns | 23.313 ns |              0 B |
+| ParseMoonshineIdrRequest       |     3.309 ns | 0.1429 ns | 0.4053 ns |  3.201 ns |              0 B |
+| ProcessFeedbackAndAdaptBitrate |    41.412 ns | 0.7667 ns | 1.0494 ns | 41.297 ns |              0 B |
+```

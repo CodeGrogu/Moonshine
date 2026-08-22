@@ -198,7 +198,7 @@ struct MoonshineMicPacketHeader {
 };
 
 /**
- * @brief Feedback loss and RTT statistics payload (36 bytes).
+ * @brief Feedback loss and RTT statistics payload (40 bytes).
  */
 struct MoonshineFeedbackLossStatsPayload {
     uint32_t stream_id;
@@ -209,6 +209,7 @@ struct MoonshineFeedbackLossStatsPayload {
     uint32_t round_trip_time_us;
     uint32_t jitter_us;
     uint32_t estimated_bandwidth_kbps;
+    uint32_t receive_queue_depth;
 };
 
 /**
@@ -347,7 +348,7 @@ static_assert(sizeof(MoonshineSessionSetupResponsePayload) == 32, "MoonshineSess
 static_assert(sizeof(MoonshineVideoPacketHeader) == 32, "MoonshineVideoPacketHeader size must be exactly 32 bytes");
 static_assert(sizeof(MoonshineAudioPacketHeader) == 24, "MoonshineAudioPacketHeader size must be exactly 24 bytes");
 static_assert(sizeof(MoonshineMicPacketHeader) == 20, "MoonshineMicPacketHeader size must be exactly 20 bytes");
-static_assert(sizeof(MoonshineFeedbackLossStatsPayload) == 36, "MoonshineFeedbackLossStatsPayload size must be exactly 36 bytes");
+static_assert(sizeof(MoonshineFeedbackLossStatsPayload) == 40, "MoonshineFeedbackLossStatsPayload size must be exactly 40 bytes");
 static_assert(sizeof(MoonshineIdrRequestPayload) == 16, "MoonshineIdrRequestPayload size must be exactly 16 bytes");
 static_assert(sizeof(MoonshineInputKeyboardPayload) == 12, "MoonshineInputKeyboardPayload size must be exactly 12 bytes");
 static_assert(sizeof(MoonshineInputMousePayload) == 20, "MoonshineInputMousePayload size must be exactly 20 bytes");

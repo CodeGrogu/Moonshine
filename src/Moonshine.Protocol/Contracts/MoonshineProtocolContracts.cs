@@ -293,6 +293,7 @@ public struct MoonshineFeedbackLossStatsPayload
     public uint RoundTripTimeUs;
     public uint JitterUs;
     public uint EstimatedBandwidthKbps;
+    public uint ReceiveQueueDepth;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
@@ -702,6 +703,74 @@ public static class MoonshineProtocolCodec
             MotorRight = BinaryPrimitives.ReadUInt16BigEndian(source[16..18]),
             TimestampOffsetUs = BinaryPrimitives.ReadUInt32BigEndian(source[18..22]),
             Reserved2 = BinaryPrimitives.ReadUInt16BigEndian(source[22..24])
+        };
+
+        return MoonshineErrorCode.Success;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool TryWriteFeedbackLossStats(in MoonshineFeedbackLossStatsPayload payload, Span<byte> destination)
+    {
+        if (destination.Length < 40) return false;
+
+        BinaryPrimitives.WriteUInt32BigEndian(destination[..4], payload.StreamId);
+        BinaryPrimitives.WriteUInt64BigEndian(destination[4..12], payload.LastReceivedFrameIndex);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[12..16], payload.PacketsReceived);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[16..20], payload.PacketsLost);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[20..24], payload.PacketsRecoveredFec);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[24..28], payload.RoundTripTimeUs);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[28..32], payload.JitterUs);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[32..36], payload.EstimatedBandwidthKbps);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[36..40], payload.ReceiveQueueDepth);
+
+        return true;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static MoonshineErrorCode TryReadFeedbackLossStats(ReadOnlySpan<byte> source, out MoonshineFeedbackLossStatsPayload payload)
+    {
+        payload = default;
+        if (source.Length < 40) return MoonshineErrorCode.BufferTooSmall;
+
+        payload = new MoonshineFeedbackLossStatsPayload
+        {
+            StreamId = BinaryPrimitives.ReadUInt32BigEndian(source[..4]),
+            LastReceivedFrameIndex = BinaryPrimitives.ReadUInt64BigEndian(source[4..12]),
+            PacketsReceived = BinaryPrimitives.ReadUInt32BigEndian(source[12..16]),
+            PacketsLost = BinaryPrimitives.ReadUInt32BigEndian(source[16..20]),
+            PacketsRecoveredFec = BinaryPrimitives.ReadUInt32BigEndian(source[20..24]),
+            RoundTripTimeUs = BinaryPrimitives.ReadUInt32BigEndian(source[24..28]),
+            JitterUs = BinaryPrimitives.ReadUInt32BigEndian(source[28..32]),
+            EstimatedBandwidthKbps = BinaryPrimitives.ReadUInt32BigEndian(source[32..36]),
+            ReceiveQueueDepth = BinaryPrimitives.ReadUInt32BigEndian(source[36..40])
+        };
+
+        return MoonshineErrorCode.Success;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool TryWriteIdrRequest(in MoonshineIdrRequestPayload payload, Span<byte> destination)
+    {
+        if (destination.Length < 16) return false;
+
+        BinaryPrimitives.WriteUInt32BigEndian(destination[..4], payload.StreamId);
+        BinaryPrimitives.WriteUInt64BigEndian(destination[4..12], payload.LastValidFrameIndex);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[12..16], payload.ReasonCode);
+
+        return true;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static MoonshineErrorCode TryReadIdrRequest(ReadOnlySpan<byte> source, out MoonshineIdrRequestPayload payload)
+    {
+        payload = default;
+        if (source.Length < 16) return MoonshineErrorCode.BufferTooSmall;
+
+        payload = new MoonshineIdrRequestPayload
+        {
+            StreamId = BinaryPrimitives.ReadUInt32BigEndian(source[..4]),
+            LastValidFrameIndex = BinaryPrimitives.ReadUInt64BigEndian(source[4..12]),
+            ReasonCode = BinaryPrimitives.ReadUInt32BigEndian(source[12..16])
         };
 
         return MoonshineErrorCode.Success;

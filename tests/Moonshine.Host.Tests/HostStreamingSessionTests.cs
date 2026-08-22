@@ -13,6 +13,7 @@ using Moonshine.Host.Session;
 using Moonshine.Interop;
 using Moonshine.Protocol.Contracts;
 using Moonshine.Protocol.Control;
+using Moonshine.Protocol.Feedback;
 using Moonshine.Protocol.Video;
 using Xunit;
 using MoonshineErrorCode = Moonshine.Protocol.Contracts.MoonshineErrorCode;
@@ -358,4 +359,109 @@ public class HostStreamingSessionTests
         await coordinator.StopAsync();
         coordinator.State.Should().Be(HostState.Disabled);
     }
+
+    [Fact]
+    public async Task HostStreamingSession_NativeFeedbackDatagram_AdaptsBitrate()
+    {
+        var capture = new TestDesktopCapturePipeline();
+        var encoderPipeline = new TestVideoEncoderPipeline();
+        using var encoder = new UnifiedHardwareEncoderEngine(encoderPipeline);
+
+        ushort basePort = (ushort)(59400 + Random.Shared.Next(0, 50) * 6);
+        var config = new HostSessionConfig
+        {
+            BitrateKbps = 50000,
+            LocalVideoPort = basePort,
+            LocalAudioPort = (ushort)(basePort + 1),
+            LocalControlFeedbackPort = (ushort)(basePort + 2),
+            ClientVideoPort = (ushort)(basePort + 3),
+            ClientAudioPort = (ushort)(basePort + 4),
+            ClientControlFeedbackPort = (ushort)(basePort + 5)
+        };
+
+        await using var session = new MoonshineHostStreamingSession(
+            config: config,
+            capturePipeline: capture,
+            encoderEngine: encoder);
+
+        await session.StartAsync();
+        session.State.Should().Be(HostSessionState.Streaming);
+
+        // Send Moonshine-native FeedbackLossStats packet indicating 10% packet loss
+        using var clientSocket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+        var feedbackPayload = new MoonshineFeedbackLossStatsPayload
+        {
+            StreamId = config.StreamId,
+            PacketsReceived = 900,
+            PacketsLost = 100,
+            PacketsRecoveredFec = 0,
+            RoundTripTimeUs = 15000,
+            JitterUs = 500,
+            EstimatedBandwidthKbps = 35000
+        };
+
+        byte[] packetBuffer = new byte[MoonshineFeedbackCodec.LossStatsPacketSize];
+        MoonshineFeedbackCodec.TryWriteLossStats(in feedbackPayload, packetBuffer, out int written, sessionId: config.SessionId);
+
+        clientSocket.SendTo(packetBuffer, 0, written, SocketFlags.None, new IPEndPoint(IPAddress.Loopback, config.LocalControlFeedbackPort));
+
+        // Allow feedback loop to process
+        await Task.Delay(100);
+
+        // Encoder bitrate should have been reconfigured down due to severe packet loss
+        encoderPipeline.ReconfigureCallCount.Should().BeGreaterThan(0);
+        encoderPipeline.BitrateKbps.Should().BeLessThan(50000);
+
+        await session.StopAsync();
+    }
+
+    [Fact]
+    public async Task HostStreamingSession_NativeIdrRequest_TriggersKeyframe()
+    {
+        var capture = new TestDesktopCapturePipeline();
+        var encoderPipeline = new TestVideoEncoderPipeline();
+        using var encoder = new UnifiedHardwareEncoderEngine(encoderPipeline);
+
+        ushort basePort = (ushort)(59750 + Random.Shared.Next(0, 50) * 6);
+        var config = new HostSessionConfig
+        {
+            LocalVideoPort = basePort,
+            LocalAudioPort = (ushort)(basePort + 1),
+            LocalControlFeedbackPort = (ushort)(basePort + 2),
+            ClientVideoPort = (ushort)(basePort + 3),
+            ClientAudioPort = (ushort)(basePort + 4),
+            ClientControlFeedbackPort = (ushort)(basePort + 5)
+        };
+
+        await using var session = new MoonshineHostStreamingSession(
+            config: config,
+            capturePipeline: capture,
+            encoderEngine: encoder);
+
+        await session.StartAsync();
+        session.State.Should().Be(HostSessionState.Streaming);
+
+        // Send Moonshine-native IdrRequest packet
+        using var clientSocket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+        var idrPayload = new MoonshineIdrRequestPayload
+        {
+            StreamId = config.StreamId,
+            LastValidFrameIndex = 100,
+            ReasonCode = 1
+        };
+
+        byte[] packetBuffer = new byte[MoonshineFeedbackCodec.IdrRequestPacketSize];
+        MoonshineFeedbackCodec.TryWriteIdrRequest(in idrPayload, packetBuffer, out int written, sessionId: config.SessionId);
+
+        clientSocket.SendTo(packetBuffer, 0, written, SocketFlags.None, new IPEndPoint(IPAddress.Loopback, config.LocalControlFeedbackPort));
+
+        // Allow feedback loop and video frame loop to process
+        await Task.Delay(100);
+
+        // Hardware encoder should have received force IDR request
+        encoderPipeline.ForceIdrCallCount.Should().BeGreaterThan(0);
+
+        await session.StopAsync();
+    }
 }
+

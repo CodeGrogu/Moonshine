@@ -19,7 +19,7 @@ public class MoonshineProtocolContractsTests
         Marshal.SizeOf<MoonshineVideoPacketHeader>().Should().Be(32);
         Marshal.SizeOf<MoonshineAudioPacketHeader>().Should().Be(24);
         Marshal.SizeOf<MoonshineMicPacketHeader>().Should().Be(20);
-        Marshal.SizeOf<MoonshineFeedbackLossStatsPayload>().Should().Be(36);
+        Marshal.SizeOf<MoonshineFeedbackLossStatsPayload>().Should().Be(40);
         Marshal.SizeOf<MoonshineIdrRequestPayload>().Should().Be(16);
         Marshal.SizeOf<MoonshineInputKeyboardPayload>().Should().Be(12);
         Marshal.SizeOf<MoonshineInputMousePayload>().Should().Be(20);

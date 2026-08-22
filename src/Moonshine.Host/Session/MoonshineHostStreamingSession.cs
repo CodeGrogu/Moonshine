@@ -12,6 +12,8 @@ using Moonshine.Host.Input;
 using Moonshine.Interop;
 using Moonshine.Protocol.Contracts;
 using Moonshine.Protocol.Control;
+using Moonshine.Protocol.Feedback;
+using MoonshineErrorCode = Moonshine.Protocol.Contracts.MoonshineErrorCode;
 
 namespace Moonshine.Host.Session;
 
@@ -60,6 +62,7 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
     private ulong _totalInputPacketsProcessed;
     private ulong _keyframesRequested;
     private double _averageCaptureToNetworkLatencyUs;
+    private uint _pacingAdjustmentUs;
 
     private readonly bool _ownsCapture;
     private readonly bool _ownsEncoder;
@@ -164,6 +167,7 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                 minBitrateKbps: Math.Max(2000, _config.BitrateKbps / 10),
                 maxBitrateKbps: (uint)(_config.BitrateKbps * 2.5),
                 onBitrateChanged: newBitrate => _encoderEngine?.ReconfigureBitrate(newBitrate),
+                onPacingChanged: pacing => Volatile.Write(ref _pacingAdjustmentUs, pacing),
                 onIdrRequested: RequestKeyframe);
 
             // 4. Initialise Desktop Capture Pipeline
@@ -409,8 +413,10 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                     _capturePipeline.ReleaseFrame();
                 }
 
-                // 5. Pace frame loop to target FPS cadence
-                nextFrameTimestamp += targetFrameIntervalTicks;
+                // 5. Pace frame loop to target FPS cadence with adaptive network pacing
+                uint pacingUs = Volatile.Read(ref _pacingAdjustmentUs);
+                long effectiveIntervalTicks = targetFrameIntervalTicks + (long)(pacingUs * (Stopwatch.Frequency / 1_000_000.0));
+                nextFrameTimestamp += effectiveIntervalTicks;
                 long now = Stopwatch.GetTimestamp();
                 long remainingTicks = nextFrameTimestamp - now;
                 if (remainingTicks > 0)
@@ -476,9 +482,38 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                     remoteEp,
                     _cts.Token).ConfigureAwait(false);
 
-                if (result.ReceivedBytes >= ControlHeader.Size)
+                ReadOnlySpan<byte> datagram = buffer.AsSpan(0, result.ReceivedBytes);
+
+                // 1. Try parse Moonshine-native feedback messages
+                if (datagram.Length >= MoonshineProtocolConstants.HeaderSize)
                 {
-                    if (ControlHeader.TryParse(buffer.AsSpan(0, result.ReceivedBytes), out ControlHeader header, out ReadOnlySpan<byte> payload))
+                    MoonshineErrorCode err = MoonshineProtocolCodec.TryReadHeader(datagram, out var packetHeader);
+                    if (err == MoonshineErrorCode.Success && packetHeader.Magic == MoonshineProtocolConstants.Magic)
+                    {
+                        if (packetHeader.MessageType == MoonshineMessageType.FeedbackLossStats)
+                        {
+                            if (MoonshineFeedbackCodec.TryReadLossStats(datagram, out _, out var lossStats) == MoonshineErrorCode.Success)
+                            {
+                                _congestionController?.ProcessFeedback(in lossStats);
+                            }
+                            continue;
+                        }
+                        else if (packetHeader.MessageType == MoonshineMessageType.IdrRequest)
+                        {
+                            if (MoonshineFeedbackCodec.TryReadIdrRequest(datagram, out _, out var idrRequest) == MoonshineErrorCode.Success)
+                            {
+                                _congestionController?.ProcessIdrRequest(in idrRequest);
+                                RequestKeyframe();
+                            }
+                            continue;
+                        }
+                    }
+                }
+
+                // 2. Fall back to legacy RTCP / GameStream control header
+                if (datagram.Length >= ControlHeader.Size)
+                {
+                    if (ControlHeader.TryParse(datagram, out ControlHeader header, out ReadOnlySpan<byte> payload))
                     {
                         if (header.PacketType == ControlPacketType.IdrRequest)
                         {

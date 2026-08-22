@@ -25,7 +25,7 @@ static void test_struct_sizes_and_alignment() {
     static_assert(sizeof(MoonshineVideoPacketHeader) == 32);
     static_assert(sizeof(MoonshineAudioPacketHeader) == 24);
     static_assert(sizeof(MoonshineMicPacketHeader) == 20);
-    static_assert(sizeof(MoonshineFeedbackLossStatsPayload) == 36);
+    static_assert(sizeof(MoonshineFeedbackLossStatsPayload) == 40);
     static_assert(sizeof(MoonshineIdrRequestPayload) == 16);
     static_assert(sizeof(MoonshineInputKeyboardPayload) == 12);
     static_assert(sizeof(MoonshineInputMousePayload) == 20);

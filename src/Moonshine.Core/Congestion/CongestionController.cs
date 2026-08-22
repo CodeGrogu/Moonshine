@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using Moonshine.Protocol.Contracts;
 using Moonshine.Protocol.RTP;
 
 namespace Moonshine.Core.Congestion;
@@ -7,19 +9,35 @@ public sealed record CongestionMetrics(
     uint TargetBitrateKbps,
     double SmoothedLossRate,
     double MeasuredRttMs,
+    double SmoothedJitterUs,
+    uint ClientQueueDepth,
+    uint EffectiveThroughputKbps,
+    uint PacingAdjustmentUs,
     ulong IdrRequestsSent,
     ulong CongestionEventsCount
 );
 
 /// <summary>
-/// Predictive RTCP Bandwidth Adaptation & Congestion Controller.
-/// Utilizes real-time RTCP feedback to adjust video streaming bitrate and request IDR keyframes.
+/// Predictive Moonshine & RTCP Bandwidth Adaptation and Congestion Controller.
+/// Adjusts video streaming bitrate, frame pacing, and requests IDR keyframes based on real-time network feedback.
+/// Implements AIMD with hysteresis, deadbands, and queue depth backpressure to prevent oscillation and bufferbloat.
 /// </summary>
 public sealed class CongestionController
 {
+    public const uint DefaultMinBitrateKbps = 5000;
+    public const uint DefaultMaxBitrateKbps = 150000;
+    public const uint DefaultInitialBitrateKbps = 50000;
+    public const int DefaultHysteresisHoldMs = 500;
+    public const double DefaultLossDeadband = 0.005; // 0.5% loss deadband
+    public const double DefaultSevereLossThreshold = 0.05; // 5% severe loss
+    public const double DefaultModerateLossThreshold = 0.01; // 1% moderate loss
+    public const uint DefaultMaxQueueDepthThreshold = 8; // 8 frames queued
+
     private readonly uint _minBitrateKbps;
     private readonly uint _maxBitrateKbps;
+    private readonly long _hysteresisHoldTicks;
     private readonly Action<uint>? _onBitrateChanged;
+    private readonly Action<uint>? _onPacingChanged;
     private readonly Action? _onIdrRequested;
     private readonly Lock _lock = new();
 
@@ -27,32 +45,51 @@ public sealed class CongestionController
     private uint _targetBitrateKbps;
     private double _smoothedLossRate;
     private double _measuredRttMs;
+    private double _smoothedJitterUs;
+    private uint _clientQueueDepth;
+    private uint _effectiveThroughputKbps;
+    private uint _pacingAdjustmentUs;
     private ulong _idrRequestsSent;
     private ulong _congestionEventsCount;
 
     private bool _hasLossSample;
     private uint _lastPacketsLost;
     private uint _lastPacketsRecovered;
+    private long _lastBitrateIncreaseTimestamp;
 
+    public uint MinBitrateKbps => _minBitrateKbps;
+    public uint MaxBitrateKbps => _maxBitrateKbps;
     public uint CurrentBitrateKbps => Volatile.Read(ref _currentBitrateKbps);
     public uint TargetBitrateKbps => Volatile.Read(ref _targetBitrateKbps);
     public double SmoothedLossRate => Volatile.Read(ref _smoothedLossRate);
     public double MeasuredRttMs => Volatile.Read(ref _measuredRttMs);
+    public double SmoothedJitterUs => Volatile.Read(ref _smoothedJitterUs);
+    public uint ClientQueueDepth => Volatile.Read(ref _clientQueueDepth);
+    public uint EffectiveThroughputKbps => Volatile.Read(ref _effectiveThroughputKbps);
+    public uint PacingAdjustmentUs => Volatile.Read(ref _pacingAdjustmentUs);
+    public ulong IdrRequestsSent => Volatile.Read(ref _idrRequestsSent);
+    public ulong CongestionEventsCount => Volatile.Read(ref _congestionEventsCount);
 
     public CongestionMetrics Metrics => new(
         Volatile.Read(ref _currentBitrateKbps),
         Volatile.Read(ref _targetBitrateKbps),
         Volatile.Read(ref _smoothedLossRate),
         Volatile.Read(ref _measuredRttMs),
+        Volatile.Read(ref _smoothedJitterUs),
+        Volatile.Read(ref _clientQueueDepth),
+        Volatile.Read(ref _effectiveThroughputKbps),
+        Volatile.Read(ref _pacingAdjustmentUs),
         Volatile.Read(ref _idrRequestsSent),
         Volatile.Read(ref _congestionEventsCount)
     );
 
     public CongestionController(
-        uint initialBitrateKbps = 50000,
-        uint minBitrateKbps = 5000,
-        uint maxBitrateKbps = 150000,
+        uint initialBitrateKbps = DefaultInitialBitrateKbps,
+        uint minBitrateKbps = DefaultMinBitrateKbps,
+        uint maxBitrateKbps = DefaultMaxBitrateKbps,
+        int hysteresisHoldMs = DefaultHysteresisHoldMs,
         Action<uint>? onBitrateChanged = null,
+        Action<uint>? onPacingChanged = null,
         Action? onIdrRequested = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(minBitrateKbps);
@@ -63,25 +100,103 @@ public sealed class CongestionController
 
         _minBitrateKbps = minBitrateKbps;
         _maxBitrateKbps = maxBitrateKbps;
+        _hysteresisHoldTicks = (long)(Math.Max(0, hysteresisHoldMs) * (Stopwatch.Frequency / 1000.0));
         _currentBitrateKbps = Math.Clamp(initialBitrateKbps, minBitrateKbps, maxBitrateKbps);
         _targetBitrateKbps = _currentBitrateKbps;
         _onBitrateChanged = onBitrateChanged;
+        _onPacingChanged = onPacingChanged;
         _onIdrRequested = onIdrRequested;
+        _lastBitrateIncreaseTimestamp = 0;
     }
 
     /// <summary>
-    /// Processes incoming RTCP feedback report and adjusts bitrate accordingly.
+    /// Processes incoming Moonshine-native feedback report with loss, RTT, jitter, and queue depth.
+    /// </summary>
+    public void ProcessFeedback(in MoonshineFeedbackLossStatsPayload stats)
+    {
+        double rttMs = stats.RoundTripTimeUs / 1000.0;
+        double instantLossRate = 0.0;
+        uint totalExpected = stats.PacketsReceived + stats.PacketsLost;
+        if (totalExpected > 0)
+        {
+            uint unrecoverable = stats.PacketsLost >= stats.PacketsRecoveredFec
+                ? stats.PacketsLost - stats.PacketsRecoveredFec
+                : 0;
+            instantLossRate = (double)unrecoverable / totalExpected;
+        }
+
+        uint lostDelta = stats.PacketsLost >= _lastPacketsLost ? stats.PacketsLost - _lastPacketsLost : stats.PacketsLost;
+        uint recoveredDelta = stats.PacketsRecoveredFec >= _lastPacketsRecovered ? stats.PacketsRecoveredFec - _lastPacketsRecovered : stats.PacketsRecoveredFec;
+
+        ProcessFeedbackInternal(
+            instantLossRate,
+            rttMs,
+            stats.JitterUs,
+            stats.EstimatedBandwidthKbps,
+            stats.ReceiveQueueDepth,
+            lostDelta,
+            recoveredDelta);
+
+        _lastPacketsLost = stats.PacketsLost;
+        _lastPacketsRecovered = stats.PacketsRecoveredFec;
+    }
+
+    /// <summary>
+    /// Processes incoming legacy RTCP loss stats feedback report.
     /// </summary>
     public void ProcessFeedback(in RtcpLossStatsPacket stats, double rttMs = 0)
     {
+        double instantLossRate = stats.UnrecoverableLossRate;
+        uint lostDelta = stats.PacketsLost >= _lastPacketsLost ? stats.PacketsLost - _lastPacketsLost : stats.PacketsLost;
+        uint recoveredDelta = stats.PacketsRecovered >= _lastPacketsRecovered ? stats.PacketsRecovered - _lastPacketsRecovered : stats.PacketsRecovered;
+
+        ProcessFeedbackInternal(
+            instantLossRate,
+            rttMs,
+            stats.JitterMicros,
+            0,
+            0,
+            lostDelta,
+            recoveredDelta);
+
+        _lastPacketsLost = stats.PacketsLost;
+        _lastPacketsRecovered = stats.PacketsRecovered;
+    }
+
+    /// <summary>
+    /// Handles explicit Moonshine-native IDR keyframe requests from client.
+    /// </summary>
+    public void ProcessIdrRequest(in MoonshineIdrRequestPayload request)
+    {
+        RequestIdr();
+    }
+
+    private void ProcessFeedbackInternal(
+        double instantLossRate,
+        double rttMs,
+        uint jitterUs,
+        uint estimatedBwKbps,
+        uint queueDepth,
+        uint lostDelta,
+        uint recoveredDelta)
+    {
         lock (_lock)
         {
+            long now = Stopwatch.GetTimestamp();
+
+            // 1. Smooth RTT (EMA with 0.7 historical / 0.3 new)
             if (rttMs > 0)
             {
                 _measuredRttMs = _measuredRttMs <= 0.0 ? rttMs : (_measuredRttMs * 0.7) + (rttMs * 0.3);
             }
 
-            double instantLossRate = stats.UnrecoverableLossRate;
+            // 2. Smooth Jitter (EMA with 0.8 historical / 0.2 new)
+            if (jitterUs > 0)
+            {
+                _smoothedJitterUs = _smoothedJitterUs <= 0.0 ? jitterUs : (_smoothedJitterUs * 0.8) + (jitterUs * 0.2);
+            }
+
+            // 3. Smooth Loss Rate (EMA with 0.6 historical / 0.4 new)
             if (!_hasLossSample)
             {
                 _smoothedLossRate = instantLossRate;
@@ -92,43 +207,73 @@ public sealed class CongestionController
                 _smoothedLossRate = (_smoothedLossRate * 0.6) + (instantLossRate * 0.4);
             }
 
+            _clientQueueDepth = queueDepth;
+            if (estimatedBwKbps > 0)
+            {
+                _effectiveThroughputKbps = estimatedBwKbps;
+            }
+
             uint oldTarget = _targetBitrateKbps;
 
-            if (_smoothedLossRate >= 0.05)
+            // 4. Determine Bitrate Adaptation Response
+            if (_smoothedLossRate >= DefaultSevereLossThreshold)
             {
                 // Severe packet loss (>= 5%): Multiplicative decrease by 30%
                 _targetBitrateKbps = (uint)Math.Max(_minBitrateKbps, _currentBitrateKbps * 0.70);
                 Interlocked.Increment(ref _congestionEventsCount);
+                _lastBitrateIncreaseTimestamp = now;
             }
-            else if (_smoothedLossRate >= 0.01)
+            else if (_smoothedLossRate >= DefaultModerateLossThreshold || queueDepth > DefaultMaxQueueDepthThreshold)
             {
-                // Moderate packet loss (1% - 5%): Gentle decrease by 10%
-                _targetBitrateKbps = (uint)Math.Max(_minBitrateKbps, _currentBitrateKbps * 0.90);
+                // Moderate packet loss (1% - 5%) or Client Queue Backpressure: Gentle decrease by 10-15%
+                double factor = queueDepth > DefaultMaxQueueDepthThreshold ? 0.85 : 0.90;
+                _targetBitrateKbps = (uint)Math.Max(_minBitrateKbps, _currentBitrateKbps * factor);
                 Interlocked.Increment(ref _congestionEventsCount);
+                _lastBitrateIncreaseTimestamp = now;
+            }
+            else if (_smoothedLossRate <= DefaultLossDeadband && queueDepth <= 2)
+            {
+                // Clean network (< 0.5% loss) & low queue depth: Additive increase subject to hysteresis
+                if ((now - _lastBitrateIncreaseTimestamp) >= _hysteresisHoldTicks)
+                {
+                    uint step = _currentBitrateKbps < 30000 ? 2000u : 1000u;
+                    _targetBitrateKbps = Math.Min(_maxBitrateKbps, _currentBitrateKbps + step);
+                    _lastBitrateIncreaseTimestamp = now;
+                }
+            }
+
+            // 5. Adapt media pacing based on queue depth and jitter
+            uint oldPacing = _pacingAdjustmentUs;
+            if (queueDepth > 4)
+            {
+                _pacingAdjustmentUs = Math.Min(5000u, queueDepth * 250u);
+            }
+            else if (jitterUs > 5000)
+            {
+                _pacingAdjustmentUs = Math.Min(2000u, jitterUs / 10u);
             }
             else
             {
-                // Clean network (< 1% loss): Additive increase (+2000 kbps)
-                _targetBitrateKbps = Math.Min(_maxBitrateKbps, _currentBitrateKbps + 2000);
+                _pacingAdjustmentUs = 0;
             }
 
+            if (_pacingAdjustmentUs != oldPacing)
+            {
+                _onPacingChanged?.Invoke(_pacingAdjustmentUs);
+            }
+
+            // 6. Notify bitrate change if target updated
             if (_targetBitrateKbps != oldTarget)
             {
                 _currentBitrateKbps = _targetBitrateKbps;
                 _onBitrateChanged?.Invoke(_targetBitrateKbps);
             }
 
-            // Check if unrecoverable loss warrants an IDR frame request
-            uint lostDelta = stats.PacketsLost >= _lastPacketsLost ? stats.PacketsLost - _lastPacketsLost : stats.PacketsLost;
-            uint recoveredDelta = stats.PacketsRecovered >= _lastPacketsRecovered ? stats.PacketsRecovered - _lastPacketsRecovered : stats.PacketsRecovered;
-
+            // 7. Check if unrecoverable loss warrants an IDR frame request
             if (lostDelta > recoveredDelta && (lostDelta - recoveredDelta) >= 5)
             {
                 RequestIdr();
             }
-
-            _lastPacketsLost = stats.PacketsLost;
-            _lastPacketsRecovered = stats.PacketsRecovered;
         }
     }
 
@@ -141,3 +286,4 @@ public sealed class CongestionController
         _onIdrRequested?.Invoke();
     }
 }
+
