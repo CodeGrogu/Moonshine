@@ -263,17 +263,19 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
     /// </summary>
     public void Stop()
     {
+        Thread? worker = null;
         lock (_stateLock)
         {
             if (!_isRunning) return;
 
             _isRunning = false;
             _workerCts?.Cancel();
+            worker = _audioWorkerThread;
         }
 
-        if (_audioWorkerThread is not null && _audioWorkerThread.IsAlive)
+        if (worker is not null && worker.IsAlive && Thread.CurrentThread != worker)
         {
-            _audioWorkerThread.Join(500);
+            worker.Join();
         }
 
         lock (_stateLock)
@@ -323,18 +325,32 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
         if (_activeBackend == HostAudioBackend.VirtualDriverIpc && _ipcBridge is not null)
         {
             samplesRead = _ipcBridge.ReadRenderPcm(pcmSpan, waitEvent: false, timeoutMs: 0);
-            if (samplesRead == 0)
+            if (samplesRead < pcmSpan.Length)
             {
-                pcmSpan.Clear();
+                if (samplesRead > 0)
+                {
+                    pcmSpan[samplesRead..].Clear();
+                }
+                else
+                {
+                    pcmSpan.Clear();
+                }
                 samplesRead = pcmSpan.Length;
             }
         }
         else if (_activeBackend == HostAudioBackend.WasapiLoopbackFallback && _wasapiLoopback is not null)
         {
             bool ok = _wasapiLoopback.TryReadSamples(pcmSpan, out samplesRead, out _);
-            if (!ok || samplesRead == 0)
+            if (!ok || samplesRead < pcmSpan.Length)
             {
-                pcmSpan.Clear();
+                if (samplesRead > 0 && samplesRead < pcmSpan.Length)
+                {
+                    pcmSpan[samplesRead..].Clear();
+                }
+                else
+                {
+                    pcmSpan.Clear();
+                }
                 samplesRead = pcmSpan.Length;
             }
         }
@@ -418,12 +434,12 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
 
         while (!ct.IsCancellationRequested && Volatile.Read(ref _isRunning))
         {
-            var sink = _activeSink;
-            if (sink is not null)
+            lock (_stateLock)
             {
-                lock (_stateLock)
+                if (_disposed || !_isRunning || ct.IsCancellationRequested) break;
+                var sink = _activeSink;
+                if (sink is not null)
                 {
-                    if (_disposed || !_isRunning) break;
                     ExecuteAudioFrameStep(sink, _preferMoonshineFraming);
                 }
             }

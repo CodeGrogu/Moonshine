@@ -7,6 +7,8 @@
 #include <mutex>
 #include <atomic>
 
+#include "moonshine/audio/opus_audio_decoder.hpp"
+
 namespace moonshine::audio {
 
 /// <summary>
@@ -112,6 +114,8 @@ private:
     bool _initialized{false};
     std::atomic<float> _gain{1.0f};
     std::atomic<bool> _muted{false};
+
+    OpusAudioDecoder _decoder{};
 
     mutable std::mutex _buffer_mutex{};
     std::deque<DecodedVoicePacket> _jitter_queue{};

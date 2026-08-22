@@ -66,6 +66,10 @@ bool MicAudioSink::initialize(const MicSinkConfig& config) {
     _gain.store(config.gain_multiplier);
     _muted.store(config.is_muted);
 
+    if (!_decoder.initialize(_config.sample_rate, _config.channels)) {
+        return false;
+    }
+
     _staging_pcm.reserve(4800);
     _initialized = true;
     _has_first_packet = false;
@@ -98,12 +102,17 @@ bool MicAudioSink::push_opus_packet(
             uint16_t diff = sequence_number - expected;
             if (diff < 100) { // Reasonable loss burst window
                 _loss_count += diff;
-                // Generate Packet Loss Concealment (PLC) silent frame for lost segment
+                // Generate Packet Loss Concealment (PLC) frame for lost segment
                 DecodedVoicePacket plc_packet{};
                 plc_packet.sequence_number = expected;
                 plc_packet.timestamp = timestamp;
                 size_t plc_samples = (static_cast<size_t>(_config.sample_rate) * _config.target_latency_ms) / 1000;
                 plc_packet.pcm_samples.resize(plc_samples * _config.channels, 0.0f);
+                uint32_t decoded = 0;
+                _decoder.decode_float(nullptr, 0, plc_packet.pcm_samples.data(), static_cast<uint32_t>(plc_packet.pcm_samples.size()), decoded, 1);
+                if (decoded > 0) {
+                    plc_packet.pcm_samples.resize(decoded);
+                }
                 _jitter_queue.push_back(std::move(plc_packet));
             }
         }
@@ -112,22 +121,39 @@ bool MicAudioSink::push_opus_packet(
     }
     _last_seq = sequence_number;
 
-    // Decode incoming Opus payload into Float32 PCM
-    // 10ms @ 48kHz = 480 samples per channel
-    size_t frame_samples = (static_cast<size_t>(_config.sample_rate) * _config.target_latency_ms) / 1000;
-    if (frame_samples == 0) frame_samples = 480;
+    // Decode incoming Opus payload into Float32 PCM using libopus
+    size_t max_samples = (static_cast<size_t>(_config.sample_rate) * 20) / 1000;
+    if (max_samples == 0) max_samples = 960;
 
     DecodedVoicePacket packet{};
     packet.sequence_number = sequence_number;
     packet.timestamp = timestamp;
-    packet.pcm_samples.resize(frame_samples * _config.channels);
+    packet.pcm_samples.resize(max_samples * _config.channels);
 
-    // High-performance voice decompression and sample synthesis
-    for (size_t i = 0; i < packet.pcm_samples.size(); ++i) {
-        size_t byte_idx = (i * payload_len) / packet.pcm_samples.size();
-        uint8_t raw_byte = payload[byte_idx];
-        float sample = (static_cast<float>(raw_byte) - 128.0f) / 128.0f;
-        packet.pcm_samples[i] = sample;
+    uint32_t samples_decoded = 0;
+    bool dec_ok = _decoder.decode_float(
+        payload,
+        payload_len,
+        packet.pcm_samples.data(),
+        static_cast<uint32_t>(packet.pcm_samples.size()),
+        samples_decoded,
+        0
+    );
+
+    if (!dec_ok || samples_decoded == 0) {
+        // Fallback to PLC if payload is malformed
+        _decoder.decode_float(
+            nullptr,
+            0,
+            packet.pcm_samples.data(),
+            static_cast<uint32_t>(packet.pcm_samples.size()),
+            samples_decoded,
+            1
+        );
+    }
+
+    if (samples_decoded > 0) {
+        packet.pcm_samples.resize(samples_decoded);
     }
 
     _jitter_queue.push_back(std::move(packet));
@@ -238,6 +264,7 @@ void MicAudioSink::get_metrics(MicSinkMetrics& out_metrics) const noexcept {
 
 void MicAudioSink::cleanup() {
     _initialized = false;
+    _decoder.cleanup();
     std::lock_guard<std::mutex> lock(_buffer_mutex);
     _jitter_queue.clear();
     _staging_pcm.clear();

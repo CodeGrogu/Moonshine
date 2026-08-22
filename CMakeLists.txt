@@ -25,6 +25,29 @@ if(NOT MSVC)
     message(FATAL_ERROR "Moonshine requires Microsoft Visual C++ on Windows 11.")
 endif()
 
+# External Dependencies (Official libopus v1.5.2)
+include(FetchContent)
+set(OPUS_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
+set(OPUS_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(OPUS_ENABLE_FLOAT_API ON CACHE BOOL "" FORCE)
+set(OPUS_HARDENING OFF CACHE BOOL "" FORCE)
+set(OPUS_ASSERTIONS OFF CACHE BOOL "" FORCE)
+set(OPUS_INSTALL_PKG_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
+set(OPUS_INSTALL_CMAKE_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
+    opus
+    GIT_REPOSITORY https://github.com/xiph/opus.git
+    GIT_TAG        v1.5.2
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(opus)
+if(TARGET opus)
+    target_compile_options(opus PRIVATE /WX- /w)
+endif()
+
 # Global MSVC flags for the Windows 11 native engine.
 add_compile_options(
     /W4

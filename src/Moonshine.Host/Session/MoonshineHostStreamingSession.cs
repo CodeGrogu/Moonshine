@@ -655,6 +655,7 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
         }
 
         await StopAsync().ConfigureAwait(false);
+        await CleanupResourcesAsync().ConfigureAwait(false);
         _cts.Dispose();
     }
 

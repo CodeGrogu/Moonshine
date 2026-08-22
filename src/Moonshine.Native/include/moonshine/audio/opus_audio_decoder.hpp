@@ -6,6 +6,9 @@
 #include <array>
 #include <chrono>
 
+struct OpusDecoder;
+struct OpusMSDecoder;
+
 namespace moonshine::audio {
 
 /// <summary>
@@ -84,6 +87,8 @@ public:
     [[nodiscard]] bool is_initialized() const noexcept { return _initialized; }
     [[nodiscard]] uint32_t sample_rate() const noexcept { return _sample_rate; }
     [[nodiscard]] uint32_t channels() const noexcept { return _channels; }
+    [[nodiscard]] uint32_t streams_count() const noexcept { return _streams_count; }
+    [[nodiscard]] uint32_t coupled_count() const noexcept { return _coupled_count; }
 
 private:
     void configure_channel_mapping();
@@ -96,8 +101,8 @@ private:
     uint32_t _coupled_count{1};
     std::array<uint8_t, 8> _channel_mapping{0, 1, 2, 3, 4, 5, 6, 7};
 
-    std::vector<int16_t> _scratch_pcm16;
-    std::vector<int16_t> _last_good_pcm16;
+    OpusDecoder* _decoder{nullptr};
+    OpusMSDecoder* _ms_decoder{nullptr};
 
     uint64_t _frames_decoded{0};
     uint64_t _samples_decoded{0};

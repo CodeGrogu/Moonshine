@@ -6,6 +6,53 @@ namespace Moonshine.Interop.Tests;
 
 public class MicSinkNativeTests
 {
+    private static unsafe byte[] GenerateRealOpusPacket(int sampleRate, int durationMs)
+    {
+        IntPtr encHandle = MoonshineNativeMethods.OpusEncoderCreate(
+            (uint)sampleRate,
+            1,
+            64000,
+            (uint)durationMs,
+            8,
+            1
+        );
+        encHandle.Should().NotBe(IntPtr.Zero);
+
+        try
+        {
+            int frameSamples = (sampleRate * durationMs) / 1000;
+            float[] pcm = new float[frameSamples];
+            for (int i = 0; i < pcm.Length; i++)
+            {
+                pcm[i] = 0.3f * MathF.Sin(2.0f * MathF.PI * 440.0f * (i / (float)sampleRate));
+            }
+
+            byte[] payload = new byte[512];
+            fixed (float* pPcm = pcm)
+            fixed (byte* pPayload = payload)
+            {
+                int encRes = MoonshineNativeMethods.OpusEncoderEncodeFloat(
+                    encHandle,
+                    pPcm,
+                    (uint)frameSamples,
+                    pPayload,
+                    (uint)payload.Length,
+                    out uint written
+                );
+                encRes.Should().Be(1);
+                written.Should().BeGreaterThan(0);
+
+                byte[] result = new byte[written];
+                Array.Copy(payload, result, (int)written);
+                return result;
+            }
+        }
+        finally
+        {
+            MoonshineNativeMethods.OpusEncoderDestroy(encHandle);
+        }
+    }
+
     [Fact]
     public unsafe void MicSink_PushAndPullPcm_ExecutesSuccessfully()
     {
@@ -19,8 +66,7 @@ public class MicSinkNativeTests
         );
         handle.Should().NotBe(IntPtr.Zero);
 
-        byte[] opusPayload = new byte[64];
-        Array.Fill(opusPayload, (byte)150);
+        byte[] opusPayload = GenerateRealOpusPacket(48000, 10);
 
         fixed (byte* pPayload = opusPayload)
         {
@@ -72,8 +118,7 @@ public class MicSinkNativeTests
         MoonshineNativeMethods.MicSinkSetGain(handle, 2.0f);
         MoonshineNativeMethods.MicSinkSetMute(handle, 1);
 
-        byte[] opusPayload = new byte[64];
-        Array.Fill(opusPayload, (byte)200);
+        byte[] opusPayload = GenerateRealOpusPacket(48000, 10);
 
         fixed (byte* pPayload = opusPayload)
         {

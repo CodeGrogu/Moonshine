@@ -40,6 +40,7 @@ set_target_properties(Moonshine.Native PROPERTIES
 
 if(WIN32)
     target_link_libraries(Moonshine.Native PRIVATE
+        opus
         d3d11
         d3d12
         dxgi

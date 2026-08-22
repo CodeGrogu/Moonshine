@@ -195,7 +195,7 @@ public sealed class OpusDecoderNativeTests
                 out uint streamsCount
             );
 
-            streamsCount.Should().Be(6);
+            streamsCount.Should().Be(5);
         }
         finally
         {

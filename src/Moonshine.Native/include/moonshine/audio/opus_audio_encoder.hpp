@@ -7,6 +7,9 @@
 #include <chrono>
 #include <span>
 
+struct OpusEncoder;
+struct OpusMSEncoder;
+
 namespace moonshine::audio {
 
 /// <summary>
@@ -45,7 +48,7 @@ struct OpusEncoderMetrics {
 
 /// <summary>
 /// High-performance, zero-allocation multi-channel Opus audio encoder.
-/// Supports 48kHz Stereo, Surround 5.1 (6-channel Vorbis mapping), and Surround 7.1 (8-channel).
+/// Supports 48kHz Mono, Stereo, Surround 5.1 (6-channel Vorbis mapping), and Surround 7.1 (8-channel).
 /// Optimized for sub-1ms compression latency in streaming hot paths.
 /// </summary>
 class OpusAudioEncoder {
@@ -123,9 +126,8 @@ private:
     uint32_t _coupled_count{1};
     std::array<uint8_t, 8> _channel_mapping{};
 
-    // Pre-allocated scratch buffers to prevent allocations during streaming
-    std::vector<int16_t> _scratch_pcm16{};
-    std::vector<uint8_t> _scratch_stream_buffer{};
+    OpusEncoder* _encoder{nullptr};
+    OpusMSEncoder* _ms_encoder{nullptr};
 
     // Telemetry
     uint64_t _frames_encoded{0};
@@ -134,3 +136,4 @@ private:
 };
 
 } // namespace moonshine::audio
+

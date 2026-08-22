@@ -3,6 +3,8 @@ using Moonshine.Core.Runtime;
 using Moonshine.Host;
 using Xunit;
 
+[assembly: CollectionBehavior(DisableTestParallelization = true)]
+
 namespace Moonshine.Host.Tests;
 
 public class HostCoordinatorTests

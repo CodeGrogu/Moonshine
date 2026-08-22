@@ -189,12 +189,23 @@ bool WasapiLoopbackCapture::read_samples_float(
                 if (_is_float_format) {
                     const auto* src_ptr = reinterpret_cast<const float*>(pData) + (f * src_channels);
                     for (uint32_t ch = 0; ch < target_channels; ++ch) {
-                        out_samples[dst_offset + ch] = (ch < src_channels) ? src_ptr[ch] : 0.0f;
+                        float val = (ch < src_channels) ? src_ptr[ch] : 0.0f;
+                        if (std::isnan(val) || std::isinf(val)) {
+                            val = 0.0f;
+                        } else {
+                            val = std::clamp(val, -1.0f, 1.0f);
+                        }
+                        out_samples[dst_offset + ch] = val;
                     }
                 } else if (_bits_per_sample == 16) {
                     const auto* src_ptr = reinterpret_cast<const int16_t*>(pData) + (f * src_channels);
                     for (uint32_t ch = 0; ch < target_channels; ++ch) {
                         out_samples[dst_offset + ch] = (ch < src_channels) ? (static_cast<float>(src_ptr[ch]) / 32768.0f) : 0.0f;
+                    }
+                } else if (_bits_per_sample == 24 || _bits_per_sample == 32) {
+                    const auto* src_ptr = reinterpret_cast<const int32_t*>(pData) + (f * src_channels);
+                    for (uint32_t ch = 0; ch < target_channels; ++ch) {
+                        out_samples[dst_offset + ch] = (ch < src_channels) ? (static_cast<float>(src_ptr[ch]) / 2147483648.0f) : 0.0f;
                     }
                 } else {
                     for (uint32_t ch = 0; ch < target_channels; ++ch) {
@@ -322,13 +333,22 @@ bool WasapiLoopbackCapture::read_samples_pcm16(
                     const auto* src_ptr = reinterpret_cast<const float*>(pData) + (f * src_channels);
                     for (uint32_t ch = 0; ch < target_channels; ++ch) {
                         float val = (ch < src_channels) ? src_ptr[ch] : 0.0f;
-                        val = std::clamp(val, -1.0f, 1.0f);
+                        if (std::isnan(val) || std::isinf(val)) {
+                            val = 0.0f;
+                        } else {
+                            val = std::clamp(val, -1.0f, 1.0f);
+                        }
                         out_samples[dst_offset + ch] = static_cast<int16_t>(val * 32767.0f);
                     }
                 } else if (_bits_per_sample == 16) {
                     const auto* src_ptr = reinterpret_cast<const int16_t*>(pData) + (f * src_channels);
                     for (uint32_t ch = 0; ch < target_channels; ++ch) {
                         out_samples[dst_offset + ch] = (ch < src_channels) ? src_ptr[ch] : 0;
+                    }
+                } else if (_bits_per_sample == 24 || _bits_per_sample == 32) {
+                    const auto* src_ptr = reinterpret_cast<const int32_t*>(pData) + (f * src_channels);
+                    for (uint32_t ch = 0; ch < target_channels; ++ch) {
+                        out_samples[dst_offset + ch] = (ch < src_channels) ? static_cast<int16_t>(src_ptr[ch] >> 16) : 0;
                     }
                 } else {
                     for (uint32_t ch = 0; ch < target_channels; ++ch) {

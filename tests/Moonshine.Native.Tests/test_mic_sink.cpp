@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdlib>
 #include "moonshine/audio/mic_audio_sink.hpp"
+#include "moonshine/audio/opus_audio_encoder.hpp"
 
 using namespace moonshine::audio;
 
@@ -13,6 +14,30 @@ using namespace moonshine::audio;
             std::exit(1); \
         } \
     } while (false)
+
+static std::vector<uint8_t> generate_real_opus_packet(uint32_t sample_rate, uint32_t duration_ms) {
+    OpusEncoderConfig enc_cfg{};
+    enc_cfg.sample_rate = sample_rate;
+    enc_cfg.channels = 1;
+    enc_cfg.bitrate = 64000;
+    enc_cfg.frame_duration_ms = duration_ms;
+    enc_cfg.application = OpusApplication::Voip;
+
+    OpusAudioEncoder encoder(enc_cfg);
+    uint32_t frame_samples = (sample_rate * duration_ms) / 1000;
+    std::vector<float> pcm(frame_samples);
+    for (size_t i = 0; i < pcm.size(); ++i) {
+        pcm[i] = 0.3f * std::sin(2.0f * 3.14159f * 440.0f * (static_cast<float>(i) / sample_rate));
+    }
+
+    std::vector<uint8_t> payload(512);
+    uint32_t written = 0;
+    bool ok = encoder.encode_float(pcm.data(), frame_samples, payload.data(), static_cast<uint32_t>(payload.size()), written);
+    REQUIRE(ok);
+    REQUIRE(written > 0);
+    payload.resize(written);
+    return payload;
+}
 
 static void test_mic_sink_init_and_push_pull() {
     MicSinkConfig config{};
@@ -29,8 +54,8 @@ static void test_mic_sink_init_and_push_pull() {
     REQUIRE(sink.channels() == 1);
     REQUIRE(!sink.is_muted());
 
-    // 10ms frame payload (e.g. 64 bytes)
-    std::vector<uint8_t> payload(64, 180);
+    // 10ms frame payload generated via real Opus encoder
+    std::vector<uint8_t> payload = generate_real_opus_packet(48000, 10);
     bool pushed = sink.push_opus_packet(payload.data(), static_cast<uint32_t>(payload.size()), 480, 1);
     REQUIRE(pushed);
 
@@ -61,7 +86,7 @@ static void test_mic_sink_gain_and_mute() {
     MicAudioSink sink(config);
 
     // Push 1 frame
-    std::vector<uint8_t> payload(64, 200);
+    std::vector<uint8_t> payload = generate_real_opus_packet(48000, 10);
     bool pushed1 = sink.push_opus_packet(payload.data(), static_cast<uint32_t>(payload.size()), 960, 2);
     REQUIRE(pushed1);
 
@@ -98,7 +123,7 @@ static void test_mic_sink_packet_loss_concealment() {
 
     MicAudioSink sink(config);
 
-    std::vector<uint8_t> payload(64, 150);
+    std::vector<uint8_t> payload = generate_real_opus_packet(48000, 10);
     bool pushed1 = sink.push_opus_packet(payload.data(), static_cast<uint32_t>(payload.size()), 480, 10);
     REQUIRE(pushed1);
 
@@ -122,7 +147,7 @@ static void test_mic_sink_clock_drift_compensation() {
 
     MicAudioSink sink(config);
 
-    std::vector<uint8_t> payload(64, 150);
+    std::vector<uint8_t> payload = generate_real_opus_packet(48000, 10);
     // Push 8 packets rapidly (exceeds max_queue_depth of 4)
     for (uint16_t i = 1; i <= 8; ++i) {
         bool pushed = sink.push_opus_packet(payload.data(), static_cast<uint32_t>(payload.size()), i * 480, i);
@@ -145,3 +170,4 @@ int main() {
     std::cout << "All MicAudioSink native tests PASSED!" << std::endl;
     return 0;
 }
+

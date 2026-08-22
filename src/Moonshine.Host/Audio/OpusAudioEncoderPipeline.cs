@@ -85,6 +85,8 @@ public sealed class OpusAudioEncoderPipeline : IDisposable
     {
         bytesWritten = 0;
 
+        if (pcmSamples.Length < frameSamples * _channels) return false;
+
         lock (_lock)
         {
             if (_disposed || _handle == IntPtr.Zero) return false;
@@ -120,6 +122,8 @@ public sealed class OpusAudioEncoderPipeline : IDisposable
     )
     {
         bytesWritten = 0;
+
+        if (pcmSamples.Length < frameSamples * _channels) return false;
 
         lock (_lock)
         {

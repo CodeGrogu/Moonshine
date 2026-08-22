@@ -69,10 +69,18 @@ if (-not $SkipTests) {
     }
 
     $env:PATH = "$(Split-Path -Parent $nativeDll);$env:PATH"
-    $resultsDirectory = Join-Path $RootDir "TestResults\$Configuration"
-    Write-Host "`n[4/4] Running .NET 9 xUnit test suite through dotnet test..." -ForegroundColor Yellow
-    & $DotNetExe test "$RootDir\Moonshine.sln" -c $Configuration --no-build --no-restore --arch x64 --logger "console;verbosity=normal" --results-directory $resultsDirectory
-    if ($LASTEXITCODE -ne 0) { throw ".NET xUnit test suite failed." }
+    $testProjects = @(
+        "$RootDir\tests\Moonshine.Protocol.Tests\Moonshine.Protocol.Tests.csproj",
+        "$RootDir\tests\Moonshine.Core.Tests\Moonshine.Core.Tests.csproj",
+        "$RootDir\tests\Moonshine.Host.Tests\Moonshine.Host.Tests.csproj",
+        "$RootDir\tests\Moonshine.Interop.Tests\Moonshine.Interop.Tests.csproj"
+    )
+    foreach ($testProj in $testProjects) {
+        $projName = [System.IO.Path]::GetFileNameWithoutExtension($testProj)
+        Write-Host "--> Running $projName test suite..." -ForegroundColor Cyan
+        & $DotNetExe test $testProj -c $Configuration --no-build --no-restore --logger "console;verbosity=minimal"
+        if ($LASTEXITCODE -ne 0) { throw ".NET xUnit test suite $projName failed." }
+    }
 }
 
 Write-Host "`n[+] Windows 11 build and standardised native/managed tests completed successfully." -ForegroundColor Green

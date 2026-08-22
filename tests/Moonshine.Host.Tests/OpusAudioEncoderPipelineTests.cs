@@ -78,7 +78,7 @@ public class OpusAudioEncoderPipelineTests
         );
 
         pipeline.Channels.Should().Be(8);
-        pipeline.StreamsCount.Should().Be(6);
+        pipeline.StreamsCount.Should().Be(5);
 
         Span<float> pcm = stackalloc float[1920]; // 240 * 8
         pcm.Fill(0.1f);
