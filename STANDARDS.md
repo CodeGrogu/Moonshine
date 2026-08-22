@@ -79,6 +79,7 @@ Documentation, performance numbers, and test counts are engineering claims, not 
   `<!-- VERIFIED: <YYYY-MM-DD>, via `<command>` in <environment> -->`
   or
   `<!-- REGISTERED: <YYYY-MM-DD>, via `<command>` in <environment> -->`
+- **Benchmark Evidence Tracking**: All microbenchmark measurements, memory allocation claims, and latency distributions for performance-critical hot paths must be logged in `docs/BENCHMARKS.md` alongside their measurement boundary definitions (local injection vs client acquisition vs distributed glass-to-glass).
 - **Case Study (Syntactic Provenance Illusion)**: During early development, a claim of "247 managed tests" was repeatedly carried forward in documentation with a syntactic `<!-- VERIFIED: ... -->` tag attached, despite the actual passed test runner execution being 239 tests (68 Interop + 59 Protocol + 71 Host + 41 Core = 239). The tag created the illusion of truth without the underlying command being run. A provenance tag is not truth: it is an auditable instruction defining what command must be executed to verify reality.
 - Whenever updating documentation, verify that all claims match actual system state. Remove or correct outdated assertions immediately.
 
@@ -104,5 +105,6 @@ Before staging or committing any code change, verify every item on this checklis
 - [ ] Ensured credential file writes use `SecureFileStore` (Rule 6).
 - [ ] Verified physical build artifacts exist on disk (Rule 3).
 - [ ] Attached timestamped provenance tags to all documented metrics (Rule 9).
+- [ ] Updated `docs/BENCHMARKS.md` with verified BenchmarkDotNet outputs and Rule 9 provenance tags for any hot path or performance claims.
 - [ ] Included explicit GitHub issue reference (`(Issue #<number>)` or `(#<number>)`) in the commit message subject and body.
 - [ ] Updated `KNOWN_ISSUES.md` if any component remains incomplete or scaffolding.
