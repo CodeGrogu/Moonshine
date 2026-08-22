@@ -10,4 +10,5 @@ All development, code modifications, testing, and agent interactions in this rep
 - **Adversarial Audit**: Every completion report must include an explicit Adversarial Self-Audit arguing against the implementation (Rule 2).
 - **Platform Scope**: Focus exclusively on Windows 11 for all current development and architecture.
 - **Toolchain Probe & Preflight**: Always execute `scripts/verify_environment.ps1` and `scripts/preflight.ps1` before committing code.
+- **Commit-to-Issue Association**: Every git commit message must explicitly include the associated GitHub issue reference in its subject line (e.g. `feat(subsystem): brief summary (Issue #<number>)` or `(#<number>)`) to ensure GitHub automatically establishes the two-way commit-to-issue association upon push.
 - **MCP Research Directives**: Always make proactive use of `microsoftdocs/mcp` (for official Microsoft, Windows, DirectX, and .NET documentation and code samples), `com.microsoft/nuget` (for NuGet package queries, versions, and security audits), and `io.github.upstash/context7` (for library and API documentation resolution).

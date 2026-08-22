@@ -104,4 +104,5 @@ Before staging or committing any code change, verify every item on this checklis
 - [ ] Ensured credential file writes use `SecureFileStore` (Rule 6).
 - [ ] Verified physical build artifacts exist on disk (Rule 3).
 - [ ] Attached timestamped provenance tags to all documented metrics (Rule 9).
+- [ ] Included explicit GitHub issue reference (`(Issue #<number>)` or `(#<number>)`) in the commit message subject and body.
 - [ ] Updated `KNOWN_ISSUES.md` if any component remains incomplete or scaffolding.
