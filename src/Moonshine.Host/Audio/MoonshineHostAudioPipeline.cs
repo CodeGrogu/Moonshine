@@ -316,6 +316,21 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
         }
     }
 
+    /// <summary>
+    /// Processes a caller-provided PCM buffer synchronously through the full encode, packetise, and dispatch pipeline.
+    /// Used for explicit active-signal benchmarking and virtual pipeline injection.
+    /// </summary>
+    public bool ProcessPcmFrame(ReadOnlySpan<float> pcmSamples, AudioPacketSink packetSink, bool preferMoonshineFraming = true)
+    {
+        ArgumentNullException.ThrowIfNull(packetSink);
+
+        lock (_stateLock)
+        {
+            ThrowIfDisposed();
+            return ExecutePcmFrameStep(pcmSamples, packetSink, preferMoonshineFraming);
+        }
+    }
+
     private bool ExecuteAudioFrameStep(AudioPacketSink packetSink, bool preferMoonshineFraming)
     {
         long captureStart = Stopwatch.GetTimestamp();
@@ -364,6 +379,11 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
         _totalCaptureLatencyUs += captureUs;
         _totalFramesCaptured++;
 
+        return ExecutePcmFrameStep(pcmSpan[..samplesRead], packetSink, preferMoonshineFraming);
+    }
+
+    private bool ExecutePcmFrameStep(ReadOnlySpan<float> pcmSpan, AudioPacketSink packetSink, bool preferMoonshineFraming)
+    {
         // Encode via low-latency Opus
         long encodeStart = Stopwatch.GetTimestamp();
         Span<byte> encodedPayload = _encodedPayloadBuffer.AsSpan();
@@ -372,7 +392,7 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
         if (_encoder is not null)
         {
             _encoder.TryEncode(
-                pcmSpan[..samplesRead],
+                pcmSpan,
                 _samplesPerFrame,
                 encodedPayload,
                 out bytesEncoded

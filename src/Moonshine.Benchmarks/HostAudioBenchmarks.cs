@@ -15,7 +15,8 @@ public class HostAudioBenchmarks : IDisposable
     private RtpAudioPacketiser _rtpPacketiser = null!;
     private MoonshineHostAudioPipeline _pipeline = null!;
 
-    private float[] _pcmBuffer = null!;
+    private float[] _pcmBufferActive = null!;
+    private float[] _pcmBufferSilence = null!;
     private byte[] _encodedBuffer = null!;
     private byte[] _rtpOutBuffer = null!;
     private AudioPacketSink _sink = null!;
@@ -37,14 +38,15 @@ public class HostAudioBenchmarks : IDisposable
             forceWasapiFallback: true
         );
 
-        _pcmBuffer = new float[480]; // 240 samples * 2 ch
+        _pcmBufferActive = new float[480]; // 240 samples * 2 ch
+        _pcmBufferSilence = new float[480];
         _encodedBuffer = new byte[1024];
         _rtpOutBuffer = new byte[1024];
 
-        // Seed with test samples
-        for (int i = 0; i < _pcmBuffer.Length; i++)
+        // Seed active audio buffer with 440 Hz test tone
+        for (int i = 0; i < _pcmBufferActive.Length; i++)
         {
-            _pcmBuffer[i] = (float)Math.Sin(2.0 * Math.PI * 440.0 * i / 48000.0);
+            _pcmBufferActive[i] = (float)Math.Sin(2.0 * Math.PI * 440.0 * i / 48000.0);
         }
 
         _sink = datagram =>
@@ -53,19 +55,25 @@ public class HostAudioBenchmarks : IDisposable
         };
 
         // Warmup encoder to populate encoded buffer
-        _opusEncoderStereo.TryEncode(_pcmBuffer, 240, _encodedBuffer, out _);
+        _opusEncoderStereo.TryEncode(_pcmBufferActive, 240, _encodedBuffer, out _);
+    }
+
+    [Benchmark]
+    public bool OpusEncoder_EncodeStereo_ActiveSignal_DirectHotPath()
+    {
+        return _opusEncoderStereo.TryEncode(_pcmBufferActive, 240, _encodedBuffer, out _);
+    }
+
+    [Benchmark]
+    public bool OpusEncoder_EncodeStereo_Silence_DirectHotPath()
+    {
+        return _opusEncoderStereo.TryEncode(_pcmBufferSilence, 240, _encodedBuffer, out _);
     }
 
     [Benchmark]
     public bool WasapiLoopback_ReadSamples_DirectHotPath()
     {
-        return _wasapiLoopback.TryReadSamples(_pcmBuffer, out _, out _);
-    }
-
-    [Benchmark]
-    public bool OpusEncoder_EncodeStereo_DirectHotPath()
-    {
-        return _opusEncoderStereo.TryEncode(_pcmBuffer, 240, _encodedBuffer, out _);
+        return _wasapiLoopback.TryReadSamples(_pcmBufferActive, out _, out _);
     }
 
     [Benchmark]
@@ -95,9 +103,28 @@ public class HostAudioBenchmarks : IDisposable
     }
 
     [Benchmark]
-    public bool HostAudioPipeline_EndToEnd_CaptureEncodePacketise_HotPath()
+    public bool HostAudioPipeline_EndToEnd_ActiveSignal_HotPath()
+    {
+        return _pipeline.ProcessPcmFrame(_pcmBufferActive, _sink, preferMoonshineFraming: true);
+    }
+
+    [Benchmark]
+    public bool HostAudioPipeline_EndToEnd_SilenceCapture_HotPath()
     {
         return _pipeline.ProcessNextAudioFrame(_sink, preferMoonshineFraming: true);
+    }
+
+    [Benchmark]
+    public int HostAudioPipeline_FramingAndDispatchOverhead_HotPath()
+    {
+        ulong sampleIdx = Interlocked.Increment(ref _sampleCounter) * 240;
+        return _moonshinePacketiser.PacketiseAudioFrame(
+            _encodedBuffer.AsSpan(0, 128),
+            sampleIdx,
+            5000,
+            1000000 + sampleIdx,
+            _sink
+        );
     }
 
     [GlobalCleanup]

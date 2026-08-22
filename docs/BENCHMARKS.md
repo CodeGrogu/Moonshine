@@ -145,13 +145,16 @@ BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
 BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
 .NET SDK 10.0.400 / Host: .NET 9.0.16 (9.0.1626.22923), X64 RyuJIT AVX-512F+CD+BW+DQ+VL+VBMI
 
-| Method                                                     | Mean Latency | Error      | StdDev     | Median      | Allocated Memory |
-| :--------------------------------------------------------- | -----------: | ---------: | ---------: | ----------: | ---------------: |
-| WasapiLoopback_ReadSamples_DirectHotPath                   |    134.94 ns |  8.0990 ns | 23.8790 ns |   128.37 ns |              0 B |
-| OpusEncoder_EncodeStereo_DirectHotPath                     |    65.999 μs |  2.1259 μs |  6.1338 μs |   63.449 μs |              0 B |
-| MoonshineAudioPacketiser_PacketiseAudioFrame_DirectHotPath |     40.90 ns |  1.1370 ns |  3.1690 ns |    39.96 ns |              0 B |
-| RtpAudioPacketiser_Packetise_DirectHotPath                 |     29.26 ns |  0.6070 ns |  1.3950 ns |    28.90 ns |              0 B |
-| HostAudioPipeline_EndToEnd_CaptureEncodePacketise_HotPath  |    19.490 μs |  0.3888 μs |  1.0513 μs |   19.208 μs |              0 B |
+| Method                                                     | Mean Latency | Error     | StdDev    | Median      | Allocated Memory | Description |
+| :--------------------------------------------------------- | -----------: | --------: | --------: | ----------: | ---------------: | :---------- |
+| OpusEncoder_EncodeStereo_ActiveSignal_DirectHotPath        |    63.890 μs | 1.8143 μs | 5.1172 μs |   62.014 μs |              0 B | libopus CPU execution encoding 440 Hz active waveform |
+| OpusEncoder_EncodeStereo_Silence_DirectHotPath             |    23.021 μs | 0.4851 μs | 1.3840 μs |   22.741 μs |              0 B | libopus CPU execution encoding zero-energy silence |
+| WasapiLoopback_ReadSamples_DirectHotPath                   |    133.22 ns | 8.3130 ns | 24.510 ns |   125.73 ns |              0 B | Native WASAPI loopback capture sample acquisition |
+| MoonshineAudioPacketiser_PacketiseAudioFrame_DirectHotPath |     39.62 ns | 1.6980 ns | 4.9530 ns |    38.50 ns |              0 B | Moonshine native audio datagram packetisation |
+| RtpAudioPacketiser_Packetise_DirectHotPath                 |     29.94 ns | 0.7350 ns | 2.1430 ns |    29.45 ns |              0 B | RFC 3550 RTP audio packetiser framing |
+| HostAudioPipeline_EndToEnd_ActiveSignal_HotPath            |    62.309 μs | 1.5992 μs | 4.5365 μs |   61.681 μs |              0 B | Full host pipeline: active audio PCM -> Opus encode -> packetise -> sink |
+| HostAudioPipeline_EndToEnd_SilenceCapture_HotPath          |    40.712 μs | 2.1211 μs | 6.1872 μs |   38.475 μs |              0 B | Full host pipeline: idle WASAPI loopback -> Opus encode -> packetise -> sink |
+| HostAudioPipeline_FramingAndDispatchOverhead_HotPath       |     39.59 ns | 1.4780 ns | 4.2160 ns |    38.33 ns |              0 B | Host pipeline framing, timestamping and sink dispatch (isolating codec) |
 ```
 
 ---
@@ -163,12 +166,12 @@ BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
 BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
 .NET SDK 10.0.400 / Host: .NET 9.0.16 (9.0.1626.22923), X64 RyuJIT AVX-512F+CD+BW+DQ+VL+VBMI
 
-| Method                                                  | Mean Latency | Error     | StdDev     | Median      | Allocated Memory |
-| :------------------------------------------------------ | -----------: | --------: | ---------: | ----------: | ---------------: |
-| OpusDecoder_DecodeStereo_DirectHotPath                  |    13.712 μs | 0.3446 μs |  0.9664 μs |   13.493 μs |              0 B |
-| OpusDecoder_Decode51Surround_DirectHotPath              |    40.974 μs | 1.7884 μs |  5.1887 μs |   38.838 μs |              0 B |
-| WasapiRenderer_SubmitPcm_DirectHotPath                  |     97.03 ns | 1.8650 ns |  1.4560 ns |    97.39 ns |              0 B |
-| ClientAudioPipeline_EndToEnd_IngestDecodeRender_HotPath |    14.489 μs | 0.3862 μs |  1.0956 μs |   14.226 μs |              0 B |
+| Method                                                  | Mean Latency | Error     | StdDev     | Median      | Allocated Memory | Description |
+| :------------------------------------------------------ | -----------: | --------: | ---------: | ----------: | ---------------: | :---------- |
+| OpusDecoder_DecodeStereo_DirectHotPath                  |    13.712 μs | 0.3446 μs |  0.9664 μs |   13.493 μs |              0 B | libopus Stereo float decoding |
+| OpusDecoder_Decode51Surround_DirectHotPath              |    40.974 μs | 1.7884 μs |  5.1887 μs |   38.838 μs |              0 B | libopus Surround 5.1 multi-stream float decoding |
+| WasapiRenderer_SubmitPcm_DirectHotPath                  |     97.03 ns | 1.8650 ns |  1.4560 ns |    97.39 ns |              0 B | Native WASAPI low-latency render endpoint submission |
+| ClientAudioPipeline_EndToEnd_IngestDecodeRender_HotPath |    14.489 μs | 0.3862 μs |  1.0956 μs |   14.226 μs |              0 B | Full client pipeline: direct Opus ingest -> decode -> WASAPI render |
 ```
 
 ---
