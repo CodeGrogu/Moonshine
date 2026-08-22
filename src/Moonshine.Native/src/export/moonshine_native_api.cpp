@@ -287,6 +287,12 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_swapchain_present(MoonshineSwapchainH
     return swapchain->Present(sync_interval, flags);
 }
 
+MOONSHINE_API int MOONSHINE_CONV moonshine_swapchain_present_texture(MoonshineSwapchainHandle handle, void* texture_handle, uint32_t sync_interval, uint32_t flags) {
+    if (!handle) return -1;
+    auto* swapchain = static_cast<video::DxgiSwapchain*>(handle);
+    return swapchain->PresentTexture(texture_handle, sync_interval, flags);
+}
+
 MOONSHINE_API int MOONSHINE_CONV moonshine_swapchain_resize(MoonshineSwapchainHandle handle, uint32_t width, uint32_t height) {
     if (!handle) return -1;
     auto* swapchain = static_cast<video::DxgiSwapchain*>(handle);
@@ -297,6 +303,31 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_swapchain_set_hdr(MoonshineSwapchainH
     if (!handle) return -1;
     auto* swapchain = static_cast<video::DxgiSwapchain*>(handle);
     return swapchain->SetHdr(is_hdr10 != 0);
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_swapchain_set_hdr_metadata(MoonshineSwapchainHandle handle, const MoonshineHdr10Metadata* metadata) {
+    if (!handle || !metadata) return -1;
+    auto* swapchain = static_cast<video::DxgiSwapchain*>(handle);
+    return swapchain->SetHdrMetadata(metadata);
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_swapchain_get_metrics(MoonshineSwapchainHandle handle, MoonshineSwapchainMetrics* out_metrics) {
+    if (!handle || !out_metrics) return -1;
+    auto* swapchain = static_cast<video::DxgiSwapchain*>(handle);
+    swapchain->GetMetrics(*out_metrics);
+    return 0;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_swapchain_is_tearing_supported(MoonshineSwapchainHandle handle) {
+    if (!handle) return 0;
+    auto* swapchain = static_cast<video::DxgiSwapchain*>(handle);
+    return swapchain->IsTearingSupported() ? 1 : 0;
+}
+
+MOONSHINE_API void* MOONSHINE_CONV moonshine_swapchain_get_waitable_object(MoonshineSwapchainHandle handle) {
+    if (!handle) return nullptr;
+    auto* swapchain = static_cast<video::DxgiSwapchain*>(handle);
+    return swapchain->GetFrameLatencyWaitableObject();
 }
 
 // ============================================================================

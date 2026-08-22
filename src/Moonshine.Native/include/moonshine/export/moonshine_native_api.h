@@ -297,6 +297,15 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_video_reset(MoonshineDecoderHandle ha
 // ============================================================================
 
 typedef void* MoonshineSwapchainHandle;
+typedef struct MoonshineHdr10Metadata MoonshineHdr10Metadata;
+
+#pragma pack(push, 8)
+typedef struct MoonshineSwapchainMetrics {
+    uint64_t frames_presented;
+    uint64_t presentation_errors;
+    uint64_t dropped_frames;
+} MoonshineSwapchainMetrics;
+#pragma pack(pop)
 
 MOONSHINE_API MoonshineSwapchainHandle MOONSHINE_CONV moonshine_swapchain_create(
     void* hwnd,
@@ -308,8 +317,13 @@ MOONSHINE_API MoonshineSwapchainHandle MOONSHINE_CONV moonshine_swapchain_create
 );
 MOONSHINE_API void MOONSHINE_CONV moonshine_swapchain_destroy(MoonshineSwapchainHandle handle);
 MOONSHINE_API int MOONSHINE_CONV moonshine_swapchain_present(MoonshineSwapchainHandle handle, uint32_t sync_interval, uint32_t flags);
+MOONSHINE_API int MOONSHINE_CONV moonshine_swapchain_present_texture(MoonshineSwapchainHandle handle, void* texture_handle, uint32_t sync_interval, uint32_t flags);
 MOONSHINE_API int MOONSHINE_CONV moonshine_swapchain_resize(MoonshineSwapchainHandle handle, uint32_t width, uint32_t height);
 MOONSHINE_API int MOONSHINE_CONV moonshine_swapchain_set_hdr(MoonshineSwapchainHandle handle, uint8_t is_hdr10);
+MOONSHINE_API int MOONSHINE_CONV moonshine_swapchain_set_hdr_metadata(MoonshineSwapchainHandle handle, const MoonshineHdr10Metadata* metadata);
+MOONSHINE_API int MOONSHINE_CONV moonshine_swapchain_get_metrics(MoonshineSwapchainHandle handle, MoonshineSwapchainMetrics* out_metrics);
+MOONSHINE_API int MOONSHINE_CONV moonshine_swapchain_is_tearing_supported(MoonshineSwapchainHandle handle);
+MOONSHINE_API void* MOONSHINE_CONV moonshine_swapchain_get_waitable_object(MoonshineSwapchainHandle handle);
 
 // ============================================================================
 // Sub-5ms WASAPI Low-Latency Audio APIs
@@ -1033,6 +1047,11 @@ static_assert(offsetof(MoonshineVirtualDesktopBoundsC, x_virtual_screen) == 0, "
 static_assert(offsetof(MoonshineVirtualDesktopBoundsC, y_virtual_screen) == 4, "MoonshineVirtualDesktopBoundsC::y_virtual_screen offset mismatch");
 static_assert(offsetof(MoonshineVirtualDesktopBoundsC, cx_virtual_screen) == 8, "MoonshineVirtualDesktopBoundsC::cx_virtual_screen offset mismatch");
 static_assert(offsetof(MoonshineVirtualDesktopBoundsC, cy_virtual_screen) == 12, "MoonshineVirtualDesktopBoundsC::cy_virtual_screen offset mismatch");
+
+static_assert(sizeof(MoonshineSwapchainMetrics) == 24, "MoonshineSwapchainMetrics size mismatch");
+static_assert(offsetof(MoonshineSwapchainMetrics, frames_presented) == 0, "MoonshineSwapchainMetrics::frames_presented offset mismatch");
+static_assert(offsetof(MoonshineSwapchainMetrics, presentation_errors) == 8, "MoonshineSwapchainMetrics::presentation_errors offset mismatch");
+static_assert(offsetof(MoonshineSwapchainMetrics, dropped_frames) == 16, "MoonshineSwapchainMetrics::dropped_frames offset mismatch");
 
 #endif
 

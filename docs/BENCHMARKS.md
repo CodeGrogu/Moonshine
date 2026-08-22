@@ -94,3 +94,20 @@ BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
 | Fec_Reconstruct_64Data_16Parity_4Lost_1024B |    23.410 μs | 0.3120 μs | 0.4578 μs |  23.290 μs |              0 B |
 | MediaReassembly_ProcessPacket_DirectHotPath |    42.110 ns | 0.8120 ns | 1.1920 ns |  41.800 ns |              0 B |
 ```
+
+---
+
+### Client Low-Latency GPU Presentation Pipeline (Issue #71)
+<!-- VERIFIED: 2026-08-22, via `dotnet run -c Release --project src/Moonshine.Benchmarks -- --filter *GpuPresentation* --inProcess` in Windows 11 Pro build 26200, x64 RyuJIT AVX-512 -->
+
+```
+BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
+.NET SDK 10.0.400 / Host: .NET 9.0.19 (9.0.1926.36724), X64 RyuJIT AVX-512F+CD+BW+DQ+VL+VBMI
+
+| Method                           | Mean Latency | Error     | StdDev    | Median    | Allocated Memory |
+| :------------------------------- | -----------: | --------: | --------: | --------: | ---------------: |
+| EnqueueFrame_HotPath             |    92.839 ns | 2.7715 ns | 8.1720 ns | 92.240 ns |              0 B |
+| SwapchainPresent_CAbiCall        |     6.628 ns | 0.3986 ns | 1.1750 ns |  6.349 ns |              0 B |
+| SwapchainPresentTexture_CAbiCall |     6.934 ns | 0.3708 ns | 1.0930 ns |  6.933 ns |              0 B |
+```
+

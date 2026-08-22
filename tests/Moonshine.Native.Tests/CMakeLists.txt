@@ -128,6 +128,13 @@ add_executable(test_input_injector
 target_link_libraries(test_input_injector PRIVATE Moonshine.Native)
 add_test(NAME test_input_injector COMMAND test_input_injector)
 
+add_executable(test_swapchain_presenter
+    test_swapchain_presenter.cpp
+    ${CMAKE_SOURCE_DIR}/src/Moonshine.Native/src/video/dxgi_swapchain.cpp
+)
+target_link_libraries(test_swapchain_presenter PRIVATE Moonshine.Native $<$<BOOL:${WIN32}>:d3d11 dxgi>)
+add_test(NAME test_swapchain_presenter COMMAND test_swapchain_presenter)
+
 if(WIN32)
     add_custom_command(TARGET test_c_abi_export POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different

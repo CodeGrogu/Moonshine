@@ -184,4 +184,13 @@ public class NativeAbiLayoutTests
         Marshal.OffsetOf<MoonshineDisplayInfo>(nameof(MoonshineDisplayInfo.BitsPerColor)).ToInt32().Should().Be(30);
         Marshal.OffsetOf<MoonshineDisplayInfo>(nameof(MoonshineDisplayInfo.Reserved)).ToInt32().Should().Be(31);
     }
+
+    [Fact]
+    public void MoonshineSwapchainMetrics_HasExactLayoutAndSize()
+    {
+        Marshal.SizeOf<MoonshineSwapchainMetrics>().Should().Be(24);
+        Marshal.OffsetOf<MoonshineSwapchainMetrics>(nameof(MoonshineSwapchainMetrics.FramesPresented)).ToInt32().Should().Be(0);
+        Marshal.OffsetOf<MoonshineSwapchainMetrics>(nameof(MoonshineSwapchainMetrics.PresentationErrors)).ToInt32().Should().Be(8);
+        Marshal.OffsetOf<MoonshineSwapchainMetrics>(nameof(MoonshineSwapchainMetrics.DroppedFrames)).ToInt32().Should().Be(16);
+    }
 }

@@ -215,6 +215,10 @@ public static unsafe partial class MoonshineNativeMethods
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int SwapchainPresent(IntPtr handle, uint syncInterval, uint flags);
 
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_swapchain_present_texture")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int SwapchainPresentTexture(IntPtr handle, IntPtr textureHandle, uint syncInterval, uint flags);
+
     [LibraryImport(LibraryName, EntryPoint = "moonshine_swapchain_resize")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int SwapchainResize(IntPtr handle, uint width, uint height);
@@ -222,6 +226,22 @@ public static unsafe partial class MoonshineNativeMethods
     [LibraryImport(LibraryName, EntryPoint = "moonshine_swapchain_set_hdr")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int SwapchainSetHdr(IntPtr handle, byte isHdr10);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_swapchain_set_hdr_metadata")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int SwapchainSetHdrMetadata(IntPtr handle, in MoonshineHdr10Metadata metadata);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_swapchain_get_metrics")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int SwapchainGetMetrics(IntPtr handle, out MoonshineSwapchainMetrics outMetrics);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_swapchain_is_tearing_supported")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int SwapchainIsTearingSupported(IntPtr handle);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_swapchain_get_waitable_object")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial IntPtr SwapchainGetWaitableObject(IntPtr handle);
 
     // ========================================================================
     // Audio APIs

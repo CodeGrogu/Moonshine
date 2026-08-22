@@ -215,3 +215,14 @@ public struct MoonshineAudioIpcMetrics
     public uint Channels;
     public uint IsConnected;
 }
+
+/// <summary>
+/// Exact binary match for MoonshineSwapchainMetrics (C-ABI, 24 bytes).
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 8)]
+public struct MoonshineSwapchainMetrics
+{
+    public ulong FramesPresented;
+    public ulong PresentationErrors;
+    public ulong DroppedFrames;
+}
