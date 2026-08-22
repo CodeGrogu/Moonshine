@@ -54,6 +54,7 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
     private bool _preferMoonshineFraming = true;
     private bool _isRunning;
     private bool _disposed;
+    private bool _resourcesTeardownCompleted;
     private int _disposeInitiated;
     private int _inFlightOperations;
     [ThreadStatic] private static int t_inFlightDepth;
@@ -564,6 +565,34 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
         if (Interlocked.Decrement(ref _inFlightOperations) == 0)
         {
             _drainCompletedEvent.Set();
+            if (Volatile.Read(ref _disposed))
+            {
+                TeardownResourcesLocked();
+            }
+        }
+    }
+
+    private void TeardownResourcesLocked()
+    {
+        lock (_stateLock)
+        {
+            if (_resourcesTeardownCompleted) return;
+            _resourcesTeardownCompleted = true;
+
+            _ipcBridge?.Dispose();
+            _ipcBridge = null;
+
+            _wasapiLoopback?.Dispose();
+            _wasapiLoopback = null;
+
+            _encoder?.Dispose();
+            _encoder = null;
+
+            _driverService?.Dispose();
+
+            _activeBackend = HostAudioBackend.Disabled;
+
+            _drainCompletedEvent.Dispose();
         }
     }
 
@@ -591,39 +620,18 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
             _disposed = true;
         }
 
-        int localDepth = t_inFlightDepth;
-        if (localDepth > 0)
+        if (t_inFlightDepth == 0)
         {
-            // Re-entrant disposal on an active audio processing thread (e.g. from within a packet sink callback):
-            // Wait until all OTHER in-flight threads have completely drained to prevent self-deadlock.
-            while (Volatile.Read(ref _inFlightOperations) > localDepth)
-            {
-                Thread.Yield();
-            }
+            // External caller: unconditionally wait until all in-flight operations have completely drained,
+            // then perform teardown synchronously.
+            _drainCompletedEvent.Wait();
+            TeardownResourcesLocked();
         }
         else
         {
-            // Unconditionally wait until all in-flight operations have completely exited.
-            // Guarantees zero unmanaged resource destruction while an audio frame is being processed.
-            _drainCompletedEvent.Wait();
+            // Re-entrant caller (invoked synchronously from within an active audio frame callback):
+            // Defer teardown to the final ExitOperation() when this operation completely finishes.
+            // Guarantees zero unmanaged resource destruction while the caller's frame step is active.
         }
-
-        lock (_stateLock)
-        {
-            _ipcBridge?.Dispose();
-            _ipcBridge = null;
-
-            _wasapiLoopback?.Dispose();
-            _wasapiLoopback = null;
-
-            _encoder?.Dispose();
-            _encoder = null;
-
-            _driverService?.Dispose();
-
-            _activeBackend = HostAudioBackend.Disabled;
-        }
-
-        _drainCompletedEvent.Dispose();
     }
 }

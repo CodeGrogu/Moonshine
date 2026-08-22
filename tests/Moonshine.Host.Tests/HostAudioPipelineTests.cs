@@ -371,7 +371,7 @@ public class HostAudioPipelineTests
     }
 
     [Fact]
-    public void HostAudioPipeline_ReentrantDisposeFromSinkCallback_DoesNotDeadlock()
+    public void HostAudioPipeline_ReentrantDisposeFromSinkCallback_DefersTeardownUntilOperationExits()
     {
         var pipeline = new MoonshineHostAudioPipeline(
             sampleRate: 48000,
@@ -387,16 +387,26 @@ public class HostAudioPipelineTests
         }
 
         bool disposedInsideCallback = false;
-        bool ok = pipeline.ProcessPcmFrame(pcm, _ =>
+        bool ok = pipeline.ProcessPcmFrame(pcm, datagram =>
         {
-            // Trigger synchronous re-entrant disposal directly from within in-flight packet sink
+            // 1. Trigger synchronous re-entrant disposal directly from within in-flight packet sink
             pipeline.Dispose();
             disposedInsideCallback = true;
+
+            // 2. Explicitly prove that teardown is deferred: ActiveBackend is NOT disabled yet during callback execution
+            pipeline.ActiveBackend.Should().NotBe(HostAudioBackend.Disabled);
         }, preferMoonshineFraming: true);
 
+        // 3. ProcessPcmFrame completes successfully without throwing
         ok.Should().BeTrue();
         disposedInsideCallback.Should().BeTrue();
+
+        // 4. Teardown occurs once ProcessPcmFrame has fully exited
         pipeline.ActiveBackend.Should().Be(HostAudioBackend.Disabled);
         pipeline.IsRunning.Should().BeFalse();
+
+        // 5. Subsequent attempts to process frames fail closed with ObjectDisposedException
+        Action act = () => pipeline.ProcessPcmFrame(pcm, _ => { });
+        act.Should().Throw<ObjectDisposedException>();
     }
 }
