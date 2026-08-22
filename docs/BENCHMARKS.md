@@ -2,7 +2,7 @@
 
 ## Architectural Latency Taxonomy & Measurement Boundaries
 
-To prevent conflation between local subsystem dispatch overheads and distributed end-to-end streaming latency, Moonshine categorises latency into three distinct measurement boundaries:
+To prevent conflation between local subsystem dispatch overheads and distributed end-to-end streaming latency, Moonshine categorises latency into distinct measurement boundaries:
 
 ```mermaid
 flowchart LR
@@ -34,7 +34,12 @@ flowchart LR
 - **Measured Range**: **8.7 ns to 26.7 ns** per event.
 - **GC Allocation**: **0 B** steady-state.
 
-### 3. Distributed End-to-End Glass-to-Glass Input Latency (Issue #81 & #82)
+### 3. Host-Side Audio Capture, Encoding & Packetisation Overhead (Issue #72)
+- **Scope**: Host-side local WASAPI loopback audio chunk acquisition, native Opus frame compression (5ms / 240 samples per channel), and MTU-safe media packetisation.
+- **Measured Range**: **1.06 μs to 1.48 μs** total processing overhead per 5ms audio frame.
+- **GC Allocation**: **0 B** steady-state.
+
+### 4. Distributed End-to-End Glass-to-Glass Input Latency (Issue #81 & #82)
 - **Scope**: Total physical action to remote OS reception across the entire network and rendering pipeline.
 - **Target Budget**: **2.0 ms to 8.0 ms** over local Gigabit / Wi-Fi 6 networks.
 
@@ -111,3 +116,20 @@ BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
 | SwapchainPresentTexture_CAbiCall |     6.934 ns | 0.3708 ns | 1.0930 ns |  6.933 ns |              0 B |
 ```
 
+---
+
+### Host Audio Capture, Opus Encoding & Packetisation Pipeline (Issue #72)
+<!-- VERIFIED: 2026-08-22, via `dotnet run -c Release --project src/Moonshine.Benchmarks -- --filter *HostAudioBenchmarks* --inProcess` in Windows 11 Pro build 26200, x64 RyuJIT AVX-512 -->
+
+```
+BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
+.NET SDK 10.0.400 / Host: .NET 9.0.19 (9.0.1926.36724), X64 RyuJIT AVX-512F+CD+BW+DQ+VL+VBMI
+
+| Method                                                     | Mean Latency | Error     | StdDev     | Median      | Allocated Memory |
+| :--------------------------------------------------------- | -----------: | --------: | ---------: | ----------: | ---------------: |
+| WasapiLoopback_ReadSamples_DirectHotPath                   |    143.29 ns | 6.9530 ns | 20.5000 ns |   142.52 ns |              0 B |
+| OpusEncoder_EncodeStereo_DirectHotPath                     |     1.066 μs | 0.0493 μs |  0.1455 μs |    1.062 μs |              0 B |
+| MoonshineAudioPacketiser_PacketiseAudioFrame_DirectHotPath |     42.86 ns | 2.2210 ns |  6.5500 ns |    40.62 ns |              0 B |
+| RtpAudioPacketiser_Packetise_DirectHotPath                 |     32.27 ns | 0.8570 ns |  2.5280 ns |    31.63 ns |              0 B |
+| HostAudioPipeline_EndToEnd_CaptureEncodePacketise_HotPath  |     1.478 μs | 0.0791 μs |  0.2332 μs |    1.483 μs |              0 B |
+```

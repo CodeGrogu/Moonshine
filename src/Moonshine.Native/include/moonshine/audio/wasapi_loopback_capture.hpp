@@ -4,6 +4,17 @@
 #include <vector>
 #include <atomic>
 
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <mmdeviceapi.h>
+#include <audioclient.h>
+#include <wrl/client.h>
+#include <ksmedia.h>
+#endif
+
 namespace moonshine::audio {
 
 enum class AudioChannels : uint32_t {
@@ -44,17 +55,29 @@ public:
     [[nodiscard]] bool is_capturing() const noexcept { return _initialized; }
     [[nodiscard]] uint32_t sample_rate() const noexcept { return _sample_rate; }
     [[nodiscard]] uint32_t channels() const noexcept { return _channels; }
+    [[nodiscard]] bool is_device_invalidated() const noexcept { return _device_invalidated; }
 
 private:
     uint32_t _sample_rate{48000};
     uint32_t _channels{2};
     uint32_t _buffer_duration_ms{5};
     bool _initialized{false};
+    bool _device_invalidated{false};
     uint64_t _frame_counter{0};
     uint64_t _sample_counter{0};
     uint32_t _underruns{0};
     uint32_t _overruns{0};
-    std::vector<float> _staging_buffer;
+
+#if defined(_WIN32)
+    Microsoft::WRL::ComPtr<IMMDeviceEnumerator> _enumerator;
+    Microsoft::WRL::ComPtr<IMMDevice> _device;
+    Microsoft::WRL::ComPtr<IAudioClient> _audio_client;
+    Microsoft::WRL::ComPtr<IAudioCaptureClient> _capture_client;
+    uint32_t _device_channels{2};
+    uint32_t _device_sample_rate{48000};
+    bool _is_float_format{true};
+    uint16_t _bits_per_sample{32};
+#endif
 };
 
 } // namespace moonshine::audio
