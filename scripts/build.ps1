@@ -50,6 +50,7 @@ if (-not $SkipTests) {
 }
 
 Write-Host "`n[3/4] Restoring and building .NET 9 Windows 11 solution..." -ForegroundColor Yellow
+Get-Process -Name testhost*, vstest* -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 & $DotNetExe restore "$RootDir\Moonshine.sln" --runtime win-x64
 if ($LASTEXITCODE -ne 0) { throw ".NET restore failed." }
 & $DotNetExe build "$RootDir\Moonshine.sln" -c $Configuration --no-restore
