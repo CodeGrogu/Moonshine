@@ -1,3 +1,4 @@
+#if MOONSHINE_LEGACY_INTEROP
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -179,3 +180,4 @@ public class RtspClientTests
         ]);
     }
 }
+#endif

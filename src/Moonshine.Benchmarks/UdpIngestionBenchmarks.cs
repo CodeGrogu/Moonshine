@@ -1,3 +1,4 @@
+#if MOONSHINE_LEGACY_INTEROP
 using BenchmarkDotNet.Attributes;
 using Moonshine.Core.Pipelines;
 using Moonshine.Interop;
@@ -62,3 +63,4 @@ public unsafe class UdpIngestionBenchmarks : IDisposable
         GC.SuppressFinalize(this);
     }
 }
+#endif

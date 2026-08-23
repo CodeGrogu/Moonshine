@@ -1,7 +1,9 @@
 using FluentAssertions;
 using Moonshine.Core.Congestion;
 using Moonshine.Protocol.Contracts;
+#if MOONSHINE_LEGACY_INTEROP
 using Moonshine.Protocol.RTP;
+#endif
 using Xunit;
 
 namespace Moonshine.Core.Tests;
@@ -20,15 +22,52 @@ public class CongestionControllerTests
             onBitrateChanged: b => currentBitrate = b
         );
 
-        var cleanStats = new RtcpLossStatsPacket(1, 1000, 0, 0, 1000, 50);
+        var cleanStats = new MoonshineFeedbackLossStatsPayload
+        {
+            StreamId = 1,
+            PacketsReceived = 1000,
+            PacketsLost = 0,
+            PacketsRecoveredFec = 0,
+            LastReceivedFrameIndex = 1000,
+            JitterUs = 50,
+            RoundTripTimeUs = 5000, // 5.0 ms
+            EstimatedBandwidthKbps = 0,
+            ReceiveQueueDepth = 0
+        };
 
-        controller.ProcessFeedback(cleanStats, rttMs: 5.0);
+        controller.ProcessFeedback(in cleanStats);
         controller.CurrentBitrateKbps.Should().Be(51000);
 
-        controller.ProcessFeedback(cleanStats, rttMs: 5.0);
+        var cleanStats2 = new MoonshineFeedbackLossStatsPayload
+        {
+            StreamId = 1,
+            PacketsReceived = 2000,
+            PacketsLost = 0,
+            PacketsRecoveredFec = 0,
+            LastReceivedFrameIndex = 2000,
+            JitterUs = 50,
+            RoundTripTimeUs = 5000,
+            EstimatedBandwidthKbps = 0,
+            ReceiveQueueDepth = 0
+        };
+
+        controller.ProcessFeedback(in cleanStats2);
         controller.CurrentBitrateKbps.Should().Be(52000);
 
-        controller.ProcessFeedback(cleanStats, rttMs: 5.0);
+        var cleanStats3 = new MoonshineFeedbackLossStatsPayload
+        {
+            StreamId = 1,
+            PacketsReceived = 3000,
+            PacketsLost = 0,
+            PacketsRecoveredFec = 0,
+            LastReceivedFrameIndex = 3000,
+            JitterUs = 50,
+            RoundTripTimeUs = 5000,
+            EstimatedBandwidthKbps = 0,
+            ReceiveQueueDepth = 0
+        };
+
+        controller.ProcessFeedback(in cleanStats3);
         controller.CurrentBitrateKbps.Should().Be(53000);
     }
 
@@ -42,9 +81,20 @@ public class CongestionControllerTests
         );
 
         // 3% unrecoverable loss
-        var moderateLoss = new RtcpLossStatsPacket(1, 970, 30, 0, 1000, 100);
+        var moderateLoss = new MoonshineFeedbackLossStatsPayload
+        {
+            StreamId = 1,
+            PacketsReceived = 970,
+            PacketsLost = 30,
+            PacketsRecoveredFec = 0,
+            LastReceivedFrameIndex = 1000,
+            JitterUs = 100,
+            RoundTripTimeUs = 0,
+            EstimatedBandwidthKbps = 0,
+            ReceiveQueueDepth = 0
+        };
 
-        controller.ProcessFeedback(moderateLoss);
+        controller.ProcessFeedback(in moderateLoss);
         controller.CurrentBitrateKbps.Should().Be(45000); // 50000 * 0.90
         controller.Metrics.CongestionEventsCount.Should().Be(1);
     }
@@ -59,9 +109,20 @@ public class CongestionControllerTests
         );
 
         // 10% unrecoverable loss
-        var severeLoss = new RtcpLossStatsPacket(1, 900, 100, 0, 1000, 100);
+        var severeLoss = new MoonshineFeedbackLossStatsPayload
+        {
+            StreamId = 1,
+            PacketsReceived = 900,
+            PacketsLost = 100,
+            PacketsRecoveredFec = 0,
+            LastReceivedFrameIndex = 1000,
+            JitterUs = 100,
+            RoundTripTimeUs = 0,
+            EstimatedBandwidthKbps = 0,
+            ReceiveQueueDepth = 0
+        };
 
-        controller.ProcessFeedback(severeLoss);
+        controller.ProcessFeedback(in severeLoss);
         controller.CurrentBitrateKbps.Should().Be(15000); // 20000 * 0.70 = 14000 -> clamped to 15000 min
     }
 
@@ -75,8 +136,19 @@ public class CongestionControllerTests
         );
 
         // 10 lost packets, 0 recovered
-        var lossStats = new RtcpLossStatsPacket(1, 500, 10, 0, 510, 100);
-        controller.ProcessFeedback(lossStats);
+        var lossStats = new MoonshineFeedbackLossStatsPayload
+        {
+            StreamId = 1,
+            PacketsReceived = 500,
+            PacketsLost = 10,
+            PacketsRecoveredFec = 0,
+            LastReceivedFrameIndex = 510,
+            JitterUs = 100,
+            RoundTripTimeUs = 0,
+            EstimatedBandwidthKbps = 0,
+            ReceiveQueueDepth = 0
+        };
+        controller.ProcessFeedback(in lossStats);
 
         idrTriggered.Should().BeTrue();
         controller.Metrics.IdrRequestsSent.Should().Be(1);
@@ -86,12 +158,36 @@ public class CongestionControllerTests
     public void CongestionController_RttSmoothing_CalculatesEma()
     {
         var controller = new CongestionController(initialBitrateKbps: 50000);
-        var stats = new RtcpLossStatsPacket(1, 1000, 0, 0, 1000, 50);
+        var stats1 = new MoonshineFeedbackLossStatsPayload
+        {
+            StreamId = 1,
+            PacketsReceived = 1000,
+            PacketsLost = 0,
+            PacketsRecoveredFec = 0,
+            LastReceivedFrameIndex = 1000,
+            JitterUs = 50,
+            RoundTripTimeUs = 10000, // 10.0 ms
+            EstimatedBandwidthKbps = 0,
+            ReceiveQueueDepth = 0
+        };
 
-        controller.ProcessFeedback(stats, rttMs: 10.0);
+        controller.ProcessFeedback(in stats1);
         controller.MeasuredRttMs.Should().Be(10.0);
 
-        controller.ProcessFeedback(stats, rttMs: 20.0);
+        var stats2 = new MoonshineFeedbackLossStatsPayload
+        {
+            StreamId = 1,
+            PacketsReceived = 2000,
+            PacketsLost = 0,
+            PacketsRecoveredFec = 0,
+            LastReceivedFrameIndex = 2000,
+            JitterUs = 50,
+            RoundTripTimeUs = 20000, // 20.0 ms
+            EstimatedBandwidthKbps = 0,
+            ReceiveQueueDepth = 0
+        };
+
+        controller.ProcessFeedback(in stats2);
         controller.MeasuredRttMs.Should().BeApproximately(13.0, 0.1);
     }
 

@@ -95,6 +95,7 @@ public class HostAudioPipelineTests
         metrics.TotalPacketsEmitted.Should().Be(1);
     }
 
+#if MOONSHINE_LEGACY_INTEROP
     [Fact]
     public void HostAudioPipeline_ProcessNextAudioFrame_RtpFraming_EmitsValidRtpPacket()
     {
@@ -123,6 +124,7 @@ public class HostAudioPipelineTests
         firstByte.Should().Be(0x80); // RTP v2
         payloadType.Should().Be(97); // Opus PT
     }
+#endif
 
     [Theory]
     [InlineData(AudioChannelTopology.Surround51, 6u, 256000u)]

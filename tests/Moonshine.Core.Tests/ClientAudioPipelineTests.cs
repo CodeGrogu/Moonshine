@@ -2,7 +2,9 @@ using FluentAssertions;
 using Moonshine.Core.Audio;
 using Moonshine.Core.Media;
 using Moonshine.Interop;
+#if MOONSHINE_LEGACY_INTEROP
 using Moonshine.Protocol.RTP;
+#endif
 using Xunit;
 
 namespace Moonshine.Core.Tests;
@@ -184,6 +186,7 @@ public sealed class ClientAudioPipelineTests
         pipeline.Metrics.PacketsReceived.Should().Be(1);
     }
 
+#if MOONSHINE_LEGACY_INTEROP
     [Fact]
     public void ClientAudioPipeline_IngestRtpPacket_ProcessesCleanly()
     {
@@ -212,6 +215,7 @@ public sealed class ClientAudioPipelineTests
 
         pipeline.Metrics.PacketsReceived.Should().Be(1);
     }
+#endif
 
     [Fact]
     public void ClientAudioPipeline_ZeroGCAllocations_SteadyStateHotPath()

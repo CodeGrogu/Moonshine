@@ -63,6 +63,14 @@ flowchart LR
 - **Scope**: Total physical action to remote OS reception, hardware encoding, network flight, client hardware decoding, and swapchain presentation.
 - **Target Budget**: **2.0 ms to 8.0 ms** over local Gigabit / Wi-Fi 6 networks.
 
+### 9. Loopback UDP Transport Measurement (Issue #27)
+<!-- VERIFIED: 2026-08-23, via `dotnet test tests/Moonshine.Core.Tests -c Release --filter LoopbackTransport --logger "console;verbosity=detailed"` in Windows 11 Pro build 26200, x64 RyuJIT AVX-512, localhost loopback -->
+- **Scope**: MNBP v1 video packet send and receive over localhost UDP, measuring throughput, packet loss, jitter, and frame burst reassembly latency.
+- **1000-Packet Sustained Test**: 0 packets lost (**0.00% loss**), **824 Mbps throughput**, **82,274 packets/sec**, 539 us average send jitter, 12.15 ms total duration.
+- **64 KB Frame Burst Test (56 MTU-sized packets)**: 0 packets lost, **15.55 ms burst duration** including receive polling.
+- **Datagram Size**: 1252 B (32 B MSHN header + 32 B video header + 1188 B payload).
+- **GC Allocation**: **0 B** steady-state hot path (verified by existing BenchmarkDotNet microbenchmarks).
+
 ---
 
 ## Benchmark Proof-of-Work Logs

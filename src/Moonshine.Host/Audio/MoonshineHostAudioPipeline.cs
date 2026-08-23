@@ -44,7 +44,9 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
     private WasapiLoopbackAudioPipeline? _wasapiLoopback;
     private OpusAudioEncoderPipeline? _encoder;
     private MoonshineAudioPacketiser? _moonshinePacketiser;
+#if MOONSHINE_LEGACY_INTEROP
     private RtpAudioPacketiser? _rtpPacketiser;
+#endif
 
     private HostAudioBackend _activeBackend = HostAudioBackend.Disabled;
     private readonly bool _isDriverInstalled;
@@ -70,14 +72,18 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
     private ulong _totalFramesEncoded;
     private ulong _totalPacketsEmitted;
     private ulong _sampleIndex;
+#if MOONSHINE_LEGACY_INTEROP
     private uint _rtpTimestamp;
+#endif
     private double _totalCaptureLatencyUs;
     private double _totalEncodeLatencyUs;
 
     // Preallocated buffers for zero-allocation streaming hot path
     private readonly float[] _pcmStagingBuffer;
     private readonly byte[] _encodedPayloadBuffer;
+#if MOONSHINE_LEGACY_INTEROP
     private readonly byte[] _rtpPacketBuffer;
+#endif
 
     public HostAudioBackend ActiveBackend => _activeBackend;
     public bool IsDriverInstalled => _isDriverInstalled;
@@ -150,7 +156,9 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
 
         _pcmStagingBuffer = new float[_samplesPerFrame * _channels];
         _encodedPayloadBuffer = new byte[2048];
+#if MOONSHINE_LEGACY_INTEROP
         _rtpPacketBuffer = new byte[2048];
+#endif
 
         // Query driver presence
         bool driverAvailable = false;
@@ -230,11 +238,13 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
             codec: MoonshineAudioCodec.Opus
         );
 
+#if MOONSHINE_LEGACY_INTEROP
         _rtpPacketiser = new RtpAudioPacketiser(
             payloadType: 97,
             ssrc: 0x12345678,
             initialSeq: 0
         );
+#endif
     }
 
     /// <summary>
@@ -492,6 +502,7 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
                 return true;
             }
         }
+#if MOONSHINE_LEGACY_INTEROP
         else if (_rtpPacketiser is not null)
         {
             Span<byte> rtpOut = _rtpPacketBuffer.AsSpan();
@@ -505,6 +516,7 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
                 return true;
             }
         }
+#endif
 
         return false;
     }

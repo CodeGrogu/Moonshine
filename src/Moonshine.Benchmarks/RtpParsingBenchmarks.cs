@@ -1,3 +1,4 @@
+#if MOONSHINE_LEGACY_INTEROP
 using BenchmarkDotNet.Attributes;
 using Moonshine.Protocol.RTP;
 
@@ -46,3 +47,4 @@ public class RtpParsingBenchmarks
         return default;
     }
 }
+#endif

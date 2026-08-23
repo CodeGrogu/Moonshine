@@ -1,11 +1,14 @@
+#if MOONSHINE_LEGACY_INTEROP
 using System.Buffers;
 using System.Globalization;
 using System.Net.Sockets;
 using System.Text;
 using Moonshine.Protocol.RTSP;
+#endif
 
 namespace Moonshine.Core.RTSP;
 
+#if MOONSHINE_LEGACY_INTEROP
 public enum RtspClientState
 {
     Disconnected,
@@ -335,3 +338,4 @@ public sealed class MoonshineRtspClient : IDisposable
         State = RtspClientState.Disconnected;
     }
 }
+#endif

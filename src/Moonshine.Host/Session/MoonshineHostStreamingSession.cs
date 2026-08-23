@@ -671,9 +671,19 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                             uint recoveredFec = BinaryPrimitives.ReadUInt32BigEndian(payload[8..12]);
                             uint rttUs = BinaryPrimitives.ReadUInt32BigEndian(payload[12..16]);
 
-                            var rtcpLoss = new Moonshine.Protocol.RTP.RtcpLossStatsPacket(
-                                0, 0, (ushort)lostPackets, (ushort)recoveredFec, 0, 0);
-                            _congestionController?.ProcessFeedback(in rtcpLoss, rttUs / 1000.0);
+                            var nativeFeedback = new MoonshineFeedbackLossStatsPayload
+                            {
+                                StreamId = _config.StreamId,
+                                LastReceivedFrameIndex = lastGood,
+                                PacketsLost = lostPackets,
+                                PacketsRecoveredFec = recoveredFec,
+                                RoundTripTimeUs = rttUs,
+                                PacketsReceived = lastGood,
+                                JitterUs = 0,
+                                EstimatedBandwidthKbps = 0,
+                                ReceiveQueueDepth = 0
+                            };
+                            _congestionController?.ProcessFeedback(in nativeFeedback);
                         }
                     }
                 }

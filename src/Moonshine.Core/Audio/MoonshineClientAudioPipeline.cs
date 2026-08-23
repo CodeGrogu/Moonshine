@@ -2,7 +2,9 @@ using System.Runtime.InteropServices;
 using Moonshine.Core.Media;
 using Moonshine.Protocol.Audio;
 using Moonshine.Protocol.Contracts;
+#if MOONSHINE_LEGACY_INTEROP
 using Moonshine.Protocol.RTP;
+#endif
 
 namespace Moonshine.Core.Audio;
 
@@ -154,6 +156,7 @@ public sealed class MoonshineClientAudioPipeline : IDisposable
         return IngestRawOpusFrame(mshnHdr.SequenceNumber, audioHdr.SampleIndex, payload);
     }
 
+#if MOONSHINE_LEGACY_INTEROP
     /// <summary>
     /// Ingests a standard RFC 3550 RTP audio packet.
     /// </summary>
@@ -166,6 +169,7 @@ public sealed class MoonshineClientAudioPipeline : IDisposable
 
         return IngestRawOpusFrame(rtpHdr.BaseHeader.SequenceNumber, rtpHdr.BaseHeader.Timestamp, payload);
     }
+#endif
 
     /// <summary>
     /// Processes a single frame immediately without background thread jitter delay.

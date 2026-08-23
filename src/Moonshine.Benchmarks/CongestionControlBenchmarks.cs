@@ -2,7 +2,9 @@ using BenchmarkDotNet.Attributes;
 using Moonshine.Core.Congestion;
 using Moonshine.Protocol.Contracts;
 using Moonshine.Protocol.Feedback;
+#if MOONSHINE_LEGACY_INTEROP
 using Moonshine.Protocol.RTP;
+#endif
 
 namespace Moonshine.Benchmarks;
 
@@ -10,10 +12,14 @@ namespace Moonshine.Benchmarks;
 public class CongestionControlBenchmarks
 {
     private CongestionController _controller = null!;
+#if MOONSHINE_LEGACY_INTEROP
     private RtcpLossStatsPacket _lossStats;
+#endif
     private MoonshineFeedbackLossStatsPayload _moonshineLossStats;
     private MoonshineIdrRequestPayload _idrRequest;
+#if MOONSHINE_LEGACY_INTEROP
     private byte[] _rtcpBuffer = null!;
+#endif
     private byte[] _nativeLossStatsBuffer = null!;
     private byte[] _nativeIdrBuffer = null!;
 
@@ -24,6 +30,7 @@ public class CongestionControlBenchmarks
             initialBitrateKbps: 50000,
             hysteresisHoldMs: 0);
 
+#if MOONSHINE_LEGACY_INTEROP
         _lossStats = new RtcpLossStatsPacket(
             Ssrc: 0x12345678,
             PacketsReceived: 10000,
@@ -32,6 +39,7 @@ public class CongestionControlBenchmarks
             LastSequenceNumber: 60000,
             JitterMicros: 200
         );
+#endif
 
         _moonshineLossStats = new MoonshineFeedbackLossStatsPayload
         {
@@ -53,8 +61,10 @@ public class CongestionControlBenchmarks
             ReasonCode = 1
         };
 
+#if MOONSHINE_LEGACY_INTEROP
         _rtcpBuffer = new byte[64];
         _lossStats.WriteTo(_rtcpBuffer);
+#endif
 
         _nativeLossStatsBuffer = new byte[MoonshineFeedbackCodec.LossStatsPacketSize];
         MoonshineFeedbackCodec.TryWriteLossStats(in _moonshineLossStats, _nativeLossStatsBuffer, out _, sessionId: 0x1234);
@@ -63,6 +73,7 @@ public class CongestionControlBenchmarks
         MoonshineFeedbackCodec.TryWriteIdrRequest(in _idrRequest, _nativeIdrBuffer, out _, sessionId: 0x1234);
     }
 
+#if MOONSHINE_LEGACY_INTEROP
     [Benchmark(Baseline = true)]
     public int SerializeRtcpLossStats()
     {
@@ -74,6 +85,7 @@ public class CongestionControlBenchmarks
     {
         return RtcpLossStatsPacket.TryParse(_rtcpBuffer, out _);
     }
+#endif
 
     [Benchmark]
     public bool SerializeMoonshineLossStats()

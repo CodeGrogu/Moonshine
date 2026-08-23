@@ -1,3 +1,4 @@
+#if MOONSHINE_LEGACY_INTEROP
 using System.Buffers.Binary;
 
 namespace Moonshine.Host.Audio;
@@ -71,3 +72,4 @@ public sealed class RtpAudioPacketiser
         return true;
     }
 }
+#endif

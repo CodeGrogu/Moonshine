@@ -1,3 +1,4 @@
+#if MOONSHINE_LEGACY_INTEROP
 using System.Net;
 using System.Net.Sockets;
 using FluentAssertions;
@@ -542,3 +543,4 @@ public class UdpSocketPipelineTests
         }
     }
 }
+#endif

@@ -169,6 +169,7 @@ public sealed class MoonshineClientCoordinator : IMoonshineClientService
             }
             return session;
         }
+        // ALLOWED_EXCEPTION: Dispose session on startup failure before rethrowing to caller.
         catch (Exception)
         {
             await session.DisposeAsync().ConfigureAwait(false);
@@ -218,6 +219,7 @@ public sealed class MoonshineClientCoordinator : IMoonshineClientService
             {
                 _activeSession.Dispose();
             }
+            // ALLOWED_EXCEPTION: Suppress disposal failures during coordinator teardown to avoid masking root cause.
             catch { }
             _activeSession = null;
         }

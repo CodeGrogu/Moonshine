@@ -12,7 +12,9 @@ public class HostAudioBenchmarks : IDisposable
     private WasapiLoopbackAudioPipeline _wasapiLoopback = null!;
     private OpusAudioEncoderPipeline _opusEncoderStereo = null!;
     private MoonshineAudioPacketiser _moonshinePacketiser = null!;
+#if MOONSHINE_LEGACY_INTEROP
     private RtpAudioPacketiser _rtpPacketiser = null!;
+#endif
     private MoonshineHostAudioPipeline _pipeline = null!;
 
     private float[] _pcmBufferActive = null!;
@@ -28,7 +30,9 @@ public class HostAudioBenchmarks : IDisposable
         _wasapiLoopback = new WasapiLoopbackAudioPipeline(48000, AudioChannelTopology.Stereo, 5);
         _opusEncoderStereo = new OpusAudioEncoderPipeline(48000, AudioChannelTopology.Stereo, 160000, 5, 8, true);
         _moonshinePacketiser = new MoonshineAudioPacketiser(1, 0x12345678, 48000, 2, MoonshineAudioCodec.Opus);
+#if MOONSHINE_LEGACY_INTEROP
         _rtpPacketiser = new RtpAudioPacketiser(97, 0x12345678, 0);
+#endif
 
         _pipeline = new MoonshineHostAudioPipeline(
             sampleRate: 48000,
@@ -89,6 +93,7 @@ public class HostAudioBenchmarks : IDisposable
         );
     }
 
+#if MOONSHINE_LEGACY_INTEROP
     [Benchmark]
     public bool RtpAudioPacketiser_Packetise_DirectHotPath()
     {
@@ -101,6 +106,7 @@ public class HostAudioBenchmarks : IDisposable
             out _
         );
     }
+#endif
 
     [Benchmark]
     public bool HostAudioPipeline_EndToEnd_ActiveSignal_HotPath()

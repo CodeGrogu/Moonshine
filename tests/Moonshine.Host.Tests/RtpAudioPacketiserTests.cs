@@ -1,3 +1,4 @@
+#if MOONSHINE_LEGACY_INTEROP
 using System.Buffers.Binary;
 using FluentAssertions;
 using Moonshine.Host.Audio;
@@ -69,3 +70,4 @@ public class RtpAudioPacketiserTests
         written.Should().Be(0);
     }
 }
+#endif

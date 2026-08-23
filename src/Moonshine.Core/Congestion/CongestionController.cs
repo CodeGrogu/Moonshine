@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using Moonshine.Protocol.Contracts;
-using Moonshine.Protocol.RTP;
 
 namespace Moonshine.Core.Congestion;
 
@@ -199,31 +198,6 @@ public sealed class CongestionController
             _lastPacketsReceived = stats.PacketsReceived;
             _lastPacketsLost = stats.PacketsLost;
             _lastPacketsRecovered = stats.PacketsRecoveredFec;
-        }
-    }
-
-    /// <summary>
-    /// Processes incoming legacy RTCP loss stats feedback report.
-    /// </summary>
-    public void ProcessFeedback(in RtcpLossStatsPacket stats, double rttMs = 0)
-    {
-        lock (_lock)
-        {
-            double instantLossRate = stats.UnrecoverableLossRate;
-            uint lostDelta = stats.PacketsLost >= _lastPacketsLost ? stats.PacketsLost - _lastPacketsLost : stats.PacketsLost;
-            uint recoveredDelta = stats.PacketsRecovered >= _lastPacketsRecovered ? stats.PacketsRecovered - _lastPacketsRecovered : stats.PacketsRecovered;
-
-            ProcessFeedbackInternalNoLock(
-                instantLossRate,
-                rttMs,
-                stats.JitterMicros,
-                0,
-                0,
-                lostDelta,
-                recoveredDelta);
-
-            _lastPacketsLost = stats.PacketsLost;
-            _lastPacketsRecovered = stats.PacketsRecovered;
         }
     }
 

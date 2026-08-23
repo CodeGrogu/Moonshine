@@ -2,10 +2,13 @@ using System.Net;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using Moonshine.Interop;
+#if MOONSHINE_LEGACY_INTEROP
 using Moonshine.Protocol.RTP;
+#endif
 
 namespace Moonshine.Core.Pipelines;
 
+#if MOONSHINE_LEGACY_INTEROP
 public sealed record UdpPipelineMetrics(
     ulong PacketsReceived,
     ulong BytesReceived,
@@ -318,3 +321,4 @@ public sealed class UdpSocketPipeline : IAsyncDisposable, IDisposable
         _bufferPool.AssertQuiescent();
     }
 }
+#endif

@@ -13,7 +13,8 @@ public enum HostSessionState
     /// <summary>Session has been created and configured but not yet started.</summary>
     Created = 0,
 
-    /// <summary>Session negotiation and capability exchange in flight.</summary>
+    /// <summary>Session negotiation and capability exchange in flight. Exercised by the host coordinator
+    /// control listener during Hello/HelloResponse handshake, before instantiating MoonshineHostStreamingSession.</summary>
     Negotiating = 1,
 
     /// <summary>Initializing hardware capture, encoder, audio, and transport backends.</summary>

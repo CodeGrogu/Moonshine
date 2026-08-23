@@ -730,6 +730,7 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
                             {
                                 await StopAsync().ConfigureAwait(false);
                             }
+                            // ALLOWED_EXCEPTION: Fire-and-forget teardown on Teardown control message; failure logged via session state.
                             catch { }
                         });
                         break;
