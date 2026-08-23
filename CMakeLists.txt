@@ -32,6 +32,8 @@ set(OPUS_BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(OPUS_ENABLE_FLOAT_API ON CACHE BOOL "" FORCE)
+set(OPUS_USE_ALLOCA ON CACHE BOOL "" FORCE)
+set(OPUS_NONTHREADSAFE_PSEUDOSTACK OFF CACHE BOOL "" FORCE)
 set(OPUS_HARDENING OFF CACHE BOOL "" FORCE)
 set(OPUS_ASSERTIONS OFF CACHE BOOL "" FORCE)
 set(OPUS_INSTALL_PKG_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
@@ -46,6 +48,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(opus)
 if(TARGET opus)
     target_compile_options(opus PRIVATE /WX- /w)
+    target_compile_definitions(opus PUBLIC USE_ALLOCA=1)
 endif()
 
 # Global MSVC flags for the Windows 11 native engine.

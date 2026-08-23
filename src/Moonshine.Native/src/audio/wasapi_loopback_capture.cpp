@@ -14,7 +14,7 @@ WasapiLoopbackCapture::WasapiLoopbackCapture(
     _channels(channels),
     _buffer_duration_ms(buffer_duration_ms)
 {
-    if (_channels != 2 && _channels != 6 && _channels != 8) {
+    if (_channels != 1 && _channels != 2 && _channels != 6 && _channels != 8) {
         _channels = 2; // Default to Stereo
     }
     if (_sample_rate == 0) {

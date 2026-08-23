@@ -2,6 +2,8 @@
 #include <vector>
 #include <cmath>
 #include <cstdlib>
+#include <thread>
+#include <atomic>
 #include "moonshine/audio/virtual_audio_ipc.hpp"
 
 #define REQUIRE(condition) \
@@ -407,6 +409,76 @@ void Test_AvailableBytesAccounting() {
     std::cout << "[Pass] VirtualAudioIpcChannel Available Bytes Accounting." << std::endl;
 }
 
+void Test_ConcurrentSpscAtomicStress() {
+    std::cout << "[Test] VirtualAudioIpcChannel Concurrent SPSC Atomic Stress (5,000 frames)..." << std::endl;
+    VirtualAudioIpcChannel producer;
+    bool pOk = producer.Initialize(MOONSHINE_ENDPOINT_RENDER, true, 48000, 2, MOONSHINE_FORMAT_FLOAT_32, 16);
+    REQUIRE(pOk);
+
+#ifdef _WIN32
+    VirtualAudioIpcChannel consumer;
+    bool cOk = consumer.Initialize(MOONSHINE_ENDPOINT_RENDER, false, 48000, 2, MOONSHINE_FORMAT_FLOAT_32, 16);
+    REQUIRE(cOk);
+#else
+    VirtualAudioIpcChannel& consumer = producer;
+#endif
+
+    const uint32_t totalFrames = 5000;
+    const uint32_t frameSamples = 240 * 2; // 480 floats per 5ms frame
+    std::atomic<bool> producerDone{false};
+    std::atomic<uint32_t> framesConsumed{0};
+    std::atomic<bool> corruptionDetected{false};
+
+    std::thread prodThread([&]() {
+        std::vector<float> frame(frameSamples);
+        for (uint32_t f = 1; f <= totalFrames; ++f) {
+            frame.assign(frameSamples, static_cast<float>(f));
+            size_t bytes = frame.size() * sizeof(float);
+            while (producer.GetAvailableWriteBytes() < bytes) {
+                std::this_thread::yield();
+            }
+            size_t written = producer.WritePcm(frame.data(), bytes);
+            REQUIRE(written == bytes);
+        }
+        producerDone.store(true, std::memory_order_release);
+    });
+
+    std::thread consThread([&]() {
+        std::vector<float> frame(frameSamples, 0.0f);
+        size_t bytes = frame.size() * sizeof(float);
+        uint32_t expectedFrame = 1;
+        while (!producerDone.load(std::memory_order_acquire) || consumer.GetAvailableReadBytes() >= bytes) {
+            if (consumer.GetAvailableReadBytes() >= bytes) {
+                size_t read = consumer.ReadPcm(frame.data(), bytes);
+                if (read == bytes) {
+                    for (float s : frame) {
+                        if (std::fabs(s - static_cast<float>(expectedFrame)) > 1e-4f) {
+                            corruptionDetected.store(true, std::memory_order_relaxed);
+                            break;
+                        }
+                    }
+                    expectedFrame++;
+                    framesConsumed.fetch_add(1, std::memory_order_relaxed);
+                }
+            } else {
+                std::this_thread::yield();
+            }
+        }
+    });
+
+    prodThread.join();
+    consThread.join();
+
+    REQUIRE(!corruptionDetected.load());
+    REQUIRE(framesConsumed.load() == totalFrames);
+
+    producer.Close();
+#ifdef _WIN32
+    consumer.Close();
+#endif
+    std::cout << "[Pass] VirtualAudioIpcChannel Concurrent SPSC Atomic Stress (5,000 frames byte-exact)." << std::endl;
+}
+
 int main() {
     std::cout << "==========================================================" << std::endl;
     std::cout << "Moonshine Virtual Audio Shared Memory IPC Test Suite" << std::endl;
@@ -426,6 +498,7 @@ int main() {
     Test_MultipleFormatConfigurations();
     Test_BridgeDisconnectedRenderUnderrunTracking();
     Test_AvailableBytesAccounting();
+    Test_ConcurrentSpscAtomicStress();
 
     std::cout << "[+] All Virtual Audio Shared Memory IPC Tests Passed Successfully!" << std::endl;
     return 0;
