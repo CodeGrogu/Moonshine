@@ -345,6 +345,10 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
 
         if (_capturePipeline != null)
         {
+            // Only request an IDR keyframe if a capture transition or recovery succeeded.
+            // When capture is unrecoverable or broken, spurious keyframes are avoided.
+            bool captureTransitionRequiresKeyframe = false;
+
             try
             {
                 var selectResult = CaptureSourceSelector.SelectSource(e.NewTopology, new CaptureSourceSelectionCriteria(
@@ -358,14 +362,21 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
 
                 if (selectResult.IsSuccess && selectResult.Source != null)
                 {
-                    if (!_capturePipeline.TryReconfigureSource(selectResult.Source))
+                    if (_capturePipeline.TryReconfigureSource(selectResult.Source))
                     {
-                        _capturePipeline.TryRecover();
+                        captureTransitionRequiresKeyframe = true;
+                    }
+                    else if (_capturePipeline.TryRecover())
+                    {
+                        captureTransitionRequiresKeyframe = true;
                     }
                 }
                 else
                 {
-                    _capturePipeline.TryRecover();
+                    if (_capturePipeline.TryRecover())
+                    {
+                        captureTransitionRequiresKeyframe = true;
+                    }
                 }
             }
             // ALLOWED_EXCEPTION: Rule 5 - Protects display event handler from unhandled capture reconfiguration exceptions.
@@ -373,7 +384,10 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
             {
                 try
                 {
-                    _capturePipeline.TryRecover();
+                    if (_capturePipeline.TryRecover())
+                    {
+                        captureTransitionRequiresKeyframe = true;
+                    }
                 }
                 // ALLOWED_EXCEPTION: Rule 5 - Protects display event handler if secondary recovery attempt throws.
                 catch (Exception)
@@ -382,7 +396,10 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
             }
             finally
             {
-                RequestKeyframe();
+                if (captureTransitionRequiresKeyframe)
+                {
+                    RequestKeyframe();
+                }
             }
         }
     }
