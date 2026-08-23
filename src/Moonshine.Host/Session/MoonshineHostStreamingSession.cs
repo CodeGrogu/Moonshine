@@ -325,6 +325,7 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
     /// <summary>
     /// Handles asynchronous display topology changes and coordinates capture pipeline reconfiguration.
     /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1031:DoNotCatchGeneralExceptionTypes", Justification = "Rule 5 - Protects display event handler from unhandled capture reconfiguration exceptions.")]
     public void HandleDisplayTopologyChanged(DisplayTopologyChangedEventArgs e)
     {
         ArgumentNullException.ThrowIfNull(e);
@@ -344,28 +345,45 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
 
         if (_capturePipeline != null)
         {
-            var selectResult = CaptureSourceSelector.SelectSource(e.NewTopology, new CaptureSourceSelectionCriteria(
-                Policy: CaptureSelectionPolicy.MatchResolution,
-                TargetWidth: _config.Width,
-                TargetHeight: _config.Height,
-                TargetFps: _config.Fps,
-                RequireHdr: _config.EnableHdr10,
-                FallbackPolicy: CaptureSourceFallbackPolicy.FallbackToPrimary
-            ));
-
-            if (selectResult.IsSuccess && selectResult.Source != null)
+            try
             {
-                if (!_capturePipeline.TryReconfigureSource(selectResult.Source))
+                var selectResult = CaptureSourceSelector.SelectSource(e.NewTopology, new CaptureSourceSelectionCriteria(
+                    Policy: CaptureSelectionPolicy.MatchResolution,
+                    TargetWidth: _config.Width,
+                    TargetHeight: _config.Height,
+                    TargetFps: _config.Fps,
+                    RequireHdr: _config.EnableHdr10,
+                    FallbackPolicy: CaptureSourceFallbackPolicy.FallbackToPrimary
+                ));
+
+                if (selectResult.IsSuccess && selectResult.Source != null)
+                {
+                    if (!_capturePipeline.TryReconfigureSource(selectResult.Source))
+                    {
+                        _capturePipeline.TryRecover();
+                    }
+                }
+                else
                 {
                     _capturePipeline.TryRecover();
                 }
             }
-            else
+            // ALLOWED_EXCEPTION: Rule 5 - Protects display event handler from unhandled capture reconfiguration exceptions.
+            catch (Exception)
             {
-                _capturePipeline.TryRecover();
+                try
+                {
+                    _capturePipeline.TryRecover();
+                }
+                // ALLOWED_EXCEPTION: Rule 5 - Protects display event handler if secondary recovery attempt throws.
+                catch (Exception)
+                {
+                }
             }
-
-            RequestKeyframe();
+            finally
+            {
+                RequestKeyframe();
+            }
         }
     }
 
@@ -427,8 +445,8 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                 bool frameAcquired = _capturePipeline.TryAcquireNextFrame(timeoutMs: 16, out MoonshineCaptureFrameDesc frameDesc);
                 if (!frameAcquired)
                 {
-                    // Check if capture pipeline is still healthy or needs recovery
-                    if (!_capturePipeline.IsAvailable)
+                    bool isHeadless = _topologyWatcher?.CurrentTopology.IsHeadless ?? false;
+                    if (!isHeadless && !_capturePipeline.IsAvailable)
                     {
                         if (!_capturePipeline.TryRecover())
                         {
