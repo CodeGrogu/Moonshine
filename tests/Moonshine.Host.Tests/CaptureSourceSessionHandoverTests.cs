@@ -59,8 +59,8 @@ public class CaptureSourceSessionHandoverTests
 
         public bool TryRecover()
         {
-            if (FailRecovery) return false;
             RecoverCount++;
+            if (FailRecovery) return false;
             IsAvailable = true;
             return true;
         }
@@ -1006,7 +1006,7 @@ public class CaptureSourceSessionHandoverTests
         session.HandleDisplayTopologyChanged(changeArgs);
 
         capturePipeline.ReconfigureCount.Should().Be(1);
-        capturePipeline.RecoverCount.Should().Be(0);
+        capturePipeline.RecoverCount.Should().Be(1);
         session.Metrics.KeyframesRequested.Should().Be(0);
         session.CurrentTopologyGeneration.Should().Be(2);
         session.State.Should().Be(HostSessionState.Streaming);
@@ -1491,7 +1491,7 @@ public class CaptureSourceSessionHandoverTests
         // Asserts session remains alive and streaming, generation advances, and keyframe is not emitted on failure
         session.CurrentTopologyGeneration.Should().Be(2);
         capturePipeline.ReconfigureCount.Should().Be(1);
-        capturePipeline.RecoverCount.Should().Be(0);
+        capturePipeline.RecoverCount.Should().Be(1);
         session.Metrics.KeyframesRequested.Should().Be(0);
         session.State.Should().Be(HostSessionState.Streaming);
         session.LastError.Should().BeNull();
@@ -1518,6 +1518,7 @@ public class CaptureSourceSessionHandoverTests
 
         session.CurrentTopologyGeneration.Should().Be(3);
         capturePipeline.ReconfigureCount.Should().Be(2);
+        capturePipeline.RecoverCount.Should().Be(1);
         capturePipeline.Source.Should().NotBeNull();
         capturePipeline.Source!.OutputIndex.Should().Be(1);
         session.Metrics.KeyframesRequested.Should().Be(1);
