@@ -682,13 +682,6 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
     /// </list>
     /// </para>
     /// </remarks>
-    /// <summary>
-    /// Finalizes the audio pipeline to ensure background worker threads are joined if not explicitly disposed.
-    /// </summary>
-    ~MoonshineHostAudioPipeline()
-    {
-        Dispose();
-    }
 
     public void Dispose()
     {

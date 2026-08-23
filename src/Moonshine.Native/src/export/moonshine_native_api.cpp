@@ -27,42 +27,55 @@
 #include "moonshine/encoder/qsv_video_encoder.hpp"
 #include "moonshine/input/windows_input_injector.h"
 
-#include <unordered_set>
+#include <unordered_map>
 #include <shared_mutex>
+#include <memory>
 
 using namespace moonshine;
 
 namespace {
+    // Thread-safe handle store using shared_ptr to prevent use-after-free.
+    // acquire() returns a shared_ptr that keeps the object alive for the
+    // duration of the caller's operation, even if release() is called
+    // concurrently by another thread. The actual deallocation is deferred
+    // until the last shared_ptr copy goes out of scope.
     template <typename T>
-    class SafeHandleRegistry {
+    class SafeHandleStore {
     public:
         void register_handle(T* handle) {
             if (!handle) return;
             std::unique_lock<std::shared_mutex> lock(_mutex);
-            _valid_handles.insert(handle);
+            _handles.emplace(handle, std::shared_ptr<T>(handle));
         }
 
-        bool is_valid(T* handle) const {
-            if (!handle) return false;
+        // Returns a shared_ptr that keeps the handle alive until the caller
+        // drops the returned guard. Returns nullptr if the handle has been
+        // released or was never registered.
+        std::shared_ptr<T> acquire(T* handle) {
+            if (!handle) return nullptr;
             std::shared_lock<std::shared_mutex> lock(_mutex);
-            return _valid_handles.find(handle) != _valid_handles.end();
+            auto it = _handles.find(handle);
+            if (it == _handles.end()) return nullptr;
+            return it->second;
         }
 
-        bool unregister_handle(T* handle) {
-            if (!handle) return false;
+        // Removes the handle from the store. The actual delete is deferred
+        // until any in-flight acquire() guards go out of scope.
+        void release(T* handle) {
+            if (!handle) return;
             std::unique_lock<std::shared_mutex> lock(_mutex);
-            return _valid_handles.erase(handle) > 0;
+            _handles.erase(handle);
         }
 
     private:
         mutable std::shared_mutex _mutex;
-        std::unordered_set<T*> _valid_handles;
+        std::unordered_map<T*, std::shared_ptr<T>> _handles;
     };
 
-    SafeHandleRegistry<audio::OpusAudioEncoder> g_encoder_registry;
-    SafeHandleRegistry<audio::OpusAudioDecoder> g_decoder_registry;
-    SafeHandleRegistry<audio::WasapiLoopbackCapture> g_capture_registry;
-    SafeHandleRegistry<audio::WasapiRenderer> g_renderer_registry;
+    SafeHandleStore<audio::OpusAudioEncoder> g_encoder_store;
+    SafeHandleStore<audio::OpusAudioDecoder> g_decoder_store;
+    SafeHandleStore<audio::WasapiLoopbackCapture> g_capture_store;
+    SafeHandleStore<audio::WasapiRenderer> g_renderer_store;
 }
 
 static_assert(sizeof(MoonshinePacketDesc) == 32, "MoonshinePacketDesc must be exactly 32 bytes");
@@ -416,7 +429,7 @@ MOONSHINE_API MoonshineAudioCaptureHandle MOONSHINE_CONV moonshine_audio_capture
         delete capture;
         return nullptr;
     }
-    g_capture_registry.register_handle(capture);
+    g_capture_store.register_handle(capture);
     return static_cast<MoonshineAudioCaptureHandle>(capture);
 }
 
@@ -425,10 +438,7 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_audio_capture_destroy(
 ) {
     if (!handle) return;
     auto* capture = static_cast<audio::WasapiLoopbackCapture*>(handle);
-    if (!g_capture_registry.unregister_handle(capture)) {
-        return;
-    }
-    delete capture;
+    g_capture_store.release(capture);
 }
 
 MOONSHINE_API int MOONSHINE_CONV moonshine_audio_capture_read_float(
@@ -439,11 +449,11 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_audio_capture_read_float(
     uint64_t* out_timestamp_qpc
 ) {
     if (!handle || !out_buffer || !out_samples_read || !out_timestamp_qpc) return 0;
-    auto* capture = static_cast<audio::WasapiLoopbackCapture*>(handle);
-    if (!g_capture_registry.is_valid(capture)) return 0;
+    auto guard = g_capture_store.acquire(static_cast<audio::WasapiLoopbackCapture*>(handle));
+    if (!guard) return 0;
     uint32_t read = 0;
     uint64_t qpc = 0;
-    if (!capture->read_samples_float(out_buffer, max_samples, read, qpc)) {
+    if (!guard->read_samples_float(out_buffer, max_samples, read, qpc)) {
         return 0;
     }
     *out_samples_read = read;
@@ -459,11 +469,11 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_audio_capture_read_pcm16(
     uint64_t* out_timestamp_qpc
 ) {
     if (!handle || !out_buffer || !out_samples_read || !out_timestamp_qpc) return 0;
-    auto* capture = static_cast<audio::WasapiLoopbackCapture*>(handle);
-    if (!g_capture_registry.is_valid(capture)) return 0;
+    auto guard = g_capture_store.acquire(static_cast<audio::WasapiLoopbackCapture*>(handle));
+    if (!guard) return 0;
     uint32_t read = 0;
     uint64_t qpc = 0;
-    if (!capture->read_samples_pcm16(out_buffer, max_samples, read, qpc)) {
+    if (!guard->read_samples_pcm16(out_buffer, max_samples, read, qpc)) {
         return 0;
     }
     *out_samples_read = read;
@@ -479,10 +489,10 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_audio_capture_get_metrics(
     uint32_t* out_overruns
 ) {
     if (!handle) return;
-    auto* capture = static_cast<audio::WasapiLoopbackCapture*>(handle);
-    if (!g_capture_registry.is_valid(capture)) return;
+    auto guard = g_capture_store.acquire(static_cast<audio::WasapiLoopbackCapture*>(handle));
+    if (!guard) return;
     audio::AudioCaptureMetrics metrics{};
-    capture->get_metrics(metrics);
+    guard->get_metrics(metrics);
     if (out_frames_captured) *out_frames_captured = metrics.total_frames_captured;
     if (out_samples_captured) *out_samples_captured = metrics.total_samples_captured;
     if (out_underruns) *out_underruns = metrics.underruns;
@@ -515,7 +525,7 @@ MOONSHINE_API MoonshineOpusEncoderHandle MOONSHINE_CONV moonshine_opus_encoder_c
         delete encoder;
         return nullptr;
     }
-    g_encoder_registry.register_handle(encoder);
+    g_encoder_store.register_handle(encoder);
     return static_cast<MoonshineOpusEncoderHandle>(encoder);
 }
 
@@ -524,10 +534,7 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_opus_encoder_destroy(
 ) {
     if (!handle) return;
     auto* encoder = static_cast<audio::OpusAudioEncoder*>(handle);
-    if (!g_encoder_registry.unregister_handle(encoder)) {
-        return;
-    }
-    delete encoder;
+    g_encoder_store.release(encoder);
 }
 
 MOONSHINE_API int MOONSHINE_CONV moonshine_opus_encoder_encode_float(
@@ -539,10 +546,10 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_opus_encoder_encode_float(
     uint32_t* out_payload_bytes
 ) {
     if (!handle || !pcm_samples || !out_payload || !out_payload_bytes) return 0;
-    auto* encoder = static_cast<audio::OpusAudioEncoder*>(handle);
-    if (!g_encoder_registry.is_valid(encoder)) return 0;
+    auto guard = g_encoder_store.acquire(static_cast<audio::OpusAudioEncoder*>(handle));
+    if (!guard) return 0;
     uint32_t bytes_written = 0;
-    if (!encoder->encode_float(pcm_samples, frame_samples, out_payload, max_payload_bytes, bytes_written)) {
+    if (!guard->encode_float(pcm_samples, frame_samples, out_payload, max_payload_bytes, bytes_written)) {
         return 0;
     }
     *out_payload_bytes = bytes_written;
@@ -558,10 +565,10 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_opus_encoder_encode_pcm16(
     uint32_t* out_payload_bytes
 ) {
     if (!handle || !pcm_samples || !out_payload || !out_payload_bytes) return 0;
-    auto* encoder = static_cast<audio::OpusAudioEncoder*>(handle);
-    if (!g_encoder_registry.is_valid(encoder)) return 0;
+    auto guard = g_encoder_store.acquire(static_cast<audio::OpusAudioEncoder*>(handle));
+    if (!guard) return 0;
     uint32_t bytes_written = 0;
-    if (!encoder->encode_pcm16(pcm_samples, frame_samples, out_payload, max_payload_bytes, bytes_written)) {
+    if (!guard->encode_pcm16(pcm_samples, frame_samples, out_payload, max_payload_bytes, bytes_written)) {
         return 0;
     }
     *out_payload_bytes = bytes_written;
@@ -573,9 +580,9 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_opus_encoder_set_bitrate(
     uint32_t bitrate
 ) {
     if (!handle) return 0;
-    auto* encoder = static_cast<audio::OpusAudioEncoder*>(handle);
-    if (!g_encoder_registry.is_valid(encoder)) return 0;
-    return encoder->set_bitrate(bitrate) ? 1 : 0;
+    auto guard = g_encoder_store.acquire(static_cast<audio::OpusAudioEncoder*>(handle));
+    if (!guard) return 0;
+    return guard->set_bitrate(bitrate) ? 1 : 0;
 }
 
 MOONSHINE_API int MOONSHINE_CONV moonshine_opus_encoder_set_complexity(
@@ -583,9 +590,9 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_opus_encoder_set_complexity(
     uint32_t complexity
 ) {
     if (!handle) return 0;
-    auto* encoder = static_cast<audio::OpusAudioEncoder*>(handle);
-    if (!g_encoder_registry.is_valid(encoder)) return 0;
-    return encoder->set_complexity(complexity) ? 1 : 0;
+    auto guard = g_encoder_store.acquire(static_cast<audio::OpusAudioEncoder*>(handle));
+    if (!guard) return 0;
+    return guard->set_complexity(complexity) ? 1 : 0;
 }
 
 MOONSHINE_API void MOONSHINE_CONV moonshine_opus_encoder_get_metrics(
@@ -597,10 +604,10 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_opus_encoder_get_metrics(
     uint32_t* out_streams_count
 ) {
     if (!handle) return;
-    auto* encoder = static_cast<audio::OpusAudioEncoder*>(handle);
-    if (!g_encoder_registry.is_valid(encoder)) return;
+    auto guard = g_encoder_store.acquire(static_cast<audio::OpusAudioEncoder*>(handle));
+    if (!guard) return;
     audio::OpusEncoderMetrics metrics{};
-    encoder->get_metrics(metrics);
+    guard->get_metrics(metrics);
     if (out_frames_encoded) *out_frames_encoded = metrics.total_frames_encoded;
     if (out_bytes_encoded) *out_bytes_encoded = metrics.total_bytes_encoded;
     if (out_avg_encode_time_us) *out_avg_encode_time_us = metrics.avg_encode_time_us;
@@ -621,7 +628,7 @@ MOONSHINE_API MoonshineOpusDecoderHandle MOONSHINE_CONV moonshine_opus_decoder_c
         delete decoder;
         return nullptr;
     }
-    g_decoder_registry.register_handle(decoder);
+    g_decoder_store.register_handle(decoder);
     return static_cast<MoonshineOpusDecoderHandle>(decoder);
 }
 
@@ -630,10 +637,7 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_opus_decoder_destroy(
 ) {
     if (!handle) return;
     auto* decoder = static_cast<audio::OpusAudioDecoder*>(handle);
-    if (!g_decoder_registry.unregister_handle(decoder)) {
-        return;
-    }
-    delete decoder;
+    g_decoder_store.release(decoder);
 }
 
 MOONSHINE_API int MOONSHINE_CONV moonshine_opus_decoder_decode_float(
@@ -646,10 +650,10 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_opus_decoder_decode_float(
     int32_t decode_fec
 ) {
     if (!handle || !out_pcm_samples || !out_samples_decoded) return 0;
-    auto* decoder = static_cast<audio::OpusAudioDecoder*>(handle);
-    if (!g_decoder_registry.is_valid(decoder)) return 0;
+    auto guard = g_decoder_store.acquire(static_cast<audio::OpusAudioDecoder*>(handle));
+    if (!guard) return 0;
     uint32_t decoded = 0;
-    if (!decoder->decode_float(opus_payload, payload_bytes, out_pcm_samples, max_samples, decoded, decode_fec)) {
+    if (!guard->decode_float(opus_payload, payload_bytes, out_pcm_samples, max_samples, decoded, decode_fec)) {
         return 0;
     }
     *out_samples_decoded = decoded;
@@ -666,10 +670,10 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_opus_decoder_decode_pcm16(
     int32_t decode_fec
 ) {
     if (!handle || !out_pcm_samples || !out_samples_decoded) return 0;
-    auto* decoder = static_cast<audio::OpusAudioDecoder*>(handle);
-    if (!g_decoder_registry.is_valid(decoder)) return 0;
+    auto guard = g_decoder_store.acquire(static_cast<audio::OpusAudioDecoder*>(handle));
+    if (!guard) return 0;
     uint32_t decoded = 0;
-    if (!decoder->decode_pcm16(opus_payload, payload_bytes, out_pcm_samples, max_samples, decoded, decode_fec)) {
+    if (!guard->decode_pcm16(opus_payload, payload_bytes, out_pcm_samples, max_samples, decoded, decode_fec)) {
         return 0;
     }
     *out_samples_decoded = decoded;
@@ -680,9 +684,9 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_opus_decoder_reset(
     MoonshineOpusDecoderHandle handle
 ) {
     if (!handle) return;
-    auto* decoder = static_cast<audio::OpusAudioDecoder*>(handle);
-    if (!g_decoder_registry.is_valid(decoder)) return;
-    decoder->reset();
+    auto guard = g_decoder_store.acquire(static_cast<audio::OpusAudioDecoder*>(handle));
+    if (!guard) return;
+    guard->reset();
 }
 
 MOONSHINE_API void MOONSHINE_CONV moonshine_opus_decoder_get_metrics(
@@ -695,10 +699,10 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_opus_decoder_get_metrics(
     uint32_t* out_streams_count
 ) {
     if (!handle) return;
-    auto* decoder = static_cast<audio::OpusAudioDecoder*>(handle);
-    if (!g_decoder_registry.is_valid(decoder)) return;
+    auto guard = g_decoder_store.acquire(static_cast<audio::OpusAudioDecoder*>(handle));
+    if (!guard) return;
     audio::OpusDecoderMetrics metrics{};
-    decoder->get_metrics(metrics);
+    guard->get_metrics(metrics);
     if (out_frames_decoded) *out_frames_decoded = metrics.total_frames_decoded;
     if (out_samples_decoded) *out_samples_decoded = metrics.total_samples_decoded;
     if (out_decode_errors) *out_decode_errors = metrics.decode_errors;

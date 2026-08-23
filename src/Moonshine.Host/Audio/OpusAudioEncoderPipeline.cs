@@ -8,6 +8,7 @@ namespace Moonshine.Host.Audio;
 /// Compresses 48kHz PCM audio into Opus frames across Stereo, Surround 5.1,
 /// and Surround 7.1 with sub-1ms encode latency and zero GC allocations.
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "CA2216:DisposableTypesShouldDeclareFinalizer", Justification = "Finaliser deliberately removed: native SafeHandleStore defers deallocation via shared_ptr, preventing GC-thread use-after-free on Opus encoder handles.")]
 public sealed class OpusAudioEncoderPipeline : IDisposable
 {
     private IntPtr _handle;
@@ -69,11 +70,6 @@ public sealed class OpusAudioEncoderPipeline : IDisposable
                 out _streamsCount
             );
         }
-    }
-
-    ~OpusAudioEncoderPipeline()
-    {
-        Dispose(false);
     }
 
     public unsafe bool TryEncode(

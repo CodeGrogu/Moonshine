@@ -7,13 +7,13 @@ This document tracks known runtime edge cases, concurrency hazards, and diagnost
 ## KI-001: Native `0xC0000005` Access Violation in Host Opus Audio Encoder Background Worker
 
 - **Subsystem**: `Moonshine.Host` / `Moonshine.Native` (Audio Capture & Opus Compression)
-- **Status**: Identified & Fortified (Tracking under Issue #27 / Issue #80)
+- **Status**: **Resolved** (Issue #80)
 - **Affected OS**: Windows 11 Pro x64 (Build 22000+)
 
 ### Triggering Test Cases
 - `MoonshineHostCoordinator_LifecycleAsync_TransitionsAndCleansUp` in [`tests/Moonshine.Host.Tests/HostCoordinatorTests.cs`](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/tests/Moonshine.Host.Tests/HostCoordinatorTests.cs)
 - `HostAudioPipeline_ConcurrentProcessAndDispose_IsThreadSafeAndClean` and `HostAudioPipeline_StartAndStop_BackgroundWorkerLifecycle` in [`tests/Moonshine.Host.Tests/HostAudioPipelineTests.cs`](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/tests/Moonshine.Host.Tests/HostAudioPipelineTests.cs)
-- **Execution Condition**: Occurs non-deterministically during full assembly test sweeps (e.g. `dotnet test tests/Moonshine.Host.Tests -c Release` or `scripts/verify_codebase.ps1`) when tests run in batch sequence without inter-process isolation.
+- **Execution Condition**: Previously occurred non-deterministically during full assembly test sweeps when tests ran in batch sequence without inter-process isolation. No longer reproducible after fix.
 
 ### Symptoms and Stack Trace
 ```text
@@ -27,19 +27,20 @@ Fatal error. 0xC0000005
 ```
 
 ### Technical Root Cause
-1. **Background Worker vs. Unmanaged Handle Lifetime**:
-   `MoonshineHostAudioPipeline` runs a background thread `AudioProcessingLoop` at 5 ms intervals. When a host session or coordinator drops an audio pipeline instance without explicit synchronous disposal, the .NET Garbage Collector collects the managed pipeline wrapper.
-2. **Asymmetric Finalization**:
-   The child `OpusAudioEncoderPipeline` defines a finalizer `~OpusAudioEncoderPipeline()` that immediately invokes `MoonshineNativeMethods.OpusEncoderDestroy(_handle)`. If the parent `MoonshineHostAudioPipeline` worker thread has not fully joined, it attempts to pass the destroyed native pointer to `OpusEncoderEncodeFloat`, causing an unmanaged access violation when C++ attempts to acquire `std::recursive_mutex` on freed heap memory.
-3. **Premature Synchronization Event Disposal**:
-   Disposing `ManualResetEventSlim` primitives (`_workerExitedEvent`, `_drainCompletedEvent`) inside `TeardownResourcesLocked()` while worker loops or concurrent caller threads are in `finally` blocks calling `.Set()` leads to `ObjectDisposedException` on background threads.
+1. **TOCTOU Race in Native Handle Registry (Primary)**:
+   The original `SafeHandleRegistry<T>` validated a pointer via `is_valid()` under a shared lock, then released the lock before the operation used the pointer. A concurrent `destroy` call could unregister and `delete` the handle between the validity check and the actual encode call, leaving the encoder with a dangling pointer.
+2. **Asymmetric Finalisation (Secondary)**:
+   The child `OpusAudioEncoderPipeline` defined a finaliser `~OpusAudioEncoderPipeline()` that invoked `MoonshineNativeMethods.OpusEncoderDestroy(_handle)` from the GC thread. If the parent `MoonshineHostAudioPipeline` worker thread had not fully joined, it attempted to pass the destroyed native pointer to `OpusEncoderEncodeFloat`.
+3. **GC-Thread Thread.Join() Deadlock Risk**:
+   `MoonshineHostAudioPipeline` defined a finaliser that called `Dispose()` which called `Stop()` which called `worker.Join()`. Calling `Thread.Join()` from the GC finaliser thread risks deadlock when the worker thread is waiting on a managed lock.
 
-### Resolution and Defensive Architecture
-1. **Defensive Worker Teardown & Event Safety**:
-   - `MoonshineHostAudioPipeline.Stop()` guarantees worker thread exit via bounded event wait and thread join (`worker.Join()`).
-   - Synchronization primitives are kept alive across teardown sweeps to eliminate `ObjectDisposedException`.
-   - `AudioProcessingLoop` catches `OperationCanceledException` and `ObjectDisposedException` during teardown unwinding.
-2. **Native Handle Registry Hardening**:
-   - Implement thread-safe global handle tables in `Moonshine.Native` (`SafeHandleRegistry<T>`) using `std::shared_mutex` so that native C-ABI exports safely reject stale or destroyed pointers with a zero return code rather than dereferencing invalid pointers.
+### Resolution
+1. **`SafeHandleStore<T>` with `shared_ptr` Reference Counting** (Native C++):
+   - Replaced `SafeHandleRegistry<T>` (TOCTOU-vulnerable `is_valid()` + `unordered_set`) with `SafeHandleStore<T>` (`acquire()` + `unordered_map<T*, shared_ptr<T>>`).
+   - `acquire()` returns a `shared_ptr` copy that keeps the handle alive for the duration of the caller's operation. `release()` removes the entry from the map, but the actual `delete` is deferred until the last `shared_ptr` guard goes out of scope.
+   - Applied to all encoder, decoder, and capture API exports.
+2. **Finaliser Removal** (Managed C#):
+   - Removed `~OpusAudioEncoderPipeline()` and `~MoonshineHostAudioPipeline()` finalisers. All production paths call `Dispose()` explicitly. The native `SafeHandleStore` now safely defers deallocation, eliminating the need for a GC-thread backstop.
+3. **Verification**: 5 consecutive full test sweeps (100 Host + 81 Interop per sweep) with zero crashes, zero aborts.
 
 ---
