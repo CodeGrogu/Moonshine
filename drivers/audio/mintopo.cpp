@@ -1,5 +1,18 @@
 #include "mintopo.hpp"
 
+#ifdef _KERNEL_MODE
+
+// The kernel-mode topology miniport (CMiniportTopologyMoonshine) is
+// implemented in adapter.cpp alongside the other PortCls COM objects.
+// This file is intentionally minimal in kernel mode; the topology node
+// descriptors and connection table are defined there.
+
+#else // !_KERNEL_MODE
+
+// ============================================================================
+// User-mode topology for test harness
+// ============================================================================
+
 CMiniportTopology::CMiniportTopology()
     : m_initialized(false)
 {
@@ -41,3 +54,5 @@ uint32_t CMiniportTopology::GetCapturePinCount()
 {
     return 1;
 }
+
+#endif // _KERNEL_MODE

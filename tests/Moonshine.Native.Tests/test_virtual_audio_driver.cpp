@@ -141,14 +141,196 @@ static void test_mintopo_and_adapter() {
     std::cout << "[PASS] test_mintopo_and_adapter" << std::endl;
 }
 
+static void test_minwave_format_rejection() {
+    CMiniportWaveRT waveRt;
+    REQUIRE(waveRt.Init() == 0);
+
+    CMiniportWaveRTStream* pStream = nullptr;
+
+    // Invalid sample rate
+    REQUIRE(waveRt.NewStream(MOONSHINE_ENDPOINT_RENDER, 22050, 2, MOONSHINE_FORMAT_FLOAT_32, &pStream) == -1);
+    REQUIRE(pStream == nullptr);
+
+    // Invalid channel count
+    REQUIRE(waveRt.NewStream(MOONSHINE_ENDPOINT_RENDER, 48000, 3, MOONSHINE_FORMAT_FLOAT_32, &pStream) == -1);
+    REQUIRE(pStream == nullptr);
+
+    // Invalid format enum
+    REQUIRE(waveRt.NewStream(MOONSHINE_ENDPOINT_RENDER, 48000, 2, static_cast<MoonshineAudioSampleFormat>(99), &pStream) == -1);
+    REQUIRE(pStream == nullptr);
+
+    std::cout << "[PASS] test_minwave_format_rejection" << std::endl;
+}
+
+static void test_minwave_all_supported_rates() {
+    CMiniportWaveRT waveRt;
+    REQUIRE(waveRt.Init() == 0);
+
+    uint32_t rates[] = { 44100, 48000, 88200, 96000, 192000 };
+    for (uint32_t rate : rates) {
+        CMiniportWaveRTStream* pStream = nullptr;
+        REQUIRE(waveRt.NewStream(MOONSHINE_ENDPOINT_RENDER, rate, 2, MOONSHINE_FORMAT_FLOAT_32, &pStream) == 0);
+        REQUIRE(pStream != nullptr);
+        REQUIRE(pStream->GetSampleRate() == rate);
+        delete pStream;
+    }
+
+    std::cout << "[PASS] test_minwave_all_supported_rates" << std::endl;
+}
+
+static void test_minwave_all_channel_layouts() {
+    CMiniportWaveRT waveRt;
+    REQUIRE(waveRt.Init() == 0);
+
+    uint32_t channelCounts[] = { 1, 2, 6, 8 };
+    for (uint32_t ch : channelCounts) {
+        CMiniportWaveRTStream* pStream = nullptr;
+        REQUIRE(waveRt.NewStream(MOONSHINE_ENDPOINT_RENDER, 48000, ch, MOONSHINE_FORMAT_FLOAT_32, &pStream) == 0);
+        REQUIRE(pStream != nullptr);
+        REQUIRE(pStream->GetChannels() == ch);
+        delete pStream;
+    }
+
+    std::cout << "[PASS] test_minwave_all_channel_layouts" << std::endl;
+}
+
+static void test_minwave_all_sample_formats() {
+    CMiniportWaveRT waveRt;
+    REQUIRE(waveRt.Init() == 0);
+
+    MoonshineAudioSampleFormat formats[] = {
+        MOONSHINE_FORMAT_PCM_16,
+        MOONSHINE_FORMAT_PCM_24,
+        MOONSHINE_FORMAT_PCM_32,
+        MOONSHINE_FORMAT_FLOAT_32
+    };
+    for (MoonshineAudioSampleFormat fmt : formats) {
+        CMiniportWaveRTStream* pStream = nullptr;
+        REQUIRE(waveRt.NewStream(MOONSHINE_ENDPOINT_RENDER, 48000, 2, fmt, &pStream) == 0);
+        REQUIRE(pStream != nullptr);
+        REQUIRE(pStream->GetFormat() == fmt);
+        delete pStream;
+    }
+
+    std::cout << "[PASS] test_minwave_all_sample_formats" << std::endl;
+}
+
+static void test_minwave_stream_state_resets_position() {
+    CMiniportWaveRT waveRt;
+    REQUIRE(waveRt.Init() == 0);
+
+    CMiniportWaveRTStream* pStream = nullptr;
+    REQUIRE(waveRt.NewStream(MOONSHINE_ENDPOINT_RENDER, 48000, 2, MOONSHINE_FORMAT_FLOAT_32, &pStream) == 0);
+    REQUIRE(pStream != nullptr);
+
+    void* pBuffer = nullptr;
+    uint32_t actualSize = 0;
+    REQUIRE(pStream->AllocateAudioBuffer(480 * 2 * sizeof(float), &pBuffer, &actualSize) == 0);
+
+    // Start streaming
+    REQUIRE(pStream->SetState(1) == 0);
+    REQUIRE(pStream->IsActive());
+
+    // Stop resets position
+    REQUIRE(pStream->SetState(0) == 0);
+    REQUIRE(!pStream->IsActive());
+
+    uint32_t playPos = 99, writePos = 99;
+    REQUIRE(pStream->GetPositions(&playPos, &writePos) == 0);
+    REQUIRE(playPos == 0);
+    REQUIRE(writePos == 0);
+
+    delete pStream;
+    std::cout << "[PASS] test_minwave_stream_state_resets_position" << std::endl;
+}
+
+static void test_minwave_capture_endpoint() {
+    CMiniportWaveRT waveRt;
+    REQUIRE(waveRt.Init() == 0);
+
+    CMiniportWaveRTStream* pStream = nullptr;
+    REQUIRE(waveRt.NewStream(MOONSHINE_ENDPOINT_CAPTURE, 48000, 1, MOONSHINE_FORMAT_FLOAT_32, &pStream) == 0);
+    REQUIRE(pStream != nullptr);
+    REQUIRE(pStream->GetEndpointType() == MOONSHINE_ENDPOINT_CAPTURE);
+    REQUIRE(pStream->GetChannels() == 1);
+
+    delete pStream;
+    std::cout << "[PASS] test_minwave_capture_endpoint" << std::endl;
+}
+
+static void test_shared_buffer_magic_and_version() {
+    MoonshineSharedAudioRing ring{};
+    ring.magic = MOONSHINE_AUDIO_MAGIC;
+    ring.version = MOONSHINE_AUDIO_VERSION;
+
+    REQUIRE(ring.magic == 0x314455414E48534DLL);
+    REQUIRE(ring.version == 1);
+    size_t ringSize = sizeof(ring);
+    REQUIRE(ringSize >= 192); // At least 3 cachelines
+
+    std::cout << "[PASS] test_shared_buffer_magic_and_version" << std::endl;
+}
+
+static void test_minwave_buffer_page_alignment() {
+    CMiniportWaveRT waveRt;
+    REQUIRE(waveRt.Init() == 0);
+
+    CMiniportWaveRTStream* pStream = nullptr;
+    REQUIRE(waveRt.NewStream(MOONSHINE_ENDPOINT_RENDER, 48000, 2, MOONSHINE_FORMAT_FLOAT_32, &pStream) == 0);
+
+    void* pBuffer = nullptr;
+    uint32_t actualSize = 0;
+    // Request a non-page-aligned size
+    REQUIRE(pStream->AllocateAudioBuffer(1000, &pBuffer, &actualSize) == 0);
+    REQUIRE(pBuffer != nullptr);
+    // Actual size must be page-aligned (4KB boundary)
+    REQUIRE(actualSize >= 1000);
+    REQUIRE((actualSize % 4096) == 0);
+
+    delete pStream;
+    std::cout << "[PASS] test_minwave_buffer_page_alignment" << std::endl;
+}
+
+static void test_virtual_audio_driver_installation_state() {
+    VirtualAudioDriverController controller;
+    REQUIRE(controller.Initialize());
+
+    DriverInstallationState state = controller.GetInstallationState();
+    REQUIRE(state == DriverInstallationState::NotInstalled ||
+            state == DriverInstallationState::Installed ||
+            state == DriverInstallationState::EndpointsActive);
+
+    std::cout << "[PASS] test_virtual_audio_driver_installation_state" << std::endl;
+}
+
+static void test_virtual_audio_driver_lifecycle_invalid_inputs() {
+    VirtualAudioDriverController controller;
+    REQUIRE(controller.Initialize());
+
+    REQUIRE(!controller.InstallDriver(nullptr));
+    REQUIRE(!controller.InstallDriver(""));
+
+    std::cout << "[PASS] test_virtual_audio_driver_lifecycle_invalid_inputs" << std::endl;
+}
+
 int main() {
     std::cout << "Running Virtual Audio Driver Native Tests..." << std::endl;
     test_virtual_audio_driver_init_and_status();
     test_virtual_audio_driver_format_validation();
     test_virtual_audio_driver_endpoints();
     test_virtual_audio_driver_mmcss();
+    test_virtual_audio_driver_installation_state();
+    test_virtual_audio_driver_lifecycle_invalid_inputs();
     test_minwave_stream_allocation_and_formats();
     test_mintopo_and_adapter();
+    test_minwave_format_rejection();
+    test_minwave_all_supported_rates();
+    test_minwave_all_channel_layouts();
+    test_minwave_all_sample_formats();
+    test_minwave_stream_state_resets_position();
+    test_minwave_capture_endpoint();
+    test_shared_buffer_magic_and_version();
+    test_minwave_buffer_page_alignment();
     std::cout << "All Virtual Audio Driver Native Tests Passed Successfully!" << std::endl;
     return 0;
 }

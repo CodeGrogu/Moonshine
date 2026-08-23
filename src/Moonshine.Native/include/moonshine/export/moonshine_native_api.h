@@ -626,6 +626,23 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_virtual_audio_driver_disable_mmcss(
     void* task_handle
 );
 
+MOONSHINE_API int MOONSHINE_CONV moonshine_virtual_audio_driver_get_installation_state(
+    MoonshineVirtualAudioDriverHandle handle
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_virtual_audio_driver_install(
+    MoonshineVirtualAudioDriverHandle handle,
+    const char* inf_path
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_virtual_audio_driver_remove(
+    MoonshineVirtualAudioDriverHandle handle
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_virtual_audio_driver_restart(
+    MoonshineVirtualAudioDriverHandle handle
+);
+
 // ============================================================================
 // Real-Time Shared Memory IPC Bridge APIs
 // ============================================================================

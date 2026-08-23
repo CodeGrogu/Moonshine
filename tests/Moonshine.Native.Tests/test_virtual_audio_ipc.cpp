@@ -281,6 +281,132 @@ void Test_NonOwnerMissingObjectFailsDeterministically() {
 }
 #endif
 
+void Test_RingBufferWraparound() {
+    std::cout << "[Test] VirtualAudioIpcChannel Ring Buffer Wraparound..." << std::endl;
+    VirtualAudioIpcChannel channel;
+    // Small ring buffer: 4 frames to force wraparound quickly
+    bool ok = channel.Initialize(MOONSHINE_ENDPOINT_RENDER, true, 48000, 2, MOONSHINE_FORMAT_FLOAT_32, 4);
+    REQUIRE(ok);
+
+    // Each frame is 10ms of stereo float32 = 480 * 2 * 4 = 3840 bytes
+    std::vector<float> src(480 * 2);
+    for (size_t i = 0; i < src.size(); ++i) {
+        src[i] = static_cast<float>(i) / static_cast<float>(src.size());
+    }
+
+    // Write 3 frames, read 3 frames, write 3 more (forces wraparound)
+    for (int batch = 0; batch < 2; ++batch) {
+        for (int frame = 0; frame < 3; ++frame) {
+            size_t written = channel.WritePcm(src.data(), src.size() * sizeof(float));
+            REQUIRE(written == src.size() * sizeof(float));
+        }
+
+        std::vector<float> dst(480 * 2, 0.0f);
+        for (int frame = 0; frame < 3; ++frame) {
+            size_t read = channel.ReadPcm(dst.data(), dst.size() * sizeof(float));
+            REQUIRE(read == dst.size() * sizeof(float));
+            // Verify first and last sample match source
+            REQUIRE(std::fabs(dst[0] - src[0]) < 1e-5f);
+            REQUIRE(std::fabs(dst[dst.size() - 1] - src[src.size() - 1]) < 1e-5f);
+        }
+    }
+
+    channel.Close();
+    std::cout << "[Pass] VirtualAudioIpcChannel Ring Buffer Wraparound." << std::endl;
+}
+
+void Test_MultipleFormatConfigurations() {
+    std::cout << "[Test] VirtualAudioIpcChannel Multiple Format Configurations..." << std::endl;
+
+    struct TestConfig {
+        uint32_t sampleRate;
+        uint32_t channels;
+        MoonshineAudioSampleFormat format;
+    };
+
+    TestConfig configs[] = {
+        { 44100, 1, MOONSHINE_FORMAT_PCM_16 },
+        { 48000, 2, MOONSHINE_FORMAT_FLOAT_32 },
+        { 96000, 6, MOONSHINE_FORMAT_PCM_32 },
+        { 192000, 8, MOONSHINE_FORMAT_PCM_24 },
+    };
+
+    for (const auto& cfg : configs) {
+        VirtualAudioIpcChannel channel;
+        bool ok = channel.Initialize(MOONSHINE_ENDPOINT_RENDER, true, cfg.sampleRate, cfg.channels, cfg.format, 4);
+        REQUIRE(ok);
+        REQUIRE(channel.IsConnected());
+        REQUIRE(channel.GetAvailableReadBytes() == 0);
+        REQUIRE(channel.GetAvailableWriteBytes() > 0);
+        channel.Close();
+    }
+
+    std::cout << "[Pass] VirtualAudioIpcChannel Multiple Format Configurations." << std::endl;
+}
+
+void Test_BridgeDisconnectedRenderUnderrunTracking() {
+    std::cout << "[Test] VirtualAudioIpcBridge Disconnected Render Underrun Tracking..." << std::endl;
+    VirtualAudioIpcBridge bridge;
+    bool ok = bridge.Initialize(true, 48000, 2);
+    // Bridge may partially connect (capture channel uses heap fallback)
+    (void)ok;
+
+    std::vector<float> renderBuf(960, 0.0f);
+    // Multiple reads without a render channel owner should count underruns
+    for (int i = 0; i < 3; ++i) {
+        bridge.ReadRenderPcm(renderBuf.data(), renderBuf.size());
+    }
+
+    VirtualAudioIpcMetrics metrics = bridge.GetMetrics();
+    REQUIRE(metrics.renderUnderruns >= 3);
+
+    // Verify silence fill
+    for (float sample : renderBuf) {
+        REQUIRE(sample == 0.0f);
+    }
+
+    bridge.Shutdown();
+    std::cout << "[Pass] VirtualAudioIpcBridge Disconnected Render Underrun Tracking." << std::endl;
+}
+
+void Test_AvailableBytesAccounting() {
+    std::cout << "[Test] VirtualAudioIpcChannel Available Bytes Accounting..." << std::endl;
+    VirtualAudioIpcChannel channel;
+    bool ok = channel.Initialize(MOONSHINE_ENDPOINT_CAPTURE, true, 48000, 2, MOONSHINE_FORMAT_FLOAT_32, 8);
+    REQUIRE(ok);
+
+    uint32_t initialWrite = channel.GetAvailableWriteBytes();
+    uint32_t initialRead = channel.GetAvailableReadBytes();
+    REQUIRE(initialRead == 0);
+    REQUIRE(initialWrite > 0);
+
+    // Write one frame
+    std::vector<float> frame(480 * 2, 0.25f);
+    size_t written = channel.WritePcm(frame.data(), frame.size() * sizeof(float));
+    REQUIRE(written == frame.size() * sizeof(float));
+
+    uint32_t afterWriteRead = channel.GetAvailableReadBytes();
+    uint32_t afterWriteWrite = channel.GetAvailableWriteBytes();
+    REQUIRE(afterWriteRead == static_cast<uint32_t>(frame.size() * sizeof(float)));
+    REQUIRE(afterWriteWrite < initialWrite);
+
+    // Read it back
+    std::vector<float> readBuf(480 * 2, 0.0f);
+    size_t bytesRead = channel.ReadPcm(readBuf.data(), readBuf.size() * sizeof(float));
+    REQUIRE(bytesRead == readBuf.size() * sizeof(float));
+
+    uint32_t afterReadRead = channel.GetAvailableReadBytes();
+    REQUIRE(afterReadRead == 0);
+
+    // Verify data integrity
+    for (size_t i = 0; i < frame.size(); ++i) {
+        REQUIRE(std::fabs(readBuf[i] - 0.25f) < 1e-5f);
+    }
+
+    channel.Close();
+    std::cout << "[Pass] VirtualAudioIpcChannel Available Bytes Accounting." << std::endl;
+}
+
 int main() {
     std::cout << "==========================================================" << std::endl;
     std::cout << "Moonshine Virtual Audio Shared Memory IPC Test Suite" << std::endl;
@@ -296,6 +422,10 @@ int main() {
     Test_KernelObjectSecurityDacl();
     Test_NonOwnerMissingObjectFailsDeterministically();
 #endif
+    Test_RingBufferWraparound();
+    Test_MultipleFormatConfigurations();
+    Test_BridgeDisconnectedRenderUnderrunTracking();
+    Test_AvailableBytesAccounting();
 
     std::cout << "[+] All Virtual Audio Shared Memory IPC Tests Passed Successfully!" << std::endl;
     return 0;

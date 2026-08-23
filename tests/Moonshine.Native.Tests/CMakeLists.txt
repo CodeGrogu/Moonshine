@@ -116,7 +116,7 @@ add_executable(test_virtual_audio_driver
     ${CMAKE_SOURCE_DIR}/drivers/audio/mintopo.cpp
     ${CMAKE_SOURCE_DIR}/drivers/audio/adapter.cpp
 )
-target_link_libraries(test_virtual_audio_driver PRIVATE Moonshine.Native $<$<BOOL:${WIN32}>:avrt>)
+target_link_libraries(test_virtual_audio_driver PRIVATE Moonshine.Native $<$<BOOL:${WIN32}>:avrt> $<$<BOOL:${WIN32}>:setupapi>)
 add_test(NAME test_virtual_audio_driver COMMAND test_virtual_audio_driver)
 
 add_executable(test_virtual_audio_ipc

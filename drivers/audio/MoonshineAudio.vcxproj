@@ -19,7 +19,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{4D36E96C-E325-11CE-BFC1-08002BE10318}</ProjectGuid>
+    <ProjectGuid>{B7A3E5D1-4C2F-48A9-91E6-3D5F8A0B2C7E}</ProjectGuid>
     <TemplateGuid>{1bc93793-694f-48fe-9372-81e2b05556fd}</TemplateGuid>
     <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
     <MinimumVisualStudioVersion>12.0</MinimumVisualStudioVersion>
@@ -51,8 +51,14 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="adapter.cpp" />
+    <ClCompile Include="driver_entry.cpp" />
     <ClCompile Include="mintopo.cpp" />
     <ClCompile Include="minwave.cpp" />
   </ItemGroup>
+  <ItemDefinitionGroup>
+    <Link>
+      <AdditionalDependencies>portcls.lib;drmk.lib;ksecdd.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

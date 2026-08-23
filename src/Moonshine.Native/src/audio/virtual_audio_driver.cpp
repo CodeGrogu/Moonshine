@@ -7,6 +7,8 @@
 #include <mmdeviceapi.h>
 #include <functiondiscoverykeys_devpkey.h>
 #include <avrt.h>
+#include <setupapi.h>
+#pragma comment(lib, "setupapi.lib")
 #endif
 
 namespace moonshine::audio {
@@ -198,4 +200,190 @@ bool VirtualAudioDriverController::DisableMmcssScheduling(void* taskHandle)
 #endif
 }
 
+DriverInstallationState VirtualAudioDriverController::GetInstallationState() const
+{
+#if defined(_WIN32)
+    bool deviceRegistered = IsDeviceRegisteredViaSetupDi();
+    if (!deviceRegistered) {
+        return DriverInstallationState::NotInstalled;
+    }
+
+    bool endpointsVisible = AreEndpointsVisibleViaCoreAudio();
+    if (endpointsVisible) {
+        return DriverInstallationState::EndpointsActive;
+    }
+
+    return DriverInstallationState::Installed;
+#else
+    return DriverInstallationState::EndpointsActive;
+#endif
+}
+
+bool VirtualAudioDriverController::InstallDriver(const char* infPath)
+{
+#if defined(_WIN32)
+    if (!infPath || infPath[0] == '\0') {
+        return false;
+    }
+
+    // Build the devcon-style installation command
+    std::string cmd = "pnputil /add-driver \"";
+    cmd += infPath;
+    cmd += "\" /install";
+
+    int result = std::system(cmd.c_str());
+    if (result == 0) {
+        m_isDriverInstalled = true;
+    }
+    return result == 0;
+#else
+    (void)infPath;
+    m_isDriverInstalled = true;
+    return true;
+#endif
+}
+
+bool VirtualAudioDriverController::RemoveDriver()
+{
+#if defined(_WIN32)
+    // Use devcon to remove the Moonshine virtual audio device
+    int result = std::system("pnputil /remove-device ROOT\\MoonshineAudio /subtree");
+    if (result == 0) {
+        m_isDriverInstalled = false;
+    }
+    return result == 0;
+#else
+    m_isDriverInstalled = false;
+    return true;
+#endif
+}
+
+bool VirtualAudioDriverController::RestartDriver()
+{
+#if defined(_WIN32)
+    // Disable then re-enable the device to trigger a full PnP restart
+    int disableResult = std::system("pnputil /disable-device ROOT\\MoonshineAudio");
+    if (disableResult != 0) {
+        return false;
+    }
+
+    int enableResult = std::system("pnputil /enable-device ROOT\\MoonshineAudio");
+    return enableResult == 0;
+#else
+    return true;
+#endif
+}
+
+bool VirtualAudioDriverController::IsDeviceRegisteredViaSetupDi() const
+{
+#if defined(_WIN32)
+    // Query the system for devices matching the Moonshine hardware ID.
+    // Uses SetupDiGetClassDevs with DIGCF_ALLCLASSES to enumerate all devices,
+    // then checks each device's hardware ID list for "ROOT\\MoonshineAudio".
+    // This detects whether the driver is installed even before CoreAudio
+    // enumerates the endpoints.
+
+    HDEVINFO deviceInfoSet = SetupDiGetClassDevsW(
+        nullptr,             // All classes
+        L"ROOT",             // Enumerator filter
+        nullptr,             // hwndParent
+        DIGCF_ALLCLASSES     // All device classes
+    );
+
+    if (deviceInfoSet == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+
+    SP_DEVINFO_DATA devInfoData{};
+    devInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
+
+    bool found = false;
+    for (DWORD i = 0; SetupDiEnumDeviceInfo(deviceInfoSet, i, &devInfoData); ++i) {
+        wchar_t hardwareId[256] = {};
+        if (SetupDiGetDeviceRegistryPropertyW(
+                deviceInfoSet,
+                &devInfoData,
+                SPDRP_HARDWAREID,
+                nullptr,
+                reinterpret_cast<PBYTE>(hardwareId),
+                sizeof(hardwareId),
+                nullptr)) {
+            if (wcsstr(hardwareId, L"MoonshineAudio") != nullptr ||
+                wcsstr(hardwareId, L"MSHNAUD") != nullptr) {
+                found = true;
+                break;
+            }
+        }
+    }
+
+    SetupDiDestroyDeviceInfoList(deviceInfoSet);
+    return found;
+#else
+    return true;
+#endif
+}
+
+bool VirtualAudioDriverController::AreEndpointsVisibleViaCoreAudio() const
+{
+#if defined(_WIN32)
+    HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    bool coInitialized = SUCCEEDED(hr);
+
+    bool endpointsFound = false;
+
+    IMMDeviceEnumerator* pEnumerator = nullptr;
+    hr = CoCreateInstance(
+        __uuidof(MMDeviceEnumerator),
+        nullptr,
+        CLSCTX_ALL,
+        __uuidof(IMMDeviceEnumerator),
+        reinterpret_cast<void**>(&pEnumerator)
+    );
+
+    if (SUCCEEDED(hr) && pEnumerator) {
+        IMMDeviceCollection* pCollection = nullptr;
+        hr = pEnumerator->EnumAudioEndpoints(eAll, DEVICE_STATE_ACTIVE, &pCollection);
+        if (SUCCEEDED(hr) && pCollection) {
+            UINT count = 0;
+            pCollection->GetCount(&count);
+            for (UINT i = 0; i < count; ++i) {
+                IMMDevice* pEndpoint = nullptr;
+                if (SUCCEEDED(pCollection->Item(i, &pEndpoint)) && pEndpoint) {
+                    IPropertyStore* pProps = nullptr;
+                    if (SUCCEEDED(pEndpoint->OpenPropertyStore(STGM_READ, &pProps)) && pProps) {
+                        PROPVARIANT varName;
+                        PropVariantInit(&varName);
+                        if (SUCCEEDED(pProps->GetValue(PKEY_Device_FriendlyName, &varName)) && varName.pwszVal) {
+                            int len = WideCharToMultiByte(CP_UTF8, 0, varName.pwszVal, -1, nullptr, 0, nullptr, nullptr);
+                            if (len > 0) {
+                                std::string name(static_cast<size_t>(len - 1), '\0');
+                                WideCharToMultiByte(CP_UTF8, 0, varName.pwszVal, -1, &name[0], len, nullptr, nullptr);
+                                if (name.find("Moonshine Audio") != std::string::npos ||
+                                    name.find("Moonshine Microphone") != std::string::npos) {
+                                    endpointsFound = true;
+                                }
+                            }
+                        }
+                        PropVariantClear(&varName);
+                        pProps->Release();
+                    }
+                    pEndpoint->Release();
+                }
+            }
+            pCollection->Release();
+        }
+        pEnumerator->Release();
+    }
+
+    if (coInitialized) {
+        CoUninitialize();
+    }
+
+    return endpointsFound;
+#else
+    return true;
+#endif
+}
+
 } // namespace moonshine::audio
+

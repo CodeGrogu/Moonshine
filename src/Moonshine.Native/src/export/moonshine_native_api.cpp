@@ -933,6 +933,39 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_virtual_audio_driver_disable_mmcss(
     return controller->DisableMmcssScheduling(task_handle) ? 1 : 0;
 }
 
+MOONSHINE_API int MOONSHINE_CONV moonshine_virtual_audio_driver_get_installation_state(
+    MoonshineVirtualAudioDriverHandle handle
+) {
+    if (!handle) return static_cast<int>(audio::DriverInstallationState::Error);
+    auto* controller = static_cast<audio::VirtualAudioDriverController*>(handle);
+    return static_cast<int>(controller->GetInstallationState());
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_virtual_audio_driver_install(
+    MoonshineVirtualAudioDriverHandle handle,
+    const char* inf_path
+) {
+    if (!handle || !inf_path) return 0;
+    auto* controller = static_cast<audio::VirtualAudioDriverController*>(handle);
+    return controller->InstallDriver(inf_path) ? 1 : 0;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_virtual_audio_driver_remove(
+    MoonshineVirtualAudioDriverHandle handle
+) {
+    if (!handle) return 0;
+    auto* controller = static_cast<audio::VirtualAudioDriverController*>(handle);
+    return controller->RemoveDriver() ? 1 : 0;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_virtual_audio_driver_restart(
+    MoonshineVirtualAudioDriverHandle handle
+) {
+    if (!handle) return 0;
+    auto* controller = static_cast<audio::VirtualAudioDriverController*>(handle);
+    return controller->RestartDriver() ? 1 : 0;
+}
+
 // ============================================================================
 // Real-Time Shared Memory IPC Bridge APIs
 // ============================================================================

@@ -48,5 +48,6 @@ if(WIN32)
         ole32
         mmdevapi
         avrt
+        setupapi
     )
 endif()

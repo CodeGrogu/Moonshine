@@ -36,7 +36,7 @@ MoonshineAudio.sys = 222
 
 [MoonshineAudio_Device.NT]
 Include=ks.inf, wdmaudio.inf
-Needs=KS.Registration, WDMAUDIO.Registration, SysVad.Registration
+Needs=KS.Registration, WDMAUDIO.Registration
 CopyFiles=MoonshineAudio.CopyList
 AddReg=MoonshineAudio.AddReg
 

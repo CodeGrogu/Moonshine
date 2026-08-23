@@ -37,7 +37,7 @@ This document tracks known platform limitations, environment requirements, and c
 - **Physical Bitstream Decoding**: In Progress / Fail-Closed. Real bitstream buffer submission and device loss recovery are operational on supported physical GPU hardware and fail closed gracefully without synthetic success paths.
 
 ### Dedicated Virtual Audio Driver (WaveRT Miniport)
-- **Status**: Verified (C-ABI bridge, PortCls WaveRT driver package, and Shared Memory IPC pipeline passing in software test harnesses). Real-device PnP deployment requires WHQL attestation or Windows Test-Signing mode.
+- **Status**: Prototype (Rule 8). The PortCls WaveRT driver package source (`drivers/audio/`), user-mode C-ABI bridge (`VirtualAudioDriverController`), and Shared Memory IPC pipeline (`VirtualAudioIpcBridge`) with strict DACL kernel security are fully implemented and verified in software test suites. Compilation of the binary `MoonshineAudio.sys` driver package requires the Windows Driver Kit (WDK), and live Windows PnP installation requires Windows Test-Signing mode (`bcdedit /set TESTSIGNING ON`) or WHQL production signing. Full architectural documentation and deployment procedures are registered in `docs/AUDIO_DRIVER.md`.
 
 ### GameStream/Sunshine Video Packet Interoperability
 - **Status**: Prototype. The RTP ingestion path now parses the documented raw packet layout: RTP, four reserved bytes, and the 16-byte `NV_VIDEO_PACKET` header. It preserves the actual stream packet index and keeps packets out of `JitterBuffer` until a protocol-aware frame/FEC assembly stage derives packet counts.

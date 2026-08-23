@@ -5,6 +5,32 @@ using Moonshine.Interop;
 namespace Moonshine.Host.Audio;
 
 /// <summary>
+/// Represents the installation and endpoint readiness state of the virtual audio driver.
+/// </summary>
+public enum DriverInstallationState
+{
+    /// <summary>
+    /// The driver package is not registered with the operating system.
+    /// </summary>
+    NotInstalled = 0,
+
+    /// <summary>
+    /// The driver package is installed in the device tree but endpoints are not yet active in CoreAudio.
+    /// </summary>
+    Installed = 1,
+
+    /// <summary>
+    /// The driver is installed and endpoints (render and capture) are active and selectable by audio clients.
+    /// </summary>
+    EndpointsActive = 2,
+
+    /// <summary>
+    /// An error occurred while inspecting driver installation state.
+    /// </summary>
+    Error = 3
+}
+
+/// <summary>
 /// Managed coordinator and service for querying, verifying, and configuring
 /// the dedicated Moonshine Windows Virtual Audio Driver (PortCls WaveRT miniport).
 /// </summary>
@@ -107,6 +133,50 @@ public sealed class VirtualAudioDriverService : IDisposable
         ThrowIfDisposed();
         int result = MoonshineNativeMethods.VirtualAudioDriverDisableMmcss(_handle, taskHandle);
         return result != 0;
+    }
+
+    /// <summary>
+    /// Queries the detailed installation and endpoint readiness state of the virtual audio driver.
+    /// </summary>
+    public DriverInstallationState GetInstallationState()
+    {
+        ThrowIfDisposed();
+        int state = MoonshineNativeMethods.VirtualAudioDriverGetInstallationState(_handle);
+        return state switch
+        {
+            0 => DriverInstallationState.NotInstalled,
+            1 => DriverInstallationState.Installed,
+            2 => DriverInstallationState.EndpointsActive,
+            _ => DriverInstallationState.Error
+        };
+    }
+
+    /// <summary>
+    /// Attempts to register and install the driver package via its INF configuration file.
+    /// </summary>
+    public bool TryInstallDriver(string infPath)
+    {
+        ThrowIfDisposed();
+        ArgumentException.ThrowIfNullOrWhiteSpace(infPath);
+        return MoonshineNativeMethods.VirtualAudioDriverInstall(_handle, infPath) != 0;
+    }
+
+    /// <summary>
+    /// Attempts to remove the virtual audio device from the operating system device tree.
+    /// </summary>
+    public bool TryRemoveDriver()
+    {
+        ThrowIfDisposed();
+        return MoonshineNativeMethods.VirtualAudioDriverRemove(_handle) != 0;
+    }
+
+    /// <summary>
+    /// Restarts the virtual audio device to reset its hardware state or reload parameters.
+    /// </summary>
+    public bool TryRestartDriver()
+    {
+        ThrowIfDisposed();
+        return MoonshineNativeMethods.VirtualAudioDriverRestart(_handle) != 0;
     }
 
     private void ThrowIfDisposed()

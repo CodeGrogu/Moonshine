@@ -540,6 +540,22 @@ public static unsafe partial class MoonshineNativeMethods
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int VirtualAudioDriverDisableMmcss(IntPtr handle, IntPtr taskHandle);
 
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_virtual_audio_driver_get_installation_state")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int VirtualAudioDriverGetInstallationState(IntPtr handle);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_virtual_audio_driver_install", StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int VirtualAudioDriverInstall(IntPtr handle, string infPath);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_virtual_audio_driver_remove")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int VirtualAudioDriverRemove(IntPtr handle);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_virtual_audio_driver_restart")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int VirtualAudioDriverRestart(IntPtr handle);
+
     // ========================================================================
     // Real-Time Shared Memory IPC Bridge APIs
     // ========================================================================
