@@ -101,66 +101,19 @@ public sealed class ExplicitDisposalContractTests
     }
 
     [Fact]
-    public void HardwareVideoEncoderPipeline_ExplicitDisposalContract_GCImmunityAndIdempotence()
+    public void UnifiedHardwareEncoderEngine_ExplicitDisposalContract_GCImmunityAndIdempotence()
     {
         for (int i = 0; i < 5; i++)
         {
-            var encoder = new HardwareVideoEncoderPipeline(1920, 1080, 60, 5000, 10000, VideoCodec.H264, RateControlMode.ConstantBitrate, EncoderVendor.Auto);
-            encoder.Dispose();
-            encoder.Dispose();
+            var engine = new UnifiedHardwareEncoderEngine(1920, 1080);
+            engine.Dispose();
+            engine.Dispose();
 
             GC.Collect();
             GC.WaitForPendingFinalizers();
 
-            encoder.TryEncodeFrame(IntPtr.Zero, false, out _, new byte[1024], out _).Should().BeFalse();
-        }
-    }
-
-    [Fact]
-    public void AmfHardwareEncoderPipeline_ExplicitDisposalContract_GCImmunityAndIdempotence()
-    {
-        for (int i = 0; i < 5; i++)
-        {
-            var amf = new AmfHardwareEncoderPipeline(1920, 1080);
-            amf.Dispose();
-            amf.Dispose();
-
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
-
-            amf.TryEncodeFrame(IntPtr.Zero, false, out _, new byte[1024], out _).Should().BeFalse();
-        }
-    }
-
-    [Fact]
-    public void NvencHardwareEncoderPipeline_ExplicitDisposalContract_GCImmunityAndIdempotence()
-    {
-        for (int i = 0; i < 5; i++)
-        {
-            var nvenc = new NvencHardwareEncoderPipeline(1920, 1080);
-            nvenc.Dispose();
-            nvenc.Dispose();
-
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
-
-            nvenc.TryEncodeFrame(IntPtr.Zero, false, out _, new byte[1024], out _).Should().BeFalse();
-        }
-    }
-
-    [Fact]
-    public void QsvHardwareEncoderPipeline_ExplicitDisposalContract_GCImmunityAndIdempotence()
-    {
-        for (int i = 0; i < 5; i++)
-        {
-            var qsv = new QsvHardwareEncoderPipeline(1920, 1080);
-            qsv.Dispose();
-            qsv.Dispose();
-
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
-
-            qsv.TryEncodeFrame(IntPtr.Zero, false, out _, new byte[1024], out _).Should().BeFalse();
+            engine.IsActive.Should().BeFalse();
+            engine.TryEncodeFrame(IntPtr.Zero, false, out _, new byte[1024], out _).Should().BeFalse();
         }
     }
 

@@ -277,18 +277,26 @@ BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
 BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
 .NET SDK 10.0.400 / Host: .NET 9.0.16 (9.0.1626.22923), X64 RyuJIT AVX-512F+CD+BW+DQ+VL+VBMI
 
-| Method                             | Mean Latency | Error    | StdDev   | Ratio | Allocated Memory |
-| :--------------------------------- | -----------: | -------: | -------: | ----: | ---------------: |
-| SelectSource_PrimaryDisplayPolicy  |     15.84 ns | 0.543 ns | 1.593 ns |  1.00 |              0 B |
-| SelectSource_SpecificIndexPolicy   |     32.84 ns | 0.826 ns | 2.408 ns |  2.09 |              0 B |
-| SelectSource_SpecificHandlePolicy  |     32.58 ns | 1.022 ns | 3.012 ns |  2.08 |              0 B |
-| SelectSource_SpecificDevicePolicy  |     39.09 ns | 1.684 ns | 4.966 ns |  2.49 |              0 B |
-| SelectSource_MatchResolutionPolicy |     50.86 ns | 1.483 ns | 4.373 ns |  3.24 |              0 B |
-| SelectSource_FallbackPolicy        |     39.90 ns | 0.971 ns | 2.834 ns |  2.54 |              0 B |
+| Method                                                     | Mean Latency | Error    | StdDev   | Ratio | Allocated Memory |
+| :--------------------------------------------------------- | -----------: | -------: | -------: | ----: | ---------------: |
+| SelectSource_PrimaryDisplayPolicy                          |     15.27 ns | 0.677 ns | 1.995 ns |  1.00 |              0 B |
+| SelectSource_SpecificIndexPolicy                           |     30.71 ns | 0.654 ns | 1.213 ns |  2.04 |              0 B |
+| SelectSource_SpecificHandlePolicy                          |     30.89 ns | 0.646 ns | 1.320 ns |  2.06 |              0 B |
+| SelectSource_SpecificDevicePolicy                          |     35.64 ns | 1.103 ns | 3.184 ns |  2.37 |              0 B |
+| SelectSource_MatchResolutionPolicy                         |     40.63 ns | 0.596 ns | 0.498 ns |  2.70 |              0 B |
+| SelectSource_FallbackPolicy                                |     31.90 ns | 0.616 ns | 0.659 ns |  2.12 |              0 B |
+| SelectSource_ComplexTopology_PrimaryDisplayPolicy          |     11.68 ns | 0.225 ns | 0.211 ns |  0.78 |              0 B |
+| SelectSource_ComplexTopology_SpecificIndexPolicy           |     48.61 ns | 0.967 ns | 2.142 ns |  3.23 |              0 B |
+| SelectSource_ComplexTopology_MatchResolution_DiscreteGpu   |     99.61 ns | 2.021 ns | 4.035 ns |  6.63 |              0 B |
+| SelectSource_ComplexTopology_MatchResolution_StrictHdr     |     81.44 ns | 1.661 ns | 1.977 ns |  5.42 |              0 B |
+| SelectSource_ComplexTopology_MatchResolution_RotatedPortrait |  101.05 ns | 2.017 ns | 2.551 ns |  6.72 |              0 B |
+| SelectSource_ComplexTopology_MatchResolution_NegativeBounds |   102.85 ns | 2.086 ns | 2.784 ns |  6.84 |              0 B |
+| SelectSource_ComplexTopology_FallbackPolicy                |     74.71 ns | 1.502 ns | 2.106 ns |  4.97 |              0 B |
 ```
 
 > [!NOTE]
-> **Measurement Semantics & Design Invariants**: Capture source selection operates deterministically in 15 to 51 nanoseconds with strictly **0 B** heap allocations (`readonly record struct CaptureSourceSelectionResult` and pre-allocated `DisplayOutputInfo.Descriptor`). Non-HDR displays are strictly skipped when `RequireHdr = true`. 5-stage deterministic tie-breaking eliminates array order dependencies. Display topology changes are monitored via asynchronous Win32 `SystemEvents.DisplaySettingsChanged` notifications, completely decoupled from the frame acquisition and encoding hot paths.
+> **Measurement Semantics & Design Invariants**: Capture source selection operates deterministically across heterogeneous multi-monitor, multi-adapter Windows topologies (8 displays, 3 GPU adapters with mixed HDR/SDR, rotated portrait 90 deg, inverted 180 deg, negative coordinates, duplicate resolutions, and detached outputs) in 11 to 102 nanoseconds with strictly **0 B** heap allocations (`readonly record struct CaptureSourceSelectionResult` and pre-allocated `DisplayOutputInfo.Descriptor`). Non-HDR displays are strictly skipped when `RequireHdr = true`. 5-stage deterministic tie-breaking eliminates array order dependencies.
+
 
 
 
