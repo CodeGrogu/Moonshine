@@ -6,7 +6,8 @@ public enum CaptureSelectionPolicy
     SpecificDisplayIndex = 1,
     SpecificMonitorHandle = 2,
     SpecificDeviceName = 3,
-    MatchResolution = 4
+    MatchResolution = 4,
+    RequireExactResolution = 5
 }
 
 public enum CaptureSourceFallbackPolicy
@@ -219,6 +220,73 @@ public static class CaptureSourceSelector
                                     if (string.CompareOrdinal(d.DeviceName, candidate.DeviceName) < 0)
                                     {
                                         candidate = d;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                break;
+
+            case CaptureSelectionPolicy.RequireExactResolution:
+                double bestFpsDiff = double.MaxValue;
+                for (int i = 0; i < topology.Displays.Count; i++)
+                {
+                    var d = topology.Displays[i];
+                    if (!d.IsAttachedToDesktop) continue;
+
+                    // Hard requirement: exact resolution match
+                    if (d.Width != criteria.TargetWidth || d.Height != criteria.TargetHeight)
+                    {
+                        continue;
+                    }
+
+                    // Hard requirement: if RequireHdr is requested, non-HDR displays are strictly skipped
+                    if (criteria.RequireHdr && !d.IsHdr)
+                    {
+                        continue;
+                    }
+
+                    double fpsDiff = Math.Abs(d.RefreshRateHz - criteria.TargetFps);
+
+                    if (candidate == null || fpsDiff < bestFpsDiff - 1e-6)
+                    {
+                        bestFpsDiff = fpsDiff;
+                        candidate = d;
+                    }
+                    else if (Math.Abs(fpsDiff - bestFpsDiff) <= 1e-6)
+                    {
+                        // Explicit deterministic tie-breaking:
+                        // 1. FPS proximity (already tied)
+                        // 2. Primary display preferred
+                        // 3. Lower AdapterIndex
+                        // 4. Lower DisplayIndex
+                        // 5. Ordinal DeviceName comparison
+                        if (d.IsPrimary && !candidate.IsPrimary)
+                        {
+                            candidate = d;
+                            bestFpsDiff = fpsDiff;
+                        }
+                        else if (d.IsPrimary == candidate.IsPrimary)
+                        {
+                            if (d.AdapterIndex < candidate.AdapterIndex)
+                            {
+                                candidate = d;
+                                bestFpsDiff = fpsDiff;
+                            }
+                            else if (d.AdapterIndex == candidate.AdapterIndex)
+                            {
+                                if (d.DisplayIndex < candidate.DisplayIndex)
+                                {
+                                    candidate = d;
+                                    bestFpsDiff = fpsDiff;
+                                }
+                                else if (d.DisplayIndex == candidate.DisplayIndex)
+                                {
+                                    if (string.CompareOrdinal(d.DeviceName, candidate.DeviceName) < 0)
+                                    {
+                                        candidate = d;
+                                        bestFpsDiff = fpsDiff;
                                     }
                                 }
                             }

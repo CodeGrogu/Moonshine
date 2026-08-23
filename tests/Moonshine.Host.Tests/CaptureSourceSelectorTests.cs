@@ -733,4 +733,477 @@ public class CaptureSourceSelectorTests
         long bytesAfter = GC.GetAllocatedBytesForCurrentThread();
         (bytesAfter - bytesBefore).Should().Be(0);
     }
+
+    [Fact]
+    public void SelectSource_WithRequireExactResolution_SelectsExactMatchingDisplay()
+    {
+        var topology = CreateMockTopology();
+        var criteria = new CaptureSourceSelectionCriteria(
+            Policy: CaptureSelectionPolicy.RequireExactResolution,
+            TargetWidth: 1920,
+            TargetHeight: 1080,
+            TargetFps: 60.0
+        );
+
+        var result = CaptureSourceSelector.SelectSource(topology, criteria);
+
+        result.IsSuccess.Should().BeTrue();
+        result.IsFallback.Should().BeFalse();
+        result.Source.Should().NotBeNull();
+        result.Source!.Width.Should().Be(1920);
+        result.Source.Height.Should().Be(1080);
+        result.Source.OutputIndex.Should().Be(1);
+        result.Source.DeviceName.Should().Be("\\\\.\\DISPLAY2");
+    }
+
+    [Fact]
+    public void SelectSource_WithRequireExactResolution_WhenNoExactMatch_WithFallbackToPrimary_ReturnsFallback()
+    {
+        var topology = CreateMockTopology();
+        var criteria = new CaptureSourceSelectionCriteria(
+            Policy: CaptureSelectionPolicy.RequireExactResolution,
+            TargetWidth: 2560,
+            TargetHeight: 1440,
+            FallbackPolicy: CaptureSourceFallbackPolicy.FallbackToPrimary
+        );
+
+        var result = CaptureSourceSelector.SelectSource(topology, criteria);
+
+        result.IsSuccess.Should().BeTrue();
+        result.IsFallback.Should().BeTrue();
+        result.Source.Should().NotBeNull();
+        result.Source!.OutputIndex.Should().Be(0);
+        result.Source.IsPrimary.Should().BeTrue();
+        result.Source.Width.Should().Be(3840);
+        result.Source.Height.Should().Be(2160);
+    }
+
+    [Fact]
+    public void SelectSource_WithRequireExactResolution_WhenNoExactMatch_WithFailClosed_ReturnsFailure()
+    {
+        var topology = CreateMockTopology();
+        var criteria = new CaptureSourceSelectionCriteria(
+            Policy: CaptureSelectionPolicy.RequireExactResolution,
+            TargetWidth: 2560,
+            TargetHeight: 1440,
+            FallbackPolicy: CaptureSourceFallbackPolicy.FailClosed
+        );
+
+        var result = CaptureSourceSelector.SelectSource(topology, criteria);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Source.Should().BeNull();
+        result.FailureReason.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public void SelectSource_WithRequireExactResolution_RequireHdr_SkipsNonHdrExactMatches()
+    {
+        var adapters = new List<DisplayAdapterInfo>
+        {
+            new(0, 0x1000, "GPU", 8_000_000_000, true)
+        };
+
+        var d0Sdr = new DisplayOutputInfo(
+            DisplayIndex: 0,
+            AdapterIndex: 0,
+            Width: 1920,
+            Height: 1080,
+            RefreshRateNumerator: 60,
+            RefreshRateDenominator: 1,
+            Rotation: 0,
+            IsAttachedToDesktop: true,
+            IsHdr: false,
+            BitsPerColor: 8,
+            DeviceName: "\\\\.\\DISPLAY1",
+            FriendlyName: "SDR 1080p",
+            IsPrimary: true
+        );
+
+        var d1Hdr = new DisplayOutputInfo(
+            DisplayIndex: 1,
+            AdapterIndex: 0,
+            Width: 1920,
+            Height: 1080,
+            RefreshRateNumerator: 60,
+            RefreshRateDenominator: 1,
+            Rotation: 0,
+            IsAttachedToDesktop: true,
+            IsHdr: true,
+            BitsPerColor: 10,
+            DeviceName: "\\\\.\\DISPLAY2",
+            FriendlyName: "HDR 1080p",
+            IsPrimary: false
+        );
+
+        var topology = new DisplayTopology(
+            Adapters: adapters.AsReadOnly(),
+            Displays: new[] { d0Sdr, d1Hdr },
+            PrimaryDisplay: d0Sdr,
+            VirtualScreenBounds: new DesktopBounds(0, 0, 3840, 1080),
+            IsHeadless: false,
+            TimestampQpc: 123456789
+        );
+
+        // Require exact 1080p and HDR
+        var criteria = new CaptureSourceSelectionCriteria(
+            Policy: CaptureSelectionPolicy.RequireExactResolution,
+            TargetWidth: 1920,
+            TargetHeight: 1080,
+            TargetFps: 60.0,
+            RequireHdr: true,
+            FallbackPolicy: CaptureSourceFallbackPolicy.FailClosed
+        );
+
+        var result = CaptureSourceSelector.SelectSource(topology, criteria);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Source.Should().NotBeNull();
+        result.Source!.OutputIndex.Should().Be(1);
+        result.Source.IsHdr.Should().BeTrue();
+        result.Source.DeviceName.Should().Be("\\\\.\\DISPLAY2");
+    }
+
+    [Fact]
+    public void SelectSource_WithRequireExactResolution_RequireHdr_WhenNoHdrExactMatchExists_FailsClosed()
+    {
+        var topology = CreateMockTopology();
+        // Mock topology has d0 (4K HDR) and d1 (1080p SDR). Target is 1080p exact + RequireHdr.
+        var criteria = new CaptureSourceSelectionCriteria(
+            Policy: CaptureSelectionPolicy.RequireExactResolution,
+            TargetWidth: 1920,
+            TargetHeight: 1080,
+            RequireHdr: true,
+            FallbackPolicy: CaptureSourceFallbackPolicy.FailClosed
+        );
+
+        var result = CaptureSourceSelector.SelectSource(topology, criteria);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Source.Should().BeNull();
+    }
+
+    [Fact]
+    public void SelectSource_WithRequireExactResolution_5StageDeterministicTieBreaker_EnforcesAllStages()
+    {
+        var adapters = new[]
+        {
+            new DisplayAdapterInfo(0, 0x1000, "Adapter 0", 8_000_000_000, true),
+            new DisplayAdapterInfo(1, 0x2000, "Adapter 1", 8_000_000_000, true)
+        };
+
+        var criteria = new CaptureSourceSelectionCriteria(
+            Policy: CaptureSelectionPolicy.RequireExactResolution,
+            TargetWidth: 1920,
+            TargetHeight: 1080,
+            TargetFps: 60.0
+        );
+
+        // Stage 1: FPS proximity
+        {
+            var d60Hz = new DisplayOutputInfo(
+                DisplayIndex: 1,
+                AdapterIndex: 1,
+                Width: 1920,
+                Height: 1080,
+                RefreshRateNumerator: 60,
+                RefreshRateDenominator: 1,
+                Rotation: 0,
+                IsAttachedToDesktop: true,
+                IsHdr: false,
+                BitsPerColor: 8,
+                DeviceName: @"\\.\DISPLAY_60HZ",
+                IsPrimary: false
+            );
+
+            var d144Hz = new DisplayOutputInfo(
+                DisplayIndex: 0,
+                AdapterIndex: 0,
+                Width: 1920,
+                Height: 1080,
+                RefreshRateNumerator: 144,
+                RefreshRateDenominator: 1,
+                Rotation: 0,
+                IsAttachedToDesktop: true,
+                IsHdr: false,
+                BitsPerColor: 8,
+                DeviceName: @"\\.\DISPLAY_144HZ",
+                IsPrimary: false
+            );
+
+            var top1 = new DisplayTopology(adapters, new[] { d144Hz, d60Hz }, null, DesktopBounds.Empty, false, 1);
+            var res1 = CaptureSourceSelector.SelectSource(top1, criteria);
+            res1.IsSuccess.Should().BeTrue();
+            res1.Source!.DeviceName.Should().Be(@"\\.\DISPLAY_60HZ");
+
+            var top1Rev = new DisplayTopology(adapters, new[] { d60Hz, d144Hz }, null, DesktopBounds.Empty, false, 1);
+            var res1Rev = CaptureSourceSelector.SelectSource(top1Rev, criteria);
+            res1Rev.IsSuccess.Should().BeTrue();
+            res1Rev.Source!.DeviceName.Should().Be(@"\\.\DISPLAY_60HZ");
+        }
+
+        // Stage 2: Primary display preferred
+        {
+            var dPrimary = new DisplayOutputInfo(
+                DisplayIndex: 1,
+                AdapterIndex: 1,
+                Width: 1920,
+                Height: 1080,
+                RefreshRateNumerator: 60,
+                RefreshRateDenominator: 1,
+                Rotation: 0,
+                IsAttachedToDesktop: true,
+                IsHdr: false,
+                BitsPerColor: 8,
+                DeviceName: @"\\.\DISPLAY_PRIMARY",
+                IsPrimary: true
+            );
+
+            var dNonPrimary = new DisplayOutputInfo(
+                DisplayIndex: 0,
+                AdapterIndex: 0,
+                Width: 1920,
+                Height: 1080,
+                RefreshRateNumerator: 60,
+                RefreshRateDenominator: 1,
+                Rotation: 0,
+                IsAttachedToDesktop: true,
+                IsHdr: false,
+                BitsPerColor: 8,
+                DeviceName: @"\\.\DISPLAY_NONPRIMARY",
+                IsPrimary: false
+            );
+
+            var top2 = new DisplayTopology(adapters, new[] { dNonPrimary, dPrimary }, dPrimary, DesktopBounds.Empty, false, 2);
+            var res2 = CaptureSourceSelector.SelectSource(top2, criteria);
+            res2.IsSuccess.Should().BeTrue();
+            res2.Source!.DeviceName.Should().Be(@"\\.\DISPLAY_PRIMARY");
+            res2.Source.IsPrimary.Should().BeTrue();
+
+            var top2Rev = new DisplayTopology(adapters, new[] { dPrimary, dNonPrimary }, dPrimary, DesktopBounds.Empty, false, 2);
+            var res2Rev = CaptureSourceSelector.SelectSource(top2Rev, criteria);
+            res2Rev.IsSuccess.Should().BeTrue();
+            res2Rev.Source!.DeviceName.Should().Be(@"\\.\DISPLAY_PRIMARY");
+        }
+
+        // Stage 3: Lower AdapterIndex
+        {
+            var dAdapter0 = new DisplayOutputInfo(
+                DisplayIndex: 1,
+                AdapterIndex: 0,
+                Width: 1920,
+                Height: 1080,
+                RefreshRateNumerator: 60,
+                RefreshRateDenominator: 1,
+                Rotation: 0,
+                IsAttachedToDesktop: true,
+                IsHdr: false,
+                BitsPerColor: 8,
+                DeviceName: @"\\.\DISPLAY_ADAPTER0",
+                IsPrimary: false
+            );
+
+            var dAdapter1 = new DisplayOutputInfo(
+                DisplayIndex: 0,
+                AdapterIndex: 1,
+                Width: 1920,
+                Height: 1080,
+                RefreshRateNumerator: 60,
+                RefreshRateDenominator: 1,
+                Rotation: 0,
+                IsAttachedToDesktop: true,
+                IsHdr: false,
+                BitsPerColor: 8,
+                DeviceName: @"\\.\DISPLAY_ADAPTER1",
+                IsPrimary: false
+            );
+
+            var top3 = new DisplayTopology(adapters, new[] { dAdapter1, dAdapter0 }, null, DesktopBounds.Empty, false, 3);
+            var res3 = CaptureSourceSelector.SelectSource(top3, criteria);
+            res3.IsSuccess.Should().BeTrue();
+            res3.Source!.AdapterIndex.Should().Be(0);
+            res3.Source.DeviceName.Should().Be(@"\\.\DISPLAY_ADAPTER0");
+
+            var top3Rev = new DisplayTopology(adapters, new[] { dAdapter0, dAdapter1 }, null, DesktopBounds.Empty, false, 3);
+            var res3Rev = CaptureSourceSelector.SelectSource(top3Rev, criteria);
+            res3Rev.IsSuccess.Should().BeTrue();
+            res3Rev.Source!.AdapterIndex.Should().Be(0);
+            res3Rev.Source.DeviceName.Should().Be(@"\\.\DISPLAY_ADAPTER0");
+        }
+
+        // Stage 4: Lower DisplayIndex
+        {
+            var dIndex0 = new DisplayOutputInfo(
+                DisplayIndex: 0,
+                AdapterIndex: 0,
+                Width: 1920,
+                Height: 1080,
+                RefreshRateNumerator: 60,
+                RefreshRateDenominator: 1,
+                Rotation: 0,
+                IsAttachedToDesktop: true,
+                IsHdr: false,
+                BitsPerColor: 8,
+                DeviceName: @"\\.\DISPLAY_INDEX0",
+                IsPrimary: false
+            );
+
+            var dIndex1 = new DisplayOutputInfo(
+                DisplayIndex: 1,
+                AdapterIndex: 0,
+                Width: 1920,
+                Height: 1080,
+                RefreshRateNumerator: 60,
+                RefreshRateDenominator: 1,
+                Rotation: 0,
+                IsAttachedToDesktop: true,
+                IsHdr: false,
+                BitsPerColor: 8,
+                DeviceName: @"\\.\DISPLAY_INDEX1",
+                IsPrimary: false
+            );
+
+            var top4 = new DisplayTopology(adapters, new[] { dIndex1, dIndex0 }, null, DesktopBounds.Empty, false, 4);
+            var res4 = CaptureSourceSelector.SelectSource(top4, criteria);
+            res4.IsSuccess.Should().BeTrue();
+            res4.Source!.OutputIndex.Should().Be(0);
+            res4.Source.DeviceName.Should().Be(@"\\.\DISPLAY_INDEX0");
+
+            var top4Rev = new DisplayTopology(adapters, new[] { dIndex0, dIndex1 }, null, DesktopBounds.Empty, false, 4);
+            var res4Rev = CaptureSourceSelector.SelectSource(top4Rev, criteria);
+            res4Rev.IsSuccess.Should().BeTrue();
+            res4Rev.Source!.OutputIndex.Should().Be(0);
+            res4Rev.Source.DeviceName.Should().Be(@"\\.\DISPLAY_INDEX0");
+        }
+
+        // Stage 5: Ordinal DeviceName comparison
+        {
+            var dAlphaA = new DisplayOutputInfo(
+                DisplayIndex: 0,
+                AdapterIndex: 0,
+                Width: 1920,
+                Height: 1080,
+                RefreshRateNumerator: 60,
+                RefreshRateDenominator: 1,
+                Rotation: 0,
+                IsAttachedToDesktop: true,
+                IsHdr: false,
+                BitsPerColor: 8,
+                DeviceName: @"\\.\DISPLAY_ALPHA_A",
+                IsPrimary: false
+            );
+
+            var dAlphaB = new DisplayOutputInfo(
+                DisplayIndex: 0,
+                AdapterIndex: 0,
+                Width: 1920,
+                Height: 1080,
+                RefreshRateNumerator: 60,
+                RefreshRateDenominator: 1,
+                Rotation: 0,
+                IsAttachedToDesktop: true,
+                IsHdr: false,
+                BitsPerColor: 8,
+                DeviceName: @"\\.\DISPLAY_ALPHA_B",
+                IsPrimary: false
+            );
+
+            var top5 = new DisplayTopology(adapters, new[] { dAlphaB, dAlphaA }, null, DesktopBounds.Empty, false, 5);
+            var res5 = CaptureSourceSelector.SelectSource(top5, criteria);
+            res5.IsSuccess.Should().BeTrue();
+            res5.Source!.DeviceName.Should().Be(@"\\.\DISPLAY_ALPHA_A");
+
+            var top5Rev = new DisplayTopology(adapters, new[] { dAlphaA, dAlphaB }, null, DesktopBounds.Empty, false, 5);
+            var res5Rev = CaptureSourceSelector.SelectSource(top5Rev, criteria);
+            res5Rev.IsSuccess.Should().BeTrue();
+            res5Rev.Source!.DeviceName.Should().Be(@"\\.\DISPLAY_ALPHA_A");
+        }
+    }
+
+    [Fact]
+    public void SelectSource_WithRequireExactResolution_ZeroGCAllocations_SteadyStateHotPath()
+    {
+        var topology = CreateComplexMockTopology();
+        var criteria = new CaptureSourceSelectionCriteria(
+            Policy: CaptureSelectionPolicy.RequireExactResolution,
+            TargetWidth: 1920,
+            TargetHeight: 1080,
+            TargetFps: 60.0
+        );
+
+        for (int i = 0; i < 50; i++)
+        {
+            _ = CaptureSourceSelector.SelectSource(topology, criteria);
+        }
+
+        long bytesBefore = GC.GetAllocatedBytesForCurrentThread();
+
+        for (int i = 0; i < 10000; i++)
+        {
+            _ = CaptureSourceSelector.SelectSource(topology, criteria);
+        }
+
+        long bytesAfter = GC.GetAllocatedBytesForCurrentThread();
+        (bytesAfter - bytesBefore).Should().Be(0);
+    }
+
+    [Fact]
+    public void SelectSource_RequireExactResolution_MatchesExactCandidateOnly()
+    {
+        var topology = CreateMockTopology();
+
+        var exactCriteria = new CaptureSourceSelectionCriteria(
+            Policy: CaptureSelectionPolicy.RequireExactResolution,
+            TargetWidth: 1920,
+            TargetHeight: 1080,
+            TargetFps: 60.0,
+            FallbackPolicy: CaptureSourceFallbackPolicy.FailClosed
+        );
+
+        var result = CaptureSourceSelector.SelectSource(topology, exactCriteria);
+
+        result.IsSuccess.Should().BeTrue();
+        result.IsFallback.Should().BeFalse();
+        result.Source.Should().NotBeNull();
+        result.Source!.Width.Should().Be(1920);
+        result.Source.Height.Should().Be(1080);
+        result.Source.OutputIndex.Should().Be(1);
+        result.Source.DeviceName.Should().Be("\\\\.\\DISPLAY2");
+
+        var nonMatchingCriteria = new CaptureSourceSelectionCriteria(
+            Policy: CaptureSelectionPolicy.RequireExactResolution,
+            TargetWidth: 2560,
+            TargetHeight: 1440,
+            FallbackPolicy: CaptureSourceFallbackPolicy.FailClosed
+        );
+
+        var failResult = CaptureSourceSelector.SelectSource(topology, nonMatchingCriteria);
+
+        failResult.IsSuccess.Should().BeFalse();
+        failResult.Source.Should().BeNull();
+        failResult.FailureReason.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public void SelectSource_RequireExactResolution_NoMatch_FallsBackToPrimaryWhenConfigured()
+    {
+        var topology = CreateMockTopology();
+
+        var fallbackCriteria = new CaptureSourceSelectionCriteria(
+            Policy: CaptureSelectionPolicy.RequireExactResolution,
+            TargetWidth: 2560,
+            TargetHeight: 1440,
+            FallbackPolicy: CaptureSourceFallbackPolicy.FallbackToPrimary
+        );
+
+        var result = CaptureSourceSelector.SelectSource(topology, fallbackCriteria);
+
+        result.IsSuccess.Should().BeTrue();
+        result.IsFallback.Should().BeTrue();
+        result.Source.Should().NotBeNull();
+        result.Source!.OutputIndex.Should().Be(0);
+        result.Source.IsPrimary.Should().BeTrue();
+        result.Source.Width.Should().Be(3840);
+        result.Source.Height.Should().Be(2160);
+    }
 }

@@ -355,7 +355,10 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
 
             if (selectResult.IsSuccess && selectResult.Source != null)
             {
-                _capturePipeline.TryReconfigureSource(selectResult.Source);
+                if (!_capturePipeline.TryReconfigureSource(selectResult.Source))
+                {
+                    _capturePipeline.TryRecover();
+                }
             }
             else
             {

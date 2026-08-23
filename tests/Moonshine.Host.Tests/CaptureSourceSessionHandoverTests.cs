@@ -21,6 +21,7 @@ public class CaptureSourceSessionHandoverTests
         public uint AdapterIndex => Source?.AdapterIndex ?? 0;
         public uint OutputIndex => Source?.OutputIndex ?? 0;
         public bool IsAvailable { get; set; } = true;
+        public bool FailReconfigure { get; set; }
         public CaptureSourceDescriptor? Source { get; set; }
         public int ReconfigureCount { get; private set; }
         public int RecoverCount { get; private set; }
@@ -64,6 +65,10 @@ public class CaptureSourceSessionHandoverTests
         public bool TryReconfigureSource(CaptureSourceDescriptor source)
         {
             ReconfigureCount++;
+            if (FailReconfigure)
+            {
+                return false;
+            }
             Source = source;
             return true;
         }
@@ -518,6 +523,224 @@ public class CaptureSourceSessionHandoverTests
         capturePipeline.ReconfigureCount.Should().Be(1);
         capturePipeline.Source.Should().NotBeNull();
         capturePipeline.Source!.OutputIndex.Should().Be(0);
+        session.State.Should().Be(HostSessionState.Streaming);
+        session.LastError.Should().BeNull();
+
+        await session.StopAsync();
+        session.State.Should().Be(HostSessionState.Terminated);
+    }
+
+    [Fact]
+    public async Task MoonshineHostStreamingSession_DisplayTopologyChanged_SemanticKeyframeDeliveryVerified()
+    {
+        var (g1, d0, d1) = CreateTopologyG1();
+
+        var capturePipeline = new TestDesktopCapturePipeline(d1.Descriptor);
+        var encoderPipeline = new TestVideoEncoderPipeline(1920, 1080, 60);
+        using var encoderEngine = new UnifiedHardwareEncoderEngine(encoderPipeline);
+        using var watcher = new TestDisplayTopologyWatcher(g1);
+
+        int basePort = 57200 + Random.Shared.Next(0, 500) * 10;
+        var config = new HostSessionConfig
+        {
+            Width = 1920,
+            Height = 1080,
+            Fps = 60,
+            BitrateKbps = 20000,
+            LocalVideoPort = (ushort)basePort,
+            LocalAudioPort = (ushort)(basePort + 1),
+            LocalControlFeedbackPort = (ushort)(basePort + 2),
+            ClientVideoPort = (ushort)(basePort + 3),
+            ClientAudioPort = (ushort)(basePort + 4),
+            ClientControlFeedbackPort = (ushort)(basePort + 5)
+        };
+
+        await using var session = new MoonshineHostStreamingSession(
+            config: config,
+            capturePipeline: capturePipeline,
+            encoderEngine: encoderEngine,
+            topologyWatcher: watcher);
+
+        await session.StartAsync();
+
+        var stopwatch = Stopwatch.StartNew();
+        while (session.Metrics.TotalFramesEncoded == 0 && stopwatch.ElapsedMilliseconds < 2000)
+        {
+            await Task.Delay(10);
+        }
+        session.Metrics.TotalFramesEncoded.Should().BeGreaterThan(0);
+        int initialForceIdrCount = encoderPipeline.ForceIdrCallCount;
+        initialForceIdrCount.Should().BeGreaterThan(0);
+
+        var g2 = CreateTopologyG2(d0);
+        var changeArgs = new DisplayTopologyChangedEventArgs(
+            oldTopology: g1,
+            newTopology: g2,
+            changeType: DisplayTopologyChangeType.DisplayDisconnected,
+            description: "Display 1 disconnected"
+        );
+
+        session.HandleDisplayTopologyChanged(changeArgs);
+
+        stopwatch.Restart();
+        while (encoderPipeline.ForceIdrCallCount <= initialForceIdrCount && stopwatch.ElapsedMilliseconds < 2000)
+        {
+            await Task.Delay(10);
+        }
+
+        encoderPipeline.ForceIdrCallCount.Should().BeGreaterThan(initialForceIdrCount);
+        session.State.Should().Be(HostSessionState.Streaming);
+        session.LastError.Should().BeNull();
+
+        await session.StopAsync();
+        session.State.Should().Be(HostSessionState.Terminated);
+    }
+
+    [Fact]
+    public async Task MoonshineHostStreamingSession_ReconfigurationFailure_TriggersCaptureRecovery()
+    {
+        var (g1, d0, d1) = CreateTopologyG1();
+
+        var capturePipeline = new TestDesktopCapturePipeline(d1.Descriptor)
+        {
+            FailReconfigure = true
+        };
+        var encoderPipeline = new TestVideoEncoderPipeline(1920, 1080, 60);
+        using var encoderEngine = new UnifiedHardwareEncoderEngine(encoderPipeline);
+        using var watcher = new TestDisplayTopologyWatcher(g1);
+
+        int basePort = 58200 + Random.Shared.Next(0, 500) * 10;
+        var config = new HostSessionConfig
+        {
+            Width = 1920,
+            Height = 1080,
+            Fps = 60,
+            BitrateKbps = 20000,
+            LocalVideoPort = (ushort)basePort,
+            LocalAudioPort = (ushort)(basePort + 1),
+            LocalControlFeedbackPort = (ushort)(basePort + 2),
+            ClientVideoPort = (ushort)(basePort + 3),
+            ClientAudioPort = (ushort)(basePort + 4),
+            ClientControlFeedbackPort = (ushort)(basePort + 5)
+        };
+
+        await using var session = new MoonshineHostStreamingSession(
+            config: config,
+            capturePipeline: capturePipeline,
+            encoderEngine: encoderEngine,
+            topologyWatcher: watcher);
+
+        await session.StartAsync();
+
+        session.State.Should().Be(HostSessionState.Streaming);
+        capturePipeline.ReconfigureCount.Should().Be(0);
+        capturePipeline.RecoverCount.Should().Be(0);
+
+        var g2 = CreateTopologyG2(d0);
+        var changeArgs = new DisplayTopologyChangedEventArgs(
+            oldTopology: g1,
+            newTopology: g2,
+            changeType: DisplayTopologyChangeType.DisplayDisconnected,
+            description: "Display 1 disconnected with failing reconfigure"
+        );
+
+        session.HandleDisplayTopologyChanged(changeArgs);
+
+        capturePipeline.ReconfigureCount.Should().Be(1);
+        capturePipeline.RecoverCount.Should().BeGreaterThan(0);
+        session.State.Should().Be(HostSessionState.Streaming);
+        session.LastError.Should().BeNull();
+
+        await session.StopAsync();
+        session.State.Should().Be(HostSessionState.Terminated);
+    }
+
+    [Fact]
+    public async Task MoonshineHostStreamingSession_FullHeadlessLifecycle_PausesAndResumesSeamlessly()
+    {
+        var (g1, d0, d1) = CreateTopologyG1();
+
+        var capturePipeline = new TestDesktopCapturePipeline(d1.Descriptor);
+        var encoderPipeline = new TestVideoEncoderPipeline(1920, 1080, 60);
+        using var encoderEngine = new UnifiedHardwareEncoderEngine(encoderPipeline);
+        using var watcher = new TestDisplayTopologyWatcher(g1);
+
+        int basePort = 59200 + Random.Shared.Next(0, 500) * 10;
+        var config = new HostSessionConfig
+        {
+            Width = 1920,
+            Height = 1080,
+            Fps = 60,
+            BitrateKbps = 20000,
+            LocalVideoPort = (ushort)basePort,
+            LocalAudioPort = (ushort)(basePort + 1),
+            LocalControlFeedbackPort = (ushort)(basePort + 2),
+            ClientVideoPort = (ushort)(basePort + 3),
+            ClientAudioPort = (ushort)(basePort + 4),
+            ClientControlFeedbackPort = (ushort)(basePort + 5)
+        };
+
+        await using var session = new MoonshineHostStreamingSession(
+            config: config,
+            capturePipeline: capturePipeline,
+            encoderEngine: encoderEngine,
+            topologyWatcher: watcher);
+
+        await session.StartAsync();
+
+        // Phase 1: G1 Active (Streaming)
+        session.State.Should().Be(HostSessionState.Streaming);
+        session.IsStreaming.Should().BeTrue();
+        session.CurrentTopologyGeneration.Should().Be(1);
+        capturePipeline.Source.Should().NotBeNull();
+        capturePipeline.Source!.OutputIndex.Should().Be(1);
+        capturePipeline.ReconfigureCount.Should().Be(0);
+        ulong g1Keyframes = session.Metrics.KeyframesRequested;
+
+        // Phase 2: G2 Headless (Streaming / uncorrupted)
+        var gHeadless = CreateHeadlessTopology(generation: 2);
+        var headlessArgs = new DisplayTopologyChangedEventArgs(
+            oldTopology: g1,
+            newTopology: gHeadless,
+            changeType: DisplayTopologyChangeType.HeadlessStateChanged,
+            description: "All physical displays disconnected"
+        );
+
+        session.HandleDisplayTopologyChanged(headlessArgs);
+
+        session.CurrentTopologyGeneration.Should().Be(2);
+        session.State.Should().Be(HostSessionState.Streaming);
+        session.LastError.Should().BeNull();
+        capturePipeline.ReconfigureCount.Should().Be(0);
+        session.Metrics.KeyframesRequested.Should().Be(g1Keyframes);
+
+        // Phase 3: G3 Display Reconnected (Reconfigured, IDR keyframe emitted, Generation 3)
+        var gRestored = new DisplayTopology(
+            Adapters: g1.Adapters,
+            Displays: new[] { d0 },
+            PrimaryDisplay: d0,
+            VirtualScreenBounds: d0.Bounds,
+            IsHeadless: false,
+            TimestampQpc: 4000,
+            Generation: 3
+        );
+
+        var restoreArgs = new DisplayTopologyChangedEventArgs(
+            oldTopology: gHeadless,
+            newTopology: gRestored,
+            changeType: DisplayTopologyChangeType.HeadlessStateChanged,
+            description: "Physical display reconnected"
+        );
+
+        session.HandleDisplayTopologyChanged(restoreArgs);
+
+        session.CurrentTopologyGeneration.Should().Be(3);
+        session.Metrics.KeyframesRequested.Should().Be(g1Keyframes + 1);
+        capturePipeline.ReconfigureCount.Should().Be(1);
+        capturePipeline.Source.Should().NotBeNull();
+        capturePipeline.Source!.OutputIndex.Should().Be(0);
+        capturePipeline.Source.Width.Should().Be(3840);
+        capturePipeline.Source.Height.Should().Be(2160);
         session.State.Should().Be(HostSessionState.Streaming);
         session.LastError.Should().BeNull();
 
