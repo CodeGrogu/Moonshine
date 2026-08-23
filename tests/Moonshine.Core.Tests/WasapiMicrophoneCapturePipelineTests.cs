@@ -66,4 +66,42 @@ public sealed class WasapiMicrophoneCapturePipelineTests
         pipeline.TryReadSamples(buffer, out _, out _).Should().BeFalse();
         pipeline.IsActive.Should().BeFalse();
     }
+
+    [Fact]
+    public void Pipeline_TryRecover_SucceedsOnActivePipeline()
+    {
+        using var pipeline = new WasapiMicrophoneCapturePipeline(
+            sampleRate: 48000,
+            channels: 1,
+            bufferDurationMs: 10
+        );
+
+        pipeline.IsActive.Should().BeTrue();
+
+        bool recovered = pipeline.TryRecover();
+        recovered.Should().BeTrue();
+        pipeline.IsActive.Should().BeTrue();
+
+        Span<float> buffer = stackalloc float[480];
+        bool ok = pipeline.TryReadSamples(buffer, out int samplesRead, out ulong timestampQpc);
+        ok.Should().BeTrue();
+        samplesRead.Should().Be(480);
+        timestampQpc.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public void Pipeline_TryRecover_FailsAfterDispose()
+    {
+        var pipeline = new WasapiMicrophoneCapturePipeline(
+            sampleRate: 48000,
+            channels: 1,
+            bufferDurationMs: 10
+        );
+
+        pipeline.Dispose();
+
+        bool recovered = pipeline.TryRecover();
+        recovered.Should().BeFalse();
+        pipeline.IsActive.Should().BeFalse();
+    }
 }

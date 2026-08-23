@@ -440,6 +440,10 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_mic_capture_is_active(
     MoonshineMicCaptureHandle handle
 );
 
+MOONSHINE_API int MOONSHINE_CONV moonshine_mic_capture_recover(
+    MoonshineMicCaptureHandle handle
+);
+
 // ============================================================================
 // Low-Latency Multi-Channel Opus Audio Encoder APIs
 // ============================================================================

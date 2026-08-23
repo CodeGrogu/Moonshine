@@ -29,6 +29,7 @@ public:
     ~WasapiMicCapture();
 
     bool initialize();
+    bool recover();
     bool read_samples_float(
         float* out_samples,
         uint32_t max_samples,
@@ -55,6 +56,7 @@ private:
     uint32_t _overruns{0};
 
 #if defined(_WIN32)
+    bool _com_initialized{false};
     Microsoft::WRL::ComPtr<IMMDeviceEnumerator> _enumerator;
     Microsoft::WRL::ComPtr<IMMDevice> _device;
     Microsoft::WRL::ComPtr<IAudioClient> _audio_client;

@@ -34,6 +34,15 @@ public sealed class WasapiMicrophoneCapturePipeline : IDisposable
         }
     }
 
+    public bool TryRecover()
+    {
+        lock (_lock)
+        {
+            if (_disposed || _handle == IntPtr.Zero) return false;
+            return MoonshineNativeMethods.MicCaptureRecover(_handle) != 0;
+        }
+    }
+
     public WasapiMicrophoneCapturePipeline(
         uint sampleRate = 48000,
         uint channels = 1,

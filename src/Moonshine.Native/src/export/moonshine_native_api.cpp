@@ -586,6 +586,15 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_mic_capture_is_active(
     return guard->is_active() ? 1 : 0;
 }
 
+MOONSHINE_API int MOONSHINE_CONV moonshine_mic_capture_recover(
+    MoonshineMicCaptureHandle handle
+) {
+    if (!handle) return 0;
+    auto guard = g_mic_capture_store.acquire(static_cast<audio::WasapiMicCapture*>(handle));
+    if (!guard) return 0;
+    return guard->recover() ? 1 : 0;
+}
+
 // ============================================================================
 // Low-Latency Multi-Channel Opus Audio Encoder APIs
 // ============================================================================

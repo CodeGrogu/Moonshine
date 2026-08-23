@@ -34,7 +34,14 @@ bool WasapiMicCapture::initialize() {
     cleanup();
 
 #if defined(_WIN32)
-    CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    HRESULT hr_com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    if (SUCCEEDED(hr_com)) {
+        _com_initialized = true;
+    } else if (hr_com != RPC_E_CHANGED_MODE) {
+        cleanup();
+        _initialized = false;
+        return false;
+    }
 
     HRESULT hr = CoCreateInstance(
         __uuidof(MMDeviceEnumerator),
@@ -43,62 +50,89 @@ bool WasapiMicCapture::initialize() {
         __uuidof(IMMDeviceEnumerator),
         reinterpret_cast<void**>(_enumerator.GetAddressOf())
     );
-    if (SUCCEEDED(hr) && _enumerator) {
-        hr = _enumerator->GetDefaultAudioEndpoint(eCapture, eCommunications, &_device);
-        if (FAILED(hr) || !_device) {
-            hr = _enumerator->GetDefaultAudioEndpoint(eCapture, eConsole, &_device);
+    if (FAILED(hr) || !_enumerator) {
+        cleanup();
+        _initialized = false;
+        return false;
+    }
+
+    hr = _enumerator->GetDefaultAudioEndpoint(eCapture, eCommunications, &_device);
+    if (FAILED(hr) || !_device) {
+        hr = _enumerator->GetDefaultAudioEndpoint(eCapture, eConsole, &_device);
+    }
+    if (FAILED(hr) || !_device) {
+        cleanup();
+        _initialized = false;
+        return false;
+    }
+
+    hr = _device->Activate(
+        __uuidof(IAudioClient),
+        CLSCTX_ALL,
+        nullptr,
+        reinterpret_cast<void**>(_audio_client.GetAddressOf())
+    );
+    if (FAILED(hr) || !_audio_client) {
+        cleanup();
+        _initialized = false;
+        return false;
+    }
+
+    WAVEFORMATEX* pMixFormat = nullptr;
+    hr = _audio_client->GetMixFormat(&pMixFormat);
+    if (FAILED(hr) || !pMixFormat) {
+        cleanup();
+        _initialized = false;
+        return false;
+    }
+
+    _device_channels = pMixFormat->nChannels;
+    _device_sample_rate = pMixFormat->nSamplesPerSec;
+    _bits_per_sample = pMixFormat->wBitsPerSample;
+
+    _is_float_format = false;
+    if (pMixFormat->wFormatTag == WAVE_FORMAT_IEEE_FLOAT) {
+        _is_float_format = true;
+    } else if (pMixFormat->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
+        auto* pExt = reinterpret_cast<WAVEFORMATEXTENSIBLE*>(pMixFormat);
+        if (IsEqualGUID(pExt->SubFormat, KSDATAFORMAT_SUBTYPE_IEEE_FLOAT)) {
+            _is_float_format = true;
         }
-        if (SUCCEEDED(hr) && _device) {
-            hr = _device->Activate(
-                __uuidof(IAudioClient),
-                CLSCTX_ALL,
-                nullptr,
-                reinterpret_cast<void**>(_audio_client.GetAddressOf())
-            );
-            if (SUCCEEDED(hr) && _audio_client) {
-                WAVEFORMATEX* pMixFormat = nullptr;
-                hr = _audio_client->GetMixFormat(&pMixFormat);
-                if (SUCCEEDED(hr) && pMixFormat) {
-                    _device_channels = pMixFormat->nChannels;
-                    _device_sample_rate = pMixFormat->nSamplesPerSec;
-                    _bits_per_sample = pMixFormat->wBitsPerSample;
+    }
 
-                    _is_float_format = false;
-                    if (pMixFormat->wFormatTag == WAVE_FORMAT_IEEE_FLOAT) {
-                        _is_float_format = true;
-                    } else if (pMixFormat->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
-                        auto* pExt = reinterpret_cast<WAVEFORMATEXTENSIBLE*>(pMixFormat);
-                        if (IsEqualGUID(pExt->SubFormat, KSDATAFORMAT_SUBTYPE_IEEE_FLOAT)) {
-                            _is_float_format = true;
-                        }
-                    }
+    REFERENCE_TIME hnsBufferDuration = static_cast<REFERENCE_TIME>(_buffer_duration_ms) * 10000;
+    if (hnsBufferDuration < 50000) hnsBufferDuration = 50000; // Minimum 5ms buffer
 
-                    REFERENCE_TIME hnsBufferDuration = static_cast<REFERENCE_TIME>(_buffer_duration_ms) * 10000;
-                    if (hnsBufferDuration < 50000) hnsBufferDuration = 50000; // Minimum 5ms buffer
+    hr = _audio_client->Initialize(
+        AUDCLNT_SHAREMODE_SHARED,
+        0,
+        hnsBufferDuration,
+        0,
+        pMixFormat,
+        nullptr
+    );
+    CoTaskMemFree(pMixFormat);
+    if (FAILED(hr)) {
+        cleanup();
+        _initialized = false;
+        return false;
+    }
 
-                    hr = _audio_client->Initialize(
-                        AUDCLNT_SHAREMODE_SHARED,
-                        0,
-                        hnsBufferDuration,
-                        0,
-                        pMixFormat,
-                        nullptr
-                    );
+    hr = _audio_client->GetService(
+        __uuidof(IAudioCaptureClient),
+        reinterpret_cast<void**>(_capture_client.GetAddressOf())
+    );
+    if (FAILED(hr) || !_capture_client) {
+        cleanup();
+        _initialized = false;
+        return false;
+    }
 
-                    CoTaskMemFree(pMixFormat);
-
-                    if (SUCCEEDED(hr)) {
-                        hr = _audio_client->GetService(
-                            __uuidof(IAudioCaptureClient),
-                            reinterpret_cast<void**>(_capture_client.GetAddressOf())
-                        );
-                        if (SUCCEEDED(hr) && _capture_client) {
-                            _audio_client->Start();
-                        }
-                    }
-                }
-            }
-        }
+    hr = _audio_client->Start();
+    if (FAILED(hr)) {
+        cleanup();
+        _initialized = false;
+        return false;
     }
 
     _initialized = true;
@@ -116,6 +150,118 @@ bool WasapiMicCapture::initialize() {
     _sample_counter = 0;
     _underruns = 0;
     _overruns = 0;
+    return true;
+#endif
+}
+
+bool WasapiMicCapture::recover() {
+    std::lock_guard<std::recursive_mutex> lock(_mutex);
+
+#if defined(_WIN32)
+    if (_audio_client) {
+        _audio_client->Stop();
+    }
+    _capture_client.Reset();
+    _audio_client.Reset();
+    _device.Reset();
+
+    if (!_enumerator) {
+        HRESULT hr_com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+        if (SUCCEEDED(hr_com)) {
+            _com_initialized = true;
+        }
+        HRESULT hr_enum = CoCreateInstance(
+            __uuidof(MMDeviceEnumerator),
+            nullptr,
+            CLSCTX_ALL,
+            __uuidof(IMMDeviceEnumerator),
+            reinterpret_cast<void**>(_enumerator.GetAddressOf())
+        );
+        if (FAILED(hr_enum) || !_enumerator) {
+            _initialized = false;
+            return false;
+        }
+    }
+
+    HRESULT hr = _enumerator->GetDefaultAudioEndpoint(eCapture, eCommunications, &_device);
+    if (FAILED(hr) || !_device) {
+        hr = _enumerator->GetDefaultAudioEndpoint(eCapture, eConsole, &_device);
+    }
+    if (FAILED(hr) || !_device) {
+        _initialized = false;
+        return false;
+    }
+
+    hr = _device->Activate(
+        __uuidof(IAudioClient),
+        CLSCTX_ALL,
+        nullptr,
+        reinterpret_cast<void**>(_audio_client.GetAddressOf())
+    );
+    if (FAILED(hr) || !_audio_client) {
+        _initialized = false;
+        return false;
+    }
+
+    WAVEFORMATEX* pMixFormat = nullptr;
+    hr = _audio_client->GetMixFormat(&pMixFormat);
+    if (FAILED(hr) || !pMixFormat) {
+        _initialized = false;
+        return false;
+    }
+
+    _device_channels = pMixFormat->nChannels;
+    _device_sample_rate = pMixFormat->nSamplesPerSec;
+    _bits_per_sample = pMixFormat->wBitsPerSample;
+
+    _is_float_format = false;
+    if (pMixFormat->wFormatTag == WAVE_FORMAT_IEEE_FLOAT) {
+        _is_float_format = true;
+    } else if (pMixFormat->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
+        auto* pExt = reinterpret_cast<WAVEFORMATEXTENSIBLE*>(pMixFormat);
+        if (IsEqualGUID(pExt->SubFormat, KSDATAFORMAT_SUBTYPE_IEEE_FLOAT)) {
+            _is_float_format = true;
+        }
+    }
+
+    REFERENCE_TIME hnsBufferDuration = static_cast<REFERENCE_TIME>(_buffer_duration_ms) * 10000;
+    if (hnsBufferDuration < 50000) hnsBufferDuration = 50000; // Minimum 5ms buffer
+
+    hr = _audio_client->Initialize(
+        AUDCLNT_SHAREMODE_SHARED,
+        0,
+        hnsBufferDuration,
+        0,
+        pMixFormat,
+        nullptr
+    );
+    CoTaskMemFree(pMixFormat);
+    if (FAILED(hr)) {
+        _initialized = false;
+        return false;
+    }
+
+    hr = _audio_client->GetService(
+        __uuidof(IAudioCaptureClient),
+        reinterpret_cast<void**>(_capture_client.GetAddressOf())
+    );
+    if (FAILED(hr) || !_capture_client) {
+        _initialized = false;
+        return false;
+    }
+
+    hr = _audio_client->Start();
+    if (FAILED(hr)) {
+        _initialized = false;
+        return false;
+    }
+
+    _device_invalidated = false;
+    _initialized = true;
+    return true;
+#else
+    _device_invalidated = false;
+    _initialized = true;
     return true;
 #endif
 }
@@ -293,6 +439,10 @@ void WasapiMicCapture::cleanup() {
     _audio_client.Reset();
     _device.Reset();
     _enumerator.Reset();
+    if (_com_initialized) {
+        CoUninitialize();
+        _com_initialized = false;
+    }
 #endif
 }
 

@@ -331,6 +331,10 @@ public static unsafe partial class MoonshineNativeMethods
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int MicCaptureIsActive(IntPtr handle);
 
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_mic_capture_recover")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int MicCaptureRecover(IntPtr handle);
+
     // ========================================================================
     // Low-Latency Multi-Channel Opus Audio Encoder APIs
     // ========================================================================
