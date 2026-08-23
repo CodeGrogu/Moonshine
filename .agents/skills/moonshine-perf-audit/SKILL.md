@@ -22,6 +22,7 @@ This skill guides the auditing and profiling of Moonshine streaming pipelines to
 - [ ] Ensure all atomic indices in `SpscRingBuffer` and packet queues are aligned to 64 bytes (`alignas(64)`).
 - [ ] Verify memory ordering: `std::memory_order_relaxed` for local state, `std::memory_order_acquire` for reads, `std::memory_order_release` for publishing.
 - [ ] Confirm no `std::mutex`, `std::unique_lock`, or thread sleeping in latency-critical loops.
+- [ ] Ensure all C-ABI handles accessed concurrently by background threads use `SafeHandleStore<T>` reference counting rather than bare pointers or boolean `is_valid()` checks.
 
 ### 3. SIMD Vectorization Audit
 - [ ] Verify that Galois Field $GF(2^8)$ multiplication uses AVX2 256-bit nibble shuffle tables (`_mm256_shuffle_epi8`).

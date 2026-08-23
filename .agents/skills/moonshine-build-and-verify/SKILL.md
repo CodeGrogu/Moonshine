@@ -24,4 +24,13 @@ This automated pipeline executes:
 - **Step 1**: Native C++23 build with physical artifact existence verification (`Moonshine.Native.dll`).
 - **Step 2**: 16 registered native CTest test suites.
 - **Step 3**: Managed .NET 9 solution build with physical artifact verification (`Moonshine.Host.dll`).
-- **Step 4**: 239 managed xUnit tests across all test projects.
+- **Step 4**: 415 managed xUnit tests across all test projects (89 Protocol + 145 Core + 100 Host + 81 Interop).
+
+## Standalone Native Compilation (MSVC Environment)
+
+When running CMake or Ninja directly, always ensure the Visual Studio Developer environment is active:
+
+```powershell
+& 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\Launch-VsDevShell.ps1' -SkipAutomaticLocation
+cmake --build build --config Release
+```
