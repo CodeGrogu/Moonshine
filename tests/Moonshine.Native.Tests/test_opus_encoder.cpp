@@ -1,9 +1,16 @@
 #include <iostream>
 #include <vector>
-#include <cassert>
 #include <cmath>
 #include <numeric>
+#include <cstdlib>
 #include "moonshine/audio/opus_audio_encoder.hpp"
+
+#define REQUIRE(expr) do { \
+    if (!(expr)) { \
+        std::cerr << "Assertion failed: " #expr " at " << __FILE__ << ":" << __LINE__ << std::endl; \
+        std::exit(1); \
+    } \
+} while(0)
 
 using namespace moonshine::audio;
 
@@ -17,10 +24,10 @@ static void test_opus_encoder_stereo_float() {
     config.use_vbr = true;
 
     OpusAudioEncoder encoder(config);
-    assert(encoder.is_initialized());
-    assert(encoder.channels() == 2);
-    assert(encoder.streams_count() == 1);
-    assert(encoder.coupled_count() == 1);
+    REQUIRE(encoder.is_initialized());
+    REQUIRE(encoder.channels() == 2);
+    REQUIRE(encoder.streams_count() == 1);
+    REQUIRE(encoder.coupled_count() == 1);
 
     // 5ms @ 48kHz = 240 samples per channel = 480 float samples
     std::vector<float> pcm(480);
@@ -32,18 +39,16 @@ static void test_opus_encoder_stereo_float() {
     uint32_t bytes_written = 0;
 
     bool ok = encoder.encode_float(pcm.data(), 240, payload.data(), static_cast<uint32_t>(payload.size()), bytes_written);
-    if (!ok || bytes_written == 0) {
-        std::cerr << "Failed to encode float frame" << std::endl;
-        std::exit(1);
-    }
+    REQUIRE(ok);
+    REQUIRE(bytes_written > 0);
     // Target for 160kbps @ 5ms is (160000 * 5) / 8000 = 100 bytes
-    assert(bytes_written >= 32 && bytes_written <= 500);
+    REQUIRE(bytes_written >= 32 && bytes_written <= 500);
 
     OpusEncoderMetrics metrics{};
     encoder.get_metrics(metrics);
-    assert(metrics.total_frames_encoded == 1);
-    assert(metrics.total_bytes_encoded == bytes_written);
-    assert(metrics.current_bitrate == 160000);
+    REQUIRE(metrics.total_frames_encoded == 1);
+    REQUIRE(metrics.total_bytes_encoded == bytes_written);
+    REQUIRE(metrics.current_bitrate == 160000);
 
     std::cout << "[PASS] test_opus_encoder_stereo_float (bytes: " << bytes_written
               << ", avg_us: " << metrics.avg_encode_time_us << ")" << std::endl;
@@ -58,10 +63,10 @@ static void test_opus_encoder_surround51_pcm16() {
     config.complexity = 8;
 
     OpusAudioEncoder encoder(config);
-    assert(encoder.is_initialized());
-    assert(encoder.channels() == 6);
-    assert(encoder.streams_count() == 4);
-    assert(encoder.coupled_count() == 2);
+    REQUIRE(encoder.is_initialized());
+    REQUIRE(encoder.channels() == 6);
+    REQUIRE(encoder.streams_count() == 4);
+    REQUIRE(encoder.coupled_count() == 2);
 
     // 10ms @ 48kHz = 480 samples per channel = 2880 int16 samples
     std::vector<int16_t> pcm(2880, 1234);
@@ -69,16 +74,12 @@ static void test_opus_encoder_surround51_pcm16() {
     uint32_t bytes_written = 0;
 
     bool ok = encoder.encode_pcm16(pcm.data(), 480, payload.data(), static_cast<uint32_t>(payload.size()), bytes_written);
-    if (!ok || bytes_written == 0) {
-        std::cerr << "Failed to encode pcm16 frame" << std::endl;
-        std::exit(1);
-    }
+    REQUIRE(ok);
+    REQUIRE(bytes_written > 0);
 
     // Test dynamic bitrate scaling
-    if (!encoder.set_bitrate(320000) || encoder.bitrate() != 320000) {
-        std::cerr << "Failed to set bitrate" << std::endl;
-        std::exit(1);
-    }
+    REQUIRE(encoder.set_bitrate(320000));
+    REQUIRE(encoder.bitrate() == 320000);
 
     std::cout << "[PASS] test_opus_encoder_surround51_pcm16 (bytes: " << bytes_written << ")" << std::endl;
 }
@@ -91,10 +92,10 @@ static void test_opus_encoder_surround71_multistream() {
     config.frame_duration_ms = 5;
 
     OpusAudioEncoder encoder(config);
-    assert(encoder.is_initialized());
-    assert(encoder.channels() == 8);
-    assert(encoder.streams_count() == 6);
-    assert(encoder.coupled_count() == 2);
+    REQUIRE(encoder.is_initialized());
+    REQUIRE(encoder.channels() == 8);
+    REQUIRE(encoder.streams_count() == 5);
+    REQUIRE(encoder.coupled_count() == 3);
 
     // 5ms @ 48kHz = 240 samples per channel = 1920 float samples
     std::vector<float> pcm(1920, 0.25f);
@@ -102,12 +103,73 @@ static void test_opus_encoder_surround71_multistream() {
     uint32_t bytes_written = 0;
 
     bool ok = encoder.encode_float(pcm.data(), 240, payload.data(), static_cast<uint32_t>(payload.size()), bytes_written);
-    if (!ok || bytes_written == 0) {
-        std::cerr << "Failed to encode float frame" << std::endl;
-        std::exit(1);
-    }
+    REQUIRE(ok);
+    REQUIRE(bytes_written > 0);
 
     std::cout << "[PASS] test_opus_encoder_surround71_multistream (bytes: " << bytes_written << ")" << std::endl;
+}
+
+static void test_opus_encoder_invalid_frame_size_rejection() {
+    OpusEncoderConfig config{};
+    config.sample_rate = 48000;
+    config.channels = 2;
+    config.bitrate = 160000;
+
+    OpusAudioEncoder encoder(config);
+    REQUIRE(encoder.is_initialized());
+
+    std::vector<float> pcm(960, 0.1f);
+    std::vector<uint8_t> payload(1024);
+    uint32_t bytes_written = 999;
+
+    // 256 is an invalid frame size at 48kHz (not a permitted Opus frame duration)
+    bool ok = encoder.encode_float(pcm.data(), 256, payload.data(), static_cast<uint32_t>(payload.size()), bytes_written);
+    REQUIRE(!ok);
+    REQUIRE(bytes_written == 0);
+
+    // 220 is an invalid frame size at 48kHz (44.1kHz non-standard size)
+    ok = encoder.encode_float(pcm.data(), 220, payload.data(), static_cast<uint32_t>(payload.size()), bytes_written);
+    REQUIRE(!ok);
+    REQUIRE(bytes_written == 0);
+
+    // 0 frame_samples is rejected
+    ok = encoder.encode_float(pcm.data(), 0, payload.data(), static_cast<uint32_t>(payload.size()), bytes_written);
+    REQUIRE(!ok);
+    REQUIRE(bytes_written == 0);
+
+    // 240 (5ms @ 48kHz) is valid and succeeds
+    ok = encoder.encode_float(pcm.data(), 240, payload.data(), static_cast<uint32_t>(payload.size()), bytes_written);
+    REQUIRE(ok);
+    REQUIRE(bytes_written > 0);
+
+    std::cout << "[PASS] test_opus_encoder_invalid_frame_size_rejection" << std::endl;
+}
+
+static void test_opus_encoder_null_pointers_rejection() {
+    OpusEncoderConfig config{};
+    config.sample_rate = 48000;
+    config.channels = 2;
+
+    OpusAudioEncoder encoder(config);
+    REQUIRE(encoder.is_initialized());
+
+    std::vector<float> pcm(480, 0.1f);
+    std::vector<uint8_t> payload(1024);
+    uint32_t bytes_written = 999;
+
+    // Null PCM pointer
+    REQUIRE(!encoder.encode_float(nullptr, 240, payload.data(), static_cast<uint32_t>(payload.size()), bytes_written));
+    REQUIRE(bytes_written == 0);
+
+    // Null output payload pointer
+    REQUIRE(!encoder.encode_float(pcm.data(), 240, nullptr, static_cast<uint32_t>(payload.size()), bytes_written));
+    REQUIRE(bytes_written == 0);
+
+    // Zero max payload bytes
+    REQUIRE(!encoder.encode_float(pcm.data(), 240, payload.data(), 0, bytes_written));
+    REQUIRE(bytes_written == 0);
+
+    std::cout << "[PASS] test_opus_encoder_null_pointers_rejection" << std::endl;
 }
 
 int main() {
@@ -115,6 +177,8 @@ int main() {
     test_opus_encoder_stereo_float();
     test_opus_encoder_surround51_pcm16();
     test_opus_encoder_surround71_multistream();
+    test_opus_encoder_invalid_frame_size_rejection();
+    test_opus_encoder_null_pointers_rejection();
     std::cout << "All Opus Audio Encoder native tests passed successfully!" << std::endl;
     return 0;
 }

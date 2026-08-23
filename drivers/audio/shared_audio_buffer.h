@@ -48,7 +48,14 @@ typedef enum MoonshineAudioEndpointType {
     MOONSHINE_ENDPOINT_CAPTURE = 1    /* Microphone / Recording */
 } MoonshineAudioEndpointType;
 
-/* Shared Ring Buffer Header - Cacheline aligned (64 bytes) for lock-free cross-process IPC */
+/* Shared Ring Buffer Header - Cacheline aligned (64 bytes) for lock-free cross-process IPC.
+ *
+ * Concurrency Model:
+ * - Single-Producer Single-Consumer (SPSC) lock-free ring buffer across processes.
+ * - In C++23, atomic accesses to position and count fields are performed via std::atomic_ref<uint32_t>
+ *   with acquire/release memory ordering semantics.
+ * - In C and driver code, volatile qualifiers prevent compiler register caching and force memory reads/writes.
+ */
 typedef struct MoonshineSharedAudioRing {
     /* 64-byte Cacheline 1: Producer Write State */
     uint64_t magic;

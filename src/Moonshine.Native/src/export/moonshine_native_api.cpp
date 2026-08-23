@@ -575,11 +575,23 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_opus_encoder_encode_float(
     uint32_t max_payload_bytes,
     uint32_t* out_payload_bytes
 ) {
-    if (!handle || !pcm_samples || !out_payload || !out_payload_bytes) return 0;
+    if (!handle || !pcm_samples || !out_payload || !out_payload_bytes || frame_samples == 0 || max_payload_bytes == 0) {
+        if (out_payload_bytes) *out_payload_bytes = 0;
+        return 0;
+    }
     auto guard = g_encoder_store.acquire(static_cast<audio::OpusAudioEncoder*>(handle));
-    if (!guard) return 0;
+    if (!guard) {
+        *out_payload_bytes = 0;
+        return 0;
+    }
     uint32_t bytes_written = 0;
-    if (!guard->encode_float(pcm_samples, frame_samples, out_payload, max_payload_bytes, bytes_written)) {
+    try {
+        if (!guard->encode_float(pcm_samples, frame_samples, out_payload, max_payload_bytes, bytes_written)) {
+            *out_payload_bytes = 0;
+            return 0;
+        }
+    } catch (...) {
+        *out_payload_bytes = 0;
         return 0;
     }
     *out_payload_bytes = bytes_written;
@@ -594,11 +606,23 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_opus_encoder_encode_pcm16(
     uint32_t max_payload_bytes,
     uint32_t* out_payload_bytes
 ) {
-    if (!handle || !pcm_samples || !out_payload || !out_payload_bytes) return 0;
+    if (!handle || !pcm_samples || !out_payload || !out_payload_bytes || frame_samples == 0 || max_payload_bytes == 0) {
+        if (out_payload_bytes) *out_payload_bytes = 0;
+        return 0;
+    }
     auto guard = g_encoder_store.acquire(static_cast<audio::OpusAudioEncoder*>(handle));
-    if (!guard) return 0;
+    if (!guard) {
+        *out_payload_bytes = 0;
+        return 0;
+    }
     uint32_t bytes_written = 0;
-    if (!guard->encode_pcm16(pcm_samples, frame_samples, out_payload, max_payload_bytes, bytes_written)) {
+    try {
+        if (!guard->encode_pcm16(pcm_samples, frame_samples, out_payload, max_payload_bytes, bytes_written)) {
+            *out_payload_bytes = 0;
+            return 0;
+        }
+    } catch (...) {
+        *out_payload_bytes = 0;
         return 0;
     }
     *out_payload_bytes = bytes_written;

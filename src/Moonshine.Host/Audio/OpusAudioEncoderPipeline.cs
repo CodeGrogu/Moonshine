@@ -81,7 +81,9 @@ public sealed class OpusAudioEncoderPipeline : IDisposable
     {
         bytesWritten = 0;
 
-        if (pcmSamples.Length < frameSamples * _channels) return false;
+        if (frameSamples == 0 || _channels == 0 || outPayload.IsEmpty) return false;
+        long requiredSamples = (long)frameSamples * _channels;
+        if (pcmSamples.Length < requiredSamples) return false;
 
         lock (_lock)
         {
@@ -119,7 +121,9 @@ public sealed class OpusAudioEncoderPipeline : IDisposable
     {
         bytesWritten = 0;
 
-        if (pcmSamples.Length < frameSamples * _channels) return false;
+        if (frameSamples == 0 || _channels == 0 || outPayload.IsEmpty) return false;
+        long requiredSamples = (long)frameSamples * _channels;
+        if (pcmSamples.Length < requiredSamples) return false;
 
         lock (_lock)
         {

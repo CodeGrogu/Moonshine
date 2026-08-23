@@ -173,6 +173,29 @@ bool OpusAudioEncoder::initialize(const OpusEncoderConfig& config) {
     return true;
 }
 
+namespace {
+
+/// Checks whether frame_samples represents a valid Opus frame duration (2.5, 5, 10, 20, 40, 60, 80, 100, 120 ms)
+/// at the given sample rate.
+bool is_valid_opus_frame_size(uint32_t frame_samples, uint32_t sample_rate) noexcept {
+    if (sample_rate == 0 || frame_samples == 0) return false;
+    uint64_t duration_tenths = (static_cast<uint64_t>(frame_samples) * 10000ULL) / sample_rate;
+    uint64_t remainder = (static_cast<uint64_t>(frame_samples) * 10000ULL) % sample_rate;
+    if (remainder != 0) return false;
+
+    return (duration_tenths == 25   || // 2.5 ms
+            duration_tenths == 50   || // 5.0 ms
+            duration_tenths == 100  || // 10 ms
+            duration_tenths == 200  || // 20 ms
+            duration_tenths == 400  || // 40 ms
+            duration_tenths == 600  || // 60 ms
+            duration_tenths == 800  || // 80 ms
+            duration_tenths == 1000 || // 100 ms
+            duration_tenths == 1200);  // 120 ms
+}
+
+} // anonymous namespace
+
 bool OpusAudioEncoder::encode_float(
     const float* pcm_samples,
     uint32_t frame_samples,
@@ -183,6 +206,9 @@ bool OpusAudioEncoder::encode_float(
     std::lock_guard<std::recursive_mutex> lock(_mutex);
     out_payload_bytes = 0;
     if (!_initialized || !pcm_samples || !out_payload || frame_samples == 0 || max_payload_bytes == 0) {
+        return false;
+    }
+    if (!is_valid_opus_frame_size(frame_samples, _config.sample_rate)) {
         return false;
     }
 
@@ -235,6 +261,9 @@ bool OpusAudioEncoder::encode_pcm16(
     std::lock_guard<std::recursive_mutex> lock(_mutex);
     out_payload_bytes = 0;
     if (!_initialized || !pcm_samples || !out_payload || frame_samples == 0 || max_payload_bytes == 0) {
+        return false;
+    }
+    if (!is_valid_opus_frame_size(frame_samples, _config.sample_rate)) {
         return false;
     }
 

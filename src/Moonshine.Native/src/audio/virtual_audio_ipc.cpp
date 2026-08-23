@@ -358,8 +358,13 @@ size_t VirtualAudioIpcChannel::WritePcm(const void* srcBuffer, size_t bytesToWri
         return 0;
     }
 
-    uint32_t writePos = m_sharedRing->write_position_bytes;
-    uint32_t readPos = m_sharedRing->read_position_bytes;
+    auto writePosRef = std::atomic_ref(m_sharedRing->write_position_bytes);
+    auto readPosRef = std::atomic_ref(m_sharedRing->read_position_bytes);
+    auto writePktRef = std::atomic_ref(m_sharedRing->write_packet_count);
+    auto overrunRef = std::atomic_ref(m_sharedRing->overrun_count);
+
+    uint32_t writePos = writePosRef.load(std::memory_order_relaxed);
+    uint32_t readPos = readPosRef.load(std::memory_order_acquire);
 
     uint32_t used = (writePos >= readPos)
         ? (writePos - readPos)
@@ -371,9 +376,9 @@ size_t VirtualAudioIpcChannel::WritePcm(const void* srcBuffer, size_t bytesToWri
 
     // Overrun handling: if insufficient free space, advance read pointer to drop oldest frame
     if (bytesToWrite > freeSpace) {
-        m_sharedRing->overrun_count = m_sharedRing->overrun_count + 1;
+        overrunRef.fetch_add(1, std::memory_order_relaxed);
         uint32_t needed = static_cast<uint32_t>(bytesToWrite) - freeSpace;
-        m_sharedRing->read_position_bytes = (readPos + needed) % m_bufferCapacityBytes;
+        readPosRef.store((readPos + needed) % m_bufferCapacityBytes, std::memory_order_release);
     }
 
     const auto* src = static_cast<const uint8_t*>(srcBuffer);
@@ -385,9 +390,8 @@ size_t VirtualAudioIpcChannel::WritePcm(const void* srcBuffer, size_t bytesToWri
         std::memcpy(m_dataBuffer, src + firstChunk, bytesToWrite - firstChunk);
     }
 
-    std::atomic_thread_fence(std::memory_order_release);
-    m_sharedRing->write_position_bytes = (writePos + static_cast<uint32_t>(bytesToWrite)) % m_bufferCapacityBytes;
-    m_sharedRing->write_packet_count = m_sharedRing->write_packet_count + 1;
+    writePosRef.store((writePos + static_cast<uint32_t>(bytesToWrite)) % m_bufferCapacityBytes, std::memory_order_release);
+    writePktRef.fetch_add(1, std::memory_order_relaxed);
 
 #ifdef _WIN32
     if (m_syncEvent) {
@@ -407,9 +411,13 @@ size_t VirtualAudioIpcChannel::ReadPcm(void* destBuffer, size_t bytesToRead, boo
         WaitEvent(timeoutMs);
     }
 
-    std::atomic_thread_fence(std::memory_order_acquire);
-    uint32_t writePos = m_sharedRing->write_position_bytes;
-    uint32_t readPos = m_sharedRing->read_position_bytes;
+    auto writePosRef = std::atomic_ref(m_sharedRing->write_position_bytes);
+    auto readPosRef = std::atomic_ref(m_sharedRing->read_position_bytes);
+    auto readPktRef = std::atomic_ref(m_sharedRing->read_packet_count);
+    auto underrunRef = std::atomic_ref(m_sharedRing->underrun_count);
+
+    uint32_t writePos = writePosRef.load(std::memory_order_acquire);
+    uint32_t readPos = readPosRef.load(std::memory_order_relaxed);
 
     uint32_t available = (writePos >= readPos)
         ? (writePos - readPos)
@@ -419,7 +427,7 @@ size_t VirtualAudioIpcChannel::ReadPcm(void* destBuffer, size_t bytesToRead, boo
 
     // Underrun handling: if no audio is available, zero pad to prevent audible glitching
     if (available == 0) {
-        m_sharedRing->underrun_count = m_sharedRing->underrun_count + 1;
+        underrunRef.fetch_add(1, std::memory_order_relaxed);
         std::memset(dst, 0, bytesToRead);
         return 0;
     }
@@ -436,13 +444,12 @@ size_t VirtualAudioIpcChannel::ReadPcm(void* destBuffer, size_t bytesToRead, boo
 
     // Partial underrun: pad remaining requested bytes with silence
     if (copyBytes < bytesToRead) {
-        m_sharedRing->underrun_count = m_sharedRing->underrun_count + 1;
+        underrunRef.fetch_add(1, std::memory_order_relaxed);
         std::memset(dst + copyBytes, 0, bytesToRead - copyBytes);
     }
 
-    std::atomic_thread_fence(std::memory_order_release);
-    m_sharedRing->read_position_bytes = (readPos + static_cast<uint32_t>(copyBytes)) % m_bufferCapacityBytes;
-    m_sharedRing->read_packet_count = m_sharedRing->read_packet_count + 1;
+    readPosRef.store((readPos + static_cast<uint32_t>(copyBytes)) % m_bufferCapacityBytes, std::memory_order_release);
+    readPktRef.fetch_add(1, std::memory_order_relaxed);
 
     return copyBytes;
 }
@@ -460,8 +467,8 @@ bool VirtualAudioIpcChannel::WaitEvent(uint32_t timeoutMs) {
 
 uint32_t VirtualAudioIpcChannel::GetAvailableReadBytes() const noexcept {
     if (!IsConnected() || m_bufferCapacityBytes == 0) return 0;
-    uint32_t writePos = m_sharedRing->write_position_bytes;
-    uint32_t readPos = m_sharedRing->read_position_bytes;
+    uint32_t writePos = std::atomic_ref(m_sharedRing->write_position_bytes).load(std::memory_order_acquire);
+    uint32_t readPos = std::atomic_ref(m_sharedRing->read_position_bytes).load(std::memory_order_acquire);
     return (writePos >= readPos) ? (writePos - readPos) : (m_bufferCapacityBytes - (readPos - writePos));
 }
 
@@ -472,15 +479,15 @@ uint32_t VirtualAudioIpcChannel::GetAvailableWriteBytes() const noexcept {
 }
 
 uint32_t VirtualAudioIpcChannel::GetUnderrunCount() const noexcept {
-    return m_sharedRing ? m_sharedRing->underrun_count : 0;
+    return m_sharedRing ? std::atomic_ref(m_sharedRing->underrun_count).load(std::memory_order_relaxed) : 0;
 }
 
 uint32_t VirtualAudioIpcChannel::GetOverrunCount() const noexcept {
-    return m_sharedRing ? m_sharedRing->overrun_count : 0;
+    return m_sharedRing ? std::atomic_ref(m_sharedRing->overrun_count).load(std::memory_order_relaxed) : 0;
 }
 
 uint32_t VirtualAudioIpcChannel::GetPacketCount() const noexcept {
-    return m_sharedRing ? m_sharedRing->write_packet_count : 0;
+    return m_sharedRing ? std::atomic_ref(m_sharedRing->write_packet_count).load(std::memory_order_relaxed) : 0;
 }
 
 // ============================================================================

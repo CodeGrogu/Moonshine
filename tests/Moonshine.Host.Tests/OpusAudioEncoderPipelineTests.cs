@@ -114,4 +114,50 @@ public class OpusAudioEncoderPipelineTests
         pipeline.TryEncode(pcm, 64, payload, out _).Should().BeFalse();
         pipeline.IsActive.Should().BeFalse();
     }
+
+    [Fact]
+    public void OpusAudioEncoderPipeline_InvalidFrameSamples_ReturnsFalseWithoutCrashing()
+    {
+        using var pipeline = new OpusAudioEncoderPipeline(48000, AudioChannelTopology.Stereo);
+
+        Span<float> pcm = stackalloc float[1024];
+        Span<byte> payload = stackalloc byte[1024];
+
+        // 256 is not a valid Opus frame size at 48kHz (permitted: 120, 240, 480, 960, 1920, 2880)
+        bool ok = pipeline.TryEncode(pcm, 256, payload, out int bytesWritten);
+        ok.Should().BeFalse();
+        bytesWritten.Should().Be(0);
+
+        // 0 frameSamples returns false
+        ok = pipeline.TryEncode(pcm, 0, payload, out bytesWritten);
+        ok.Should().BeFalse();
+        bytesWritten.Should().Be(0);
+    }
+
+    [Fact]
+    public void OpusAudioEncoderPipeline_InsufficientPcmBufferSize_ReturnsFalseWithoutCrashing()
+    {
+        using var pipeline = new OpusAudioEncoderPipeline(48000, AudioChannelTopology.Stereo);
+
+        // 240 samples/channel * 2 channels = 480 floats required. Pass only 400 floats.
+        Span<float> shortPcm = stackalloc float[400];
+        Span<byte> payload = stackalloc byte[1024];
+
+        bool ok = pipeline.TryEncode(shortPcm, 240, payload, out int bytesWritten);
+        ok.Should().BeFalse();
+        bytesWritten.Should().Be(0);
+    }
+
+    [Fact]
+    public void OpusAudioEncoderPipeline_EmptyOutputPayload_ReturnsFalseWithoutCrashing()
+    {
+        using var pipeline = new OpusAudioEncoderPipeline(48000, AudioChannelTopology.Stereo);
+
+        Span<float> pcm = stackalloc float[480];
+        Span<byte> emptyPayload = [];
+
+        bool ok = pipeline.TryEncode(pcm, 240, emptyPayload, out int bytesWritten);
+        ok.Should().BeFalse();
+        bytesWritten.Should().Be(0);
+    }
 }

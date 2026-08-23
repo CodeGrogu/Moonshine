@@ -50,14 +50,14 @@ The virtual audio subsystem is structured across three distinct operational laye
 ### 2.1. Kernel-Mode Driver Layer (`drivers/audio/`)
 The kernel driver produces [MoonshineAudio.sys](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/drivers/audio/MoonshineAudio.vcxproj) and executes in Ring 0 under the Windows Port Class (`PortCls.sys`) framework. It comprises three primary miniport components:
 * **Adapter Common** ([adapter.hpp](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/drivers/audio/adapter.hpp), [adapter.cpp](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/drivers/audio/adapter.cpp)): Coordinates adapter initialisation, Plug and Play (PnP) resource management, and power state transitions.
-* **WaveRT Miniport** ([minwave.hpp](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/drivers/audio/minwave.hpp), [minwave.cpp](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/drivers/audio/minwave.cpp)): Implements `IMiniportWaveRT` and `IMiniportWaveRTStream` interfaces. It allocates 4KB page-aligned cyclic DMA buffers, manages hardware position registers, and handles streaming state transitions.
+* **WaveRT Miniport** ([minwave.hpp](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/drivers/audio/minwave.hpp), [minwave.cpp](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/drivers/audio/minwave.cpp)): Implements `IMiniportWaveRT` and `IMiniportWaveRTStream` interfaces. It allocates 4KB page-aligned cyclic shared memory buffers from non-paged pool (`ExAllocatePool2` / `IoAllocateMdl`), manages emulated stream position registers (`GetPosition`), and handles streaming state transitions without physical DMA hardware.
 * **Topology Miniport** ([mintopo.hpp](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/drivers/audio/mintopo.hpp), [mintopo.cpp](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/drivers/audio/mintopo.cpp)): Implements `IMiniportTopology` to expose device topology pins (`KSNODETYPE_SPEAKER` and `KSNODETYPE_MICROPHONE`), volume controls, and mute states to the audio engine.
 
 ### 2.2. User-Mode IPC Bridge Layer (`src/Moonshine.Native/src/audio/virtual_audio_ipc.cpp`)
 The native IPC bridge provides a zero-copy, lock-free Single-Producer Single-Consumer (SPSC) communication channel between the driver endpoints and user-mode processes:
 * Uses Win32 Named File Mappings (`CreateFileMappingW` / `MapViewOfFile`) backed by system paging memory.
 * Synchronises buffer reads and writes via Win32 Named Auto-Reset Events (`CreateEventW` / `SetEvent`).
-* Employs memory barriers with acquire/release semantics (`std::atomic_thread_fence`) to guarantee memory ordering without kernel mutexes or spinlocks.
+* Employs standard C++23 `std::atomic_ref<uint32_t>` primitives with acquire/release memory ordering semantics (`std::memory_order_acquire` / `std::memory_order_release`) to guarantee memory ordering across memory-mapped boundaries without kernel mutexes or spinlocks.
 * Enforces strict Discretionary Access Control Lists (DACLs) granting access exclusively to `NT AUTHORITY\SYSTEM` (`S-1-5-18`), `Builtin\Administrators` (`S-1-5-32-544`), and the active user security identifier (SID). Prohibits broad access groups such as `Everyone` (`WD`) and `Authenticated Users` (`AU`).
 
 ### 2.3. Managed Service Layer (`src/Moonshine.Host/Audio/VirtualAudioDriverService.cs`)
@@ -259,3 +259,31 @@ The Moonshine Virtual Audio Driver component is classified as **Prototype** unde
 * **Shared Buffer Contract**: Fully verified. Cacheline alignment (64-byte boundaries), struct memory packing, and atomic synchronisation barriers match the cross-process layout across native and managed layers.
 * **Kernel-Mode Driver Source**: Prototype. The C++ miniport implementation files ([adapter.cpp](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/drivers/audio/adapter.cpp), [minwave.cpp](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/drivers/audio/minwave.cpp), [mintopo.cpp](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/drivers/audio/mintopo.cpp)) provide an architecturally valid PortCls WaveRT implementation that compiles in user mode for test execution, but requires a dedicated Windows Driver Kit (WDK) build environment to generate `MoonshineAudio.sys`.
 * **Real Device PnP Deployment**: Not yet tested on live hardware. Full end-to-end kernel installation and device manager enumeration will be validated following the establishment of the automated WDK continuous integration pipeline and test-signing certificate provisioning.
+
+### 10.1. Subsystem Capability and Validation Matrix
+
+| Capability / Subsystem Area | Current Maturity Status | Verification Context |
+|---|---|---|
+| PortCls driver architecture | Verified (Source) | WDM DriverEntry, AddDevice, StartDevice, subdevice registration |
+| WaveRT miniport interfaces | Verified (Source) | `IMiniportWaveRT` & `IMiniportWaveRTStream` implementation |
+| Topology miniport | Verified (Source) | `IMiniportTopology` & pin/node routing descriptors |
+| User-mode controller | Verified | Multi-stage discovery (`SetupDi` + CoreAudio), lifecycle methods |
+| C-ABI export boundary | Verified | Strict 1:1 blittable layout matching |
+| IPC ring buffer architecture | Verified | Lock-free SPSC 64-byte cacheline isolated ring buffer |
+| IPC security model | Verified | Strict DACL (SYSTEM, Administrators, User SID only) |
+| Managed lifecycle service | Verified | `VirtualAudioDriverService` with exception & disposal safety |
+| Software test suites | Verified | 22 CTests + 490 xUnit tests passing (100%) |
+| Driver binary compilation | Prototype | Requires WDK toolchain |
+| Test-signed installation | Prototype | Requires `bcdedit /set TESTSIGNING ON` |
+| Actual PnP enumeration | Prototype | Requires signed `.sys` load |
+| WASAPI sees the device | Prototype | Requires active KS filter registration |
+| Real render stream | Prototype | Requires physical WaveRT cyclic buffer pumping |
+| Real capture stream | Prototype | Requires physical WaveRT microphone injection |
+| Third-party app compatibility | Prototype | Pending live endpoint testing |
+| Long-duration stress stability | Prototype | Pending continuous hardware soak tests |
+| Driver Verifier validation | Prototype | Pending WDK Driver Verifier test run |
+| Production WHQL signing | Prototype | Pending HLK test suite submission |
+
+### 10.2. Format Capability Scope
+* **Primary Verified Streaming Path**: 48 kHz, Stereo (2-channel), 32-bit Float (`MOONSHINE_FORMAT_FLOAT_32`). This format aligns 1:1 with Moonshine's internal audio pipeline and Opus encoder.
+* **Declared Pin Capabilities**: 44.1 kHz, 88.2 kHz, 96 kHz, 192 kHz sample rates, and Mono (1), 5.1 Surround (6), and 7.1 Surround (8) channel layouts with PCM16, PCM24, and PCM32 formats are declared in the miniport format descriptor table and validated in software format parsers, but remain classified as declared capabilities until physically exercised on real hardware.

@@ -155,7 +155,7 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
         if (_samplesPerFrame == 0) _samplesPerFrame = 240;
 
         _pcmStagingBuffer = new float[_samplesPerFrame * _channels];
-        _encodedPayloadBuffer = new byte[2048];
+        _encodedPayloadBuffer = new byte[4096];
 #if MOONSHINE_LEGACY_INTEROP
         _rtpPacketBuffer = new byte[2048];
 #endif
