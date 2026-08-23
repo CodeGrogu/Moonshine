@@ -40,6 +40,7 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
     private Socket? _videoSocket;
     private Socket? _audioSocket;
     private Socket? _controlSocket;
+    private Socket? _micSocket;
 
     private IPEndPoint _clientVideoEndpoint;
     private IPEndPoint _clientAudioEndpoint;
@@ -47,6 +48,8 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
 
     private Task? _videoLoopTask;
     private Task? _controlFeedbackLoopTask;
+    private Task? _micUplinkLoopTask;
+    private HostMicrophoneUplinkService? _micUplinkService;
 
     private HostSessionState _state = HostSessionState.Created;
     private string? _lastError;
@@ -70,6 +73,7 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
     private readonly bool _ownsEncoder;
     private readonly bool _ownsAudio;
     private readonly bool _ownsInput;
+    private readonly bool _ownsMicUplink;
 
     public HostSessionConfig Config => _config;
     public HostSessionState State
@@ -96,6 +100,7 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
     public int BoundLocalVideoPort => (_videoSocket?.LocalEndPoint as IPEndPoint)?.Port ?? 0;
     public int BoundLocalAudioPort => (_audioSocket?.LocalEndPoint as IPEndPoint)?.Port ?? 0;
     public int BoundLocalControlPort => (_controlSocket?.LocalEndPoint as IPEndPoint)?.Port ?? 0;
+    public int BoundLocalMicPort => (_micSocket?.LocalEndPoint as IPEndPoint)?.Port ?? 0;
 
     public void SetClientEndpoints(IPEndPoint videoEp, IPEndPoint audioEp, IPEndPoint controlEp)
     {
@@ -116,7 +121,8 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
         _congestionController?.CurrentBitrateKbps ?? _config.BitrateKbps,
         Interlocked.Read(ref _keyframesRequested),
         State,
-        LastError);
+        LastError,
+        _micUplinkService?.GetMetrics());
 
     public MoonshineHostStreamingSession(
         HostSessionConfig? config = null,
@@ -124,7 +130,8 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
         UnifiedHardwareEncoderEngine? encoderEngine = null,
         MoonshineHostAudioPipeline? audioPipeline = null,
         MoonshineHostInputPipeline? inputPipeline = null,
-        IDisplayTopologyWatcher? topologyWatcher = null)
+        IDisplayTopologyWatcher? topologyWatcher = null,
+        HostMicrophoneUplinkService? micUplinkService = null)
     {
         _config = config ?? HostSessionConfig.Default;
         _clientVideoEndpoint = new IPEndPoint(_config.ClientAddress, _config.ClientVideoPort);
@@ -144,6 +151,9 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
         _ownsInput = inputPipeline == null;
 
         _topologyWatcher = topologyWatcher;
+
+        _micUplinkService = micUplinkService;
+        _ownsMicUplink = micUplinkService == null;
     }
 
     /// <summary>
@@ -244,18 +254,34 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
             // 8. Start Audio Streaming worker
             _audioPipeline.Start(OnAudioPacketEncoded);
 
-            // 9. Start Video loop and Control Feedback loop
+            // 9. Initialise Microphone Uplink if enabled
+            if (_config.EnableMicrophoneBackchannel)
+            {
+                if (_micUplinkService == null)
+                {
+                    _micUplinkService = new HostMicrophoneUplinkService(
+                        sampleRate: 48000,
+                        channels: 1,
+                        frameDurationMs: 10,
+                        ipcBridge: _audioPipeline.IpcBridge,
+                        autoStartWorker: true);
+                }
+
+                _micUplinkLoopTask = Task.Run(MicrophoneUplinkLoopAsync, CancellationToken.None);
+            }
+
+            // 10. Start Video loop and Control Feedback loop
             _videoLoopTask = Task.Run(VideoFrameLoopAsync, CancellationToken.None);
             _controlFeedbackLoopTask = Task.Run(ControlFeedbackLoopAsync, CancellationToken.None);
 
-            // 10. Hook Display Topology Watcher if provided
+            // 11. Hook Display Topology Watcher if provided
             if (_topologyWatcher != null)
             {
                 Volatile.Write(ref _currentTopologyGeneration, _topologyWatcher.CurrentTopology.Generation);
                 _topologyWatcher.TopologyChanged += OnDisplayTopologyChanged;
             }
 
-            // 11. Transition to Streaming state only after all backends are verified
+            // 12. Transition to Streaming state only after all backends are verified
             lock (_stateLock)
             {
                 _state = HostSessionState.Streaming;
@@ -306,6 +332,20 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
         };
         _controlSocket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
         _controlSocket.Bind(new IPEndPoint(IPAddress.Any, _config.LocalControlFeedbackPort));
+
+        if (_config.EnableMicrophoneBackchannel)
+        {
+            _micSocket?.Dispose();
+            _micSocket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp)
+            {
+                SendBufferSize = 128 * 1024,
+                ReceiveBufferSize = 256 * 1024,
+                ExclusiveAddressUse = false
+            };
+            _micSocket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+            int micPort = _config.LocalMicPort != 0 ? _config.LocalMicPort : _config.MicUdpPort;
+            _micSocket.Bind(new IPEndPoint(IPAddress.Any, micPort));
+        }
     }
 
     /// <summary>
@@ -801,6 +841,57 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
         }
     }
 
+    private async Task MicrophoneUplinkLoopAsync()
+    {
+        byte[] buffer = new byte[2048];
+        var remoteEp = new IPEndPoint(IPAddress.Any, 0);
+
+        while (!_cts.Token.IsCancellationRequested)
+        {
+            Socket? socket = _micSocket;
+            if (socket == null) break;
+
+            try
+            {
+                SocketReceiveFromResult received = await socket.ReceiveFromAsync(
+                    buffer.AsMemory(),
+                    SocketFlags.None,
+                    remoteEp,
+                    _cts.Token).ConfigureAwait(false);
+
+                if (received.ReceivedBytes > 0)
+                {
+                    _micUplinkService?.IngestDatagram(buffer.AsSpan(0, received.ReceivedBytes));
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            // ALLOWED_EXCEPTION: Continue receiving microphone uplink packets despite transient socket errors.
+            catch (SocketException)
+            {
+                if (_cts.Token.IsCancellationRequested) break;
+                await Task.Delay(10, _cts.Token).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Adjusts host microphone backchannel input gain multiplier.
+    /// </summary>
+    public void SetMicrophoneGain(float gain) => _micUplinkService?.SetGain(gain);
+
+    /// <summary>
+    /// Toggles host microphone backchannel mute state.
+    /// </summary>
+    public void SetMicrophoneMute(bool isMuted) => _micUplinkService?.SetMute(isMuted);
+
+    /// <summary>
+    /// Retrieves active host microphone sink telemetry metrics.
+    /// </summary>
+    public HostMicSinkMetrics? GetMicrophoneMetrics() => _micUplinkService?.GetMetrics();
+
     private void UpdateLatencyMeasurement(double latencyUs)
     {
         double current = Volatile.Read(ref _averageCaptureToNetworkLatencyUs);
@@ -876,9 +967,31 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
             _controlFeedbackLoopTask = null;
         }
 
+        if (_micUplinkLoopTask != null)
+        {
+            try
+            {
+                await _micUplinkLoopTask.ConfigureAwait(false);
+            }
+            // ALLOWED_EXCEPTION: Ignore task cancellation during cleanup.
+            catch (OperationCanceledException)
+            {
+            }
+            _micUplinkLoopTask = null;
+        }
+
         if (_topologyWatcher != null)
         {
             _topologyWatcher.TopologyChanged -= OnDisplayTopologyChanged;
+        }
+
+        if (_micUplinkService != null)
+        {
+            if (_ownsMicUplink)
+            {
+                _micUplinkService.Dispose();
+            }
+            _micUplinkService = null;
         }
 
         if (_audioPipeline != null)
@@ -917,6 +1030,9 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
 
         _controlSocket?.Dispose();
         _controlSocket = null;
+
+        _micSocket?.Dispose();
+        _micSocket = null;
     }
 
     public async ValueTask DisposeAsync()

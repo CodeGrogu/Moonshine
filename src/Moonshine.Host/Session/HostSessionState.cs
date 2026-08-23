@@ -51,7 +51,8 @@ public readonly record struct HostSessionMetrics(
     uint CurrentBitrateKbps,
     ulong KeyframesRequested,
     HostSessionState State,
-    string? LastError = null);
+    string? LastError = null,
+    HostMicSinkMetrics? MicMetrics = null);
 
 /// <summary>
 /// Configuration parameters for a host streaming session.
@@ -80,6 +81,9 @@ public sealed record HostSessionConfig
     public int LocalVideoPort { get; init; }
     public int LocalAudioPort { get; init; }
     public int LocalControlFeedbackPort { get; init; }
+    public bool EnableMicrophoneBackchannel { get; init; } = true;
+    public int MicUdpPort { get; init; } = 48002;
+    public int LocalMicPort { get; init; }
 
     public static HostSessionConfig Default => new();
 }

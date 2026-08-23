@@ -9,6 +9,7 @@ namespace Moonshine.Client.Audio;
 /// Captures client 48kHz mono microphone audio, applies software noise gating and gain normalisation,
 /// compresses via low-delay Opus encoding, and packetises into backchannel RTP datagrams with zero GC allocations.
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "CA2216:DisposableTypesShouldDeclareFinalizer", Justification = "Finaliser deliberately omitted: managed disposal deterministically releases unmanaged Opus encoder handles via C-ABI.")]
 public sealed class ClientMicCapturePipeline : IDisposable
 {
     private readonly uint _sampleRate;
@@ -29,6 +30,7 @@ public sealed class ClientMicCapturePipeline : IDisposable
     public uint FrameDurationMs => _frameDurationMs;
     public bool IsMuted => _isMuted;
     public float GainMultiplier => _gainMultiplier;
+    public float NoiseGateThresholdDb => _noiseGateThresholdDb;
     public bool IsInitialized => _encoderHandle != IntPtr.Zero && !_disposed;
 
     public ClientMicCapturePipeline(
@@ -57,7 +59,7 @@ public sealed class ClientMicCapturePipeline : IDisposable
 
         if (_encoderHandle == IntPtr.Zero)
         {
-            throw new InvalidOperationException("Failed to initialize native Opus encoder for Client Microphone.");
+            throw new InvalidOperationException("Failed to initialise native Opus encoder for Client Microphone.");
         }
     }
 
@@ -78,6 +80,14 @@ public sealed class ClientMicCapturePipeline : IDisposable
     }
 
     /// <summary>
+    /// Sets client microphone noise gate threshold in decibels.
+    /// </summary>
+    public void SetNoiseGateThreshold(float thresholdDb)
+    {
+        _noiseGateThresholdDb = thresholdDb;
+    }
+
+    /// <summary>
     /// Processes a frame of client microphone audio and packetises it into an outgoing RTP datagram.
     /// </summary>
     public unsafe bool TryProcessRecordedFrame(
@@ -95,7 +105,7 @@ public sealed class ClientMicCapturePipeline : IDisposable
             return false;
         }
 
-        // Apply noise gate and mute in scratch buffer
+        // Apply noise gate, input gain, and mute in scratch buffer
         Span<float> processedPcm = stackalloc float[pcmSamples.Length];
         if (_isMuted)
         {
@@ -162,18 +172,7 @@ public sealed class ClientMicCapturePipeline : IDisposable
         );
     }
 
-    ~ClientMicCapturePipeline()
-    {
-        Dispose(false);
-    }
-
     public void Dispose()
-    {
-        Dispose(true);
-        GC.SuppressFinalize(this);
-    }
-
-    private void Dispose(bool disposing)
     {
         if (!_disposed)
         {

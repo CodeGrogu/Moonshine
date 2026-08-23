@@ -470,5 +470,46 @@ public class HostStreamingSessionTests
 
         await session.StopAsync();
     }
+
+    [Fact]
+    public async Task HostStreamingSession_MicrophoneBackchannel_ControlsGainMuteAndReportsMetrics()
+    {
+        var capture = new TestDesktopCapturePipeline();
+        var encoderPipeline = new TestVideoEncoderPipeline();
+        using var encoder = new UnifiedHardwareEncoderEngine(encoderPipeline);
+
+        ushort basePort = (ushort)(59800 + Random.Shared.Next(0, 50) * 8);
+        var config = new HostSessionConfig
+        {
+            LocalVideoPort = basePort,
+            LocalAudioPort = (ushort)(basePort + 1),
+            LocalControlFeedbackPort = (ushort)(basePort + 2),
+            LocalMicPort = (ushort)(basePort + 3),
+            ClientVideoPort = (ushort)(basePort + 4),
+            ClientAudioPort = (ushort)(basePort + 5),
+            ClientControlFeedbackPort = (ushort)(basePort + 6),
+            EnableMicrophoneBackchannel = true
+        };
+
+        await using var session = new MoonshineHostStreamingSession(
+            config: config,
+            capturePipeline: capture,
+            encoderEngine: encoder);
+
+        await session.StartAsync();
+        session.State.Should().Be(HostSessionState.Streaming);
+        session.BoundLocalMicPort.Should().Be(config.LocalMicPort);
+
+        // Test microphone controls
+        session.SetMicrophoneGain(1.5f);
+        session.SetMicrophoneMute(true);
+        session.SetMicrophoneMute(false);
+
+        HostMicSinkMetrics? metrics = session.GetMicrophoneMetrics();
+        metrics.Should().NotBeNull();
+        session.Metrics.MicMetrics.Should().NotBeNull();
+
+        await session.StopAsync();
+    }
 }
 

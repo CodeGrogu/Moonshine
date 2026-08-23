@@ -133,4 +133,21 @@ public sealed class ExplicitDisposalContractTests
             opus.TryEncode(new float[480], 240, new byte[1024], out _).Should().BeFalse();
         }
     }
+
+    [Fact]
+    public void HostMicrophoneUplinkService_ExplicitDisposalContract_GCImmunityAndIdempotence()
+    {
+        for (int i = 0; i < 5; i++)
+        {
+            var uplink = new HostMicrophoneUplinkService(48000, 1, 10, null, autoStartWorker: true);
+            uplink.Dispose();
+            uplink.Dispose();
+
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+
+            uplink.IsInitialized.Should().BeFalse();
+            uplink.IsRunning.Should().BeFalse();
+        }
+    }
 }

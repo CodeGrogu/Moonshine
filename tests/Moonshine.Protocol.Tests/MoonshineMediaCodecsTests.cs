@@ -80,5 +80,36 @@ public class MoonshineMediaCodecsTests
 
         MoonshineAudioPacketCodec.TryWriteHeader(default, tiny).Should().BeFalse();
         MoonshineAudioPacketCodec.TryReadHeader(tiny, out _).Should().BeFalse();
+
+        MoonshineMicPacketCodec.TryWriteHeader(default, tiny).Should().BeFalse();
+        MoonshineMicPacketCodec.TryReadHeader(tiny, out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void MoonshineMicPacketCodec_RoundtripsSuccessfully()
+    {
+        var header = new MoonshineMicPacketHeader
+        {
+            StreamId = 0x99887766,
+            SampleIndex = 480000,
+            PayloadSize = 80,
+            Channels = 1,
+            Codec = MoonshineAudioCodec.Opus,
+            SampleRate = 48000
+        };
+
+        Span<byte> buffer = stackalloc byte[MoonshineMicPacketCodec.HeaderSize];
+        bool writeSuccess = MoonshineMicPacketCodec.TryWriteHeader(in header, buffer);
+        writeSuccess.Should().BeTrue();
+
+        bool readSuccess = MoonshineMicPacketCodec.TryReadHeader(buffer, out var parsed);
+        readSuccess.Should().BeTrue();
+        parsed.StreamId.Should().Be(header.StreamId);
+        parsed.SampleIndex.Should().Be(header.SampleIndex);
+        parsed.PayloadSize.Should().Be(header.PayloadSize);
+        parsed.Channels.Should().Be(header.Channels);
+        parsed.Codec.Should().Be(header.Codec);
+        parsed.SampleRate.Should().Be(header.SampleRate);
     }
 }
+

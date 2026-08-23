@@ -238,4 +238,119 @@ public class HostClientStreamingIntegrationTests
         await hostSession.StopAsync();
         hostSession.State.Should().Be(HostSessionState.Terminated);
     }
+
+    [Fact]
+    public async Task HostClientStreaming_MicrophoneBackchannel_EndToEndTransmission_Succeeds()
+    {
+        ulong sessionId = 0x9988776655443322UL;
+
+        // 1. Configure HostSession with microphone backchannel enabled on ephemeral port
+        var hostConfig = new HostSessionConfig
+        {
+            SessionId = sessionId,
+            StreamId = 1,
+            Width = 1920,
+            Height = 1080,
+            Fps = 60,
+            BitrateKbps = 20000,
+            EnableFec = false,
+            MtuPayloadSize = 1000,
+            ClientAddress = IPAddress.Loopback,
+            LocalVideoPort = 0,
+            LocalAudioPort = 0,
+            LocalControlFeedbackPort = 0,
+            LocalMicPort = 0,
+            EnableMicrophoneBackchannel = true
+        };
+
+        using var mockCapture = new MockDesktopCapturePipeline();
+        using var mockEncoder = new MockVideoEncoderPipeline();
+        using var hostInput = new MoonshineHostInputPipeline(config: new HostInputConfig { ExpectedSessionId = sessionId });
+        using var hostAudio = new MoonshineHostAudioPipeline(sampleRate: 48000, topology: AudioChannelTopology.Stereo, bitrate: 128000, frameDurationMs: 5);
+
+        await using var hostSession = new MoonshineHostStreamingSession(
+            config: hostConfig,
+            capturePipeline: mockCapture,
+            encoderEngine: new UnifiedHardwareEncoderEngine(mockEncoder),
+            audioPipeline: hostAudio,
+            inputPipeline: hostInput);
+
+        await hostSession.StartAsync();
+        hostSession.IsStreaming.Should().BeTrue();
+        int hostVideoPort = hostSession.BoundLocalVideoPort;
+        int hostAudioPort = hostSession.BoundLocalAudioPort;
+        int hostControlPort = hostSession.BoundLocalControlPort;
+        int hostMicPort = hostSession.BoundLocalMicPort;
+        hostMicPort.Should().BeGreaterThan(0);
+
+        // 2. Configure ClientSession with microphone uplink enabled
+        var clientConfig = new ClientSessionConfig
+        {
+            SessionId = sessionId,
+            StreamId = 1,
+            HostAddress = IPAddress.Loopback,
+            HostVideoPort = hostVideoPort,
+            HostAudioPort = hostAudioPort,
+            HostControlFeedbackPort = hostControlPort,
+            HostMicPort = hostMicPort,
+            LocalVideoPort = 0,
+            LocalAudioPort = 0,
+            LocalControlFeedbackPort = 0,
+            LocalMicPort = 0,
+            EnableFec = false,
+            MtuPayloadSize = 1000,
+            EnableMicrophoneUplink = true
+        };
+
+        await using var clientSession = new MoonshineClientStreamingSession(clientConfig);
+        await clientSession.StartAsync();
+        clientSession.IsStreaming.Should().BeTrue();
+        int clientVideoPort = clientSession.BoundLocalVideoPort;
+        int clientAudioPort = clientSession.BoundLocalAudioPort;
+        int clientControlPort = clientSession.BoundLocalControlPort;
+
+        hostSession.SetClientEndpoints(
+            videoEp: new IPEndPoint(IPAddress.Loopback, clientVideoPort),
+            audioEp: new IPEndPoint(IPAddress.Loopback, clientAudioPort),
+            controlEp: new IPEndPoint(IPAddress.Loopback, clientControlPort));
+
+        // 3. Generate client mic PCM samples (480 samples = 10ms @ 48kHz mono)
+        float[] micPcm = new float[480];
+        for (int i = 0; i < micPcm.Length; i++)
+        {
+            micPcm[i] = (float)Math.Sin(2.0 * Math.PI * 440.0 * i / 48000.0) * 0.5f;
+        }
+
+        // Test client controls
+        clientSession.SetMicrophoneGain(1.2f);
+        clientSession.SetMicrophoneMute(false);
+
+        // Send multiple mic frames
+        for (int i = 0; i < 5; i++)
+        {
+            bool sent = clientSession.TrySendMicrophoneFrame(micPcm);
+            sent.Should().BeTrue();
+            await Task.Delay(10);
+        }
+
+        // Wait for UDP reception and jitter buffering on host
+        for (int i = 0; i < 50; i++)
+        {
+            HostMicSinkMetrics? metrics = hostSession.GetMicrophoneMetrics();
+            if (metrics.HasValue && metrics.Value.TotalPacketsReceived >= 1)
+            {
+                break;
+            }
+            await Task.Delay(20);
+        }
+
+        // 4. Assert Host received microphone packets
+        HostMicSinkMetrics? hostMicMetrics = hostSession.GetMicrophoneMetrics();
+        hostMicMetrics.Should().NotBeNull();
+        hostMicMetrics.Value.TotalPacketsReceived.Should().BeGreaterThan(0);
+
+        // 5. Clean Teardown
+        await clientSession.StopAsync();
+        await hostSession.StopAsync();
+    }
 }
