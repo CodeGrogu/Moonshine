@@ -51,6 +51,7 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
     private string? _lastError;
     private bool _disposed;
     private bool _forceNextIdr;
+    private Task? _stopTask;
 
     // Metrics counters
     private ulong _totalFramesCaptured;
@@ -504,7 +505,98 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                     MoonshineErrorCode err = MoonshineProtocolCodec.TryReadHeader(datagram, out var packetHeader);
                     if (err == MoonshineErrorCode.Success && packetHeader.Magic == MoonshineProtocolConstants.Magic)
                     {
-                        if (packetHeader.MessageType == MoonshineMessageType.FeedbackLossStats)
+                        if (packetHeader.MessageType == MoonshineMessageType.Hello)
+                        {
+                            if (MoonshineProtocolCodec.TryReadHello(datagram[MoonshineProtocolConstants.HeaderSize..], out var hello))
+                            {
+                                byte[] respBuffer = new byte[MoonshineProtocolConstants.HeaderSize + 48];
+                                var respHeader = new MoonshinePacketHeader(
+                                    Magic: MoonshineProtocolConstants.Magic,
+                                    Version: MoonshineProtocolConstants.Version10,
+                                    MessageType: MoonshineMessageType.HelloResponse,
+                                    PayloadSize: 48,
+                                    SequenceNumber: packetHeader.SequenceNumber,
+                                    SessionId: _config.SessionId,
+                                    TimestampUs: (ulong)Stopwatch.GetTimestamp());
+
+                                var respPayload = new MoonshineHelloResponsePayload
+                                {
+                                    ServerVersionMajor = 1,
+                                    ServerVersionMinor = 0,
+                                    NegotiatedCapabilities = MoonshineCapabilities.Hevc | MoonshineCapabilities.ReedSolomonFec | MoonshineCapabilities.HighPollRateInput,
+                                    AssignedSessionId = _config.SessionId,
+                                    ServerNonce = (ulong)Stopwatch.GetTimestamp(),
+                                    ChallengeSalt = new MoonshineUuid128(Guid.NewGuid()),
+                                    SessionLeaseSeconds = 3600,
+                                    Reserved = 0
+                                };
+
+                                MoonshineProtocolCodec.TryWriteHeader(in respHeader, respBuffer);
+                                MoonshineProtocolCodec.TryWriteHelloResponse(in respPayload, respBuffer.AsSpan(MoonshineProtocolConstants.HeaderSize));
+
+                                try
+                                {
+                                    _controlSocket?.SendTo(respBuffer, result.RemoteEndPoint);
+                                }
+                                // ALLOWED_EXCEPTION: Transient socket error on hello response send.
+                                catch (SocketException) { }
+                            }
+                            continue;
+                        }
+                        else if (packetHeader.MessageType == MoonshineMessageType.SessionSetup)
+                        {
+                            if (MoonshineProtocolCodec.TryReadSessionSetup(datagram[MoonshineProtocolConstants.HeaderSize..], out var setup) == MoonshineErrorCode.Success)
+                            {
+                                if (result.RemoteEndPoint is IPEndPoint clientEp)
+                                {
+                                    SetClientEndpoints(
+                                        new IPEndPoint(clientEp.Address, setup.ClientUdpVideoPort > 0 ? setup.ClientUdpVideoPort : _config.ClientVideoPort),
+                                        new IPEndPoint(clientEp.Address, setup.ClientUdpAudioPort > 0 ? setup.ClientUdpAudioPort : _config.ClientAudioPort),
+                                        new IPEndPoint(clientEp.Address, setup.ClientUdpFeedbackPort > 0 ? setup.ClientUdpFeedbackPort : clientEp.Port));
+                                }
+
+                                if (setup.VideoBitrateKbps > 0)
+                                {
+                                    _encoderEngine?.ReconfigureBitrate(setup.VideoBitrateKbps);
+                                }
+
+                                byte[] respBuffer = new byte[MoonshineProtocolConstants.HeaderSize + 32];
+                                var respHeader = new MoonshinePacketHeader(
+                                    Magic: MoonshineProtocolConstants.Magic,
+                                    Version: MoonshineProtocolConstants.Version10,
+                                    MessageType: MoonshineMessageType.SessionSetupResponse,
+                                    PayloadSize: 32,
+                                    SequenceNumber: packetHeader.SequenceNumber,
+                                    SessionId: _config.SessionId,
+                                    TimestampUs: (ulong)Stopwatch.GetTimestamp());
+
+                                var respPayload = new MoonshineSessionSetupResponsePayload
+                                {
+                                    StatusCode = MoonshineErrorCode.Success,
+                                    VideoStreamId = 1,
+                                    AudioStreamId = 2,
+                                    FeedbackStreamId = 3,
+                                    HostUdpVideoPort = (ushort)BoundLocalVideoPort,
+                                    HostUdpAudioPort = (ushort)BoundLocalAudioPort,
+                                    HostUdpFeedbackPort = (ushort)BoundLocalControlPort,
+                                    HostUdpInputPort = (ushort)BoundLocalControlPort,
+                                    NegotiatedMtu = setup.MtuPayloadSize > 0 ? setup.MtuPayloadSize : (uint)_config.MtuPayloadSize,
+                                    Reserved = 0
+                                };
+
+                                MoonshineProtocolCodec.TryWriteHeader(in respHeader, respBuffer);
+                                MoonshineProtocolCodec.TryWriteSessionSetupResponse(in respPayload, respBuffer.AsSpan(MoonshineProtocolConstants.HeaderSize));
+
+                                try
+                                {
+                                    _controlSocket?.SendTo(respBuffer, result.RemoteEndPoint);
+                                }
+                                // ALLOWED_EXCEPTION: Transient socket error on session setup response send.
+                                catch (SocketException) { }
+                            }
+                            continue;
+                        }
+                        else if (packetHeader.MessageType == MoonshineMessageType.FeedbackLossStats)
                         {
                             if (MoonshineFeedbackCodec.TryReadLossStats(datagram, out _, out var lossStats) == MoonshineErrorCode.Success)
                             {
@@ -617,18 +709,30 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
 
     public async ValueTask StopAsync(CancellationToken cancellationToken = default)
     {
+        Task stopTask;
         lock (_stateLock)
         {
-            if (_state is HostSessionState.Terminated or HostSessionState.Draining) return;
-            _state = HostSessionState.Draining;
+            if (_state == HostSessionState.Terminated) return;
+            if (_stopTask != null)
+            {
+                stopTask = _stopTask;
+            }
+            else
+            {
+                _state = HostSessionState.Draining;
+                _stopTask = Task.Run(async () =>
+                {
+                    await CleanupResourcesAsync().ConfigureAwait(false);
+                    lock (_stateLock)
+                    {
+                        _state = HostSessionState.Terminated;
+                    }
+                }, CancellationToken.None);
+                stopTask = _stopTask;
+            }
         }
 
-        await CleanupResourcesAsync().ConfigureAwait(false);
-
-        lock (_stateLock)
-        {
-            _state = HostSessionState.Terminated;
-        }
+        await stopTask.ConfigureAwait(false);
     }
 
     private async ValueTask CleanupResourcesAsync()

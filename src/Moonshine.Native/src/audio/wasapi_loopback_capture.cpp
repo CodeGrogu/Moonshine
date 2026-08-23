@@ -30,6 +30,7 @@ WasapiLoopbackCapture::~WasapiLoopbackCapture() {
 }
 
 bool WasapiLoopbackCapture::initialize() {
+    std::lock_guard<std::recursive_mutex> lock(_mutex);
     cleanup();
 
 #if defined(_WIN32)
@@ -114,6 +115,7 @@ bool WasapiLoopbackCapture::read_samples_float(
     uint32_t& out_read_samples,
     uint64_t& out_timestamp_qpc
 ) {
+    std::lock_guard<std::recursive_mutex> lock(_mutex);
     if (!_initialized || !out_samples || max_samples == 0) {
         return false;
     }
@@ -257,6 +259,7 @@ bool WasapiLoopbackCapture::read_samples_pcm16(
     uint32_t& out_read_samples,
     uint64_t& out_timestamp_qpc
 ) {
+    std::lock_guard<std::recursive_mutex> lock(_mutex);
     if (!_initialized || !out_samples || max_samples == 0) {
         return false;
     }
@@ -395,6 +398,7 @@ bool WasapiLoopbackCapture::read_samples_pcm16(
 }
 
 void WasapiLoopbackCapture::get_metrics(AudioCaptureMetrics& out_metrics) const noexcept {
+    std::lock_guard<std::recursive_mutex> lock(_mutex);
     out_metrics.total_frames_captured = _frame_counter;
     out_metrics.total_samples_captured = _sample_counter;
     out_metrics.underruns = _underruns;
@@ -403,6 +407,7 @@ void WasapiLoopbackCapture::get_metrics(AudioCaptureMetrics& out_metrics) const 
 }
 
 void WasapiLoopbackCapture::cleanup() {
+    std::lock_guard<std::recursive_mutex> lock(_mutex);
     _initialized = false;
     _device_invalidated = false;
 

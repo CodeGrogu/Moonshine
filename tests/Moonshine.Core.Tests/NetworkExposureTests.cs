@@ -78,7 +78,7 @@ public class NetworkExposureTests
         RuntimeStatus status = coordinator.GetStatus();
         status.ActiveRole.Should().Be(ApplicationRole.HostAndClient);
         status.Host.ActiveListenerCount.Should().Be(6);
-        status.Client.State.Should().Be(RuntimeState.Unsupported); // Fail-closed active baseline
+        status.Client.State.Should().Be(RuntimeState.Running);
 
         RoleTransitionResult stopResult = await coordinator.StopAsync();
         stopResult.Success.Should().BeTrue();

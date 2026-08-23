@@ -107,6 +107,7 @@ void OpusAudioDecoder::configure_channel_mapping() {
 }
 
 bool OpusAudioDecoder::initialize(uint32_t sample_rate, uint32_t channels) {
+    std::lock_guard<std::recursive_mutex> lock(_mutex);
     cleanup();
 
     _sample_rate = (sample_rate == 0) ? 48000 : sample_rate;
@@ -161,6 +162,7 @@ bool OpusAudioDecoder::decode_float(
     uint32_t& out_samples_decoded,
     int decode_fec
 ) {
+    std::lock_guard<std::recursive_mutex> lock(_mutex);
     out_samples_decoded = 0;
     if (!_initialized || !out_pcm_samples || max_samples == 0) {
         _decode_errors++;
@@ -229,6 +231,7 @@ bool OpusAudioDecoder::decode_pcm16(
     uint32_t& out_samples_decoded,
     int decode_fec
 ) {
+    std::lock_guard<std::recursive_mutex> lock(_mutex);
     out_samples_decoded = 0;
     if (!_initialized || !out_pcm_samples || max_samples == 0) {
         _decode_errors++;
@@ -290,6 +293,7 @@ bool OpusAudioDecoder::decode_pcm16(
 }
 
 void OpusAudioDecoder::get_metrics(OpusDecoderMetrics& out_metrics) const noexcept {
+    std::lock_guard<std::recursive_mutex> lock(_mutex);
     out_metrics.total_frames_decoded = _frames_decoded;
     out_metrics.total_samples_decoded = _samples_decoded;
     out_metrics.decode_errors = _decode_errors;
@@ -305,6 +309,7 @@ void OpusAudioDecoder::get_metrics(OpusDecoderMetrics& out_metrics) const noexce
 }
 
 void OpusAudioDecoder::reset() {
+    std::lock_guard<std::recursive_mutex> lock(_mutex);
     if (_decoder) {
         opus_decoder_ctl(_decoder, OPUS_RESET_STATE);
     }
@@ -319,6 +324,7 @@ void OpusAudioDecoder::reset() {
 }
 
 void OpusAudioDecoder::cleanup() {
+    std::lock_guard<std::recursive_mutex> lock(_mutex);
     _initialized = false;
     if (_decoder) {
         opus_decoder_destroy(_decoder);

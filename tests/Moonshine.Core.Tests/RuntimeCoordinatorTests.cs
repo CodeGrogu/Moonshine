@@ -68,7 +68,7 @@ public class RuntimeCoordinatorTests
 
         RuntimeStatus status = coordinator.GetStatus();
         status.ActiveRole.Should().Be(ApplicationRole.Client);
-        status.State.Should().Be(RuntimeState.Unsupported); // Fail-closed baseline
+        status.State.Should().Be(RuntimeState.Running);
 
         // Client is queried, Host is completely inactive with zero resources
         status.Host.State.Should().Be(RuntimeState.Stopped);
@@ -94,7 +94,7 @@ public class RuntimeCoordinatorTests
         status.ActiveRole.Should().Be(ApplicationRole.HostAndClient);
         status.State.Should().Be(RuntimeState.Unsupported);
         status.Host.State.Should().Be(RuntimeState.Unsupported);
-        status.Client.State.Should().Be(RuntimeState.Unsupported);
+        status.Client.State.Should().Be(RuntimeState.Running);
     }
 
     [Fact]
@@ -132,7 +132,7 @@ public class RuntimeCoordinatorTests
 
         RuntimeStatus status = coordinator.GetStatus();
         status.Host.State.Should().Be(RuntimeState.Stopped);
-        status.Client.State.Should().Be(RuntimeState.Unsupported);
+        status.Client.State.Should().Be(RuntimeState.Running);
     }
 
     [Fact]
@@ -150,7 +150,7 @@ public class RuntimeCoordinatorTests
 
         RuntimeStatus status = coordinator.GetStatus();
         status.Host.State.Should().Be(RuntimeState.Unsupported);
-        status.Client.State.Should().Be(RuntimeState.Unsupported);
+        status.Client.State.Should().Be(RuntimeState.Running);
     }
 
     [Fact]

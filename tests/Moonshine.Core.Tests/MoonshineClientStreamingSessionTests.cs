@@ -53,6 +53,183 @@ public class MoonshineClientStreamingSessionTests
     }
 
     [Fact]
+    public async Task ClientStreamingSession_PerformsTwoWayHandshake_NegotiatesCapabilitiesAndTransitionsToStreaming()
+    {
+        using var hostControlSocket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+        hostControlSocket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+        int hostPort = ((IPEndPoint)hostControlSocket.LocalEndPoint!).Port;
+
+        var config = new ClientSessionConfig
+        {
+            HostAddress = IPAddress.Loopback,
+            HostControlFeedbackPort = hostPort,
+            LocalVideoPort = 0,
+            LocalAudioPort = 0,
+            LocalControlFeedbackPort = 0,
+            PerformHandshake = true,
+            HandshakeTimeoutMs = 3000,
+            VideoWidth = 1920,
+            VideoHeight = 1080,
+            VideoFps = 60,
+            VideoBitrateKbps = 20000
+        };
+
+        var session = new MoonshineClientStreamingSession(config);
+
+        // Run mock host handshake responder in background
+        var hostTask = Task.Run(async () =>
+        {
+            byte[] recvBuf = new byte[1024];
+            var remoteEp = new IPEndPoint(IPAddress.Any, 0);
+
+            // 1. Receive Hello -> Send HelloResponse
+            var r1 = await hostControlSocket.ReceiveFromAsync(recvBuf.AsMemory(), SocketFlags.None, remoteEp);
+            MoonshineProtocolCodec.TryReadHeader(recvBuf.AsSpan(0, r1.ReceivedBytes), out var hHeader).Should().Be(MoonshineErrorCode.Success);
+            hHeader.MessageType.Should().Be(MoonshineMessageType.Hello);
+
+            byte[] respBuf1 = new byte[MoonshineProtocolConstants.HeaderSize + 48];
+            var respHdr1 = new MoonshinePacketHeader(
+                Magic: MoonshineProtocolConstants.Magic,
+                Version: MoonshineProtocolConstants.Version10,
+                MessageType: MoonshineMessageType.HelloResponse,
+                PayloadSize: 48,
+                SequenceNumber: hHeader.SequenceNumber,
+                SessionId: 0x9988776655443322UL,
+                TimestampUs: (ulong)Stopwatch.GetTimestamp());
+
+            var respPayload1 = new MoonshineHelloResponsePayload
+            {
+                ServerVersionMajor = 1,
+                ServerVersionMinor = 0,
+                NegotiatedCapabilities = MoonshineCapabilities.Hevc | MoonshineCapabilities.ReedSolomonFec,
+                AssignedSessionId = 0x9988776655443322UL,
+                ServerNonce = 0xABCDEF123456UL,
+                ChallengeSalt = new MoonshineUuid128(Guid.NewGuid()),
+                SessionLeaseSeconds = 3600,
+                Reserved = 0
+            };
+
+            MoonshineProtocolCodec.TryWriteHeader(in respHdr1, respBuf1);
+            MoonshineProtocolCodec.TryWriteHelloResponse(in respPayload1, respBuf1.AsSpan(MoonshineProtocolConstants.HeaderSize));
+            await hostControlSocket.SendToAsync(respBuf1, SocketFlags.None, r1.RemoteEndPoint);
+
+            // 2. Receive SessionSetup -> Send SessionSetupResponse
+            var r2 = await hostControlSocket.ReceiveFromAsync(recvBuf.AsMemory(), SocketFlags.None, remoteEp);
+            MoonshineProtocolCodec.TryReadHeader(recvBuf.AsSpan(0, r2.ReceivedBytes), out var sHeader).Should().Be(MoonshineErrorCode.Success);
+            sHeader.MessageType.Should().Be(MoonshineMessageType.SessionSetup);
+
+            byte[] respBuf2 = new byte[MoonshineProtocolConstants.HeaderSize + 32];
+            var respHdr2 = new MoonshinePacketHeader(
+                Magic: MoonshineProtocolConstants.Magic,
+                Version: MoonshineProtocolConstants.Version10,
+                MessageType: MoonshineMessageType.SessionSetupResponse,
+                PayloadSize: 32,
+                SequenceNumber: sHeader.SequenceNumber,
+                SessionId: 0x9988776655443322UL,
+                TimestampUs: (ulong)Stopwatch.GetTimestamp());
+
+            var respPayload2 = new MoonshineSessionSetupResponsePayload
+            {
+                StatusCode = MoonshineErrorCode.Success,
+                VideoStreamId = 1,
+                AudioStreamId = 2,
+                FeedbackStreamId = 3,
+                HostUdpVideoPort = (ushort)hostPort,
+                HostUdpAudioPort = (ushort)hostPort,
+                HostUdpFeedbackPort = (ushort)hostPort,
+                HostUdpInputPort = (ushort)hostPort,
+                NegotiatedMtu = 1188,
+                Reserved = 0
+            };
+
+            MoonshineProtocolCodec.TryWriteHeader(in respHdr2, respBuf2);
+            MoonshineProtocolCodec.TryWriteSessionSetupResponse(in respPayload2, respBuf2.AsSpan(MoonshineProtocolConstants.HeaderSize));
+            await hostControlSocket.SendToAsync(respBuf2, SocketFlags.None, r2.RemoteEndPoint);
+        });
+
+        await session.StartAsync();
+        await hostTask;
+
+        session.State.Should().Be(ClientSessionState.Streaming);
+        session.IsStreaming.Should().BeTrue();
+
+        await session.StopAsync();
+        session.State.Should().Be(ClientSessionState.Closed);
+    }
+
+    [Fact]
+    public async Task ClientStreamingSession_DegradedStateOperationalPolicy_TransitionsWithHysteresis()
+    {
+        var config = new ClientSessionConfig
+        {
+            HostAddress = IPAddress.Loopback,
+            LocalVideoPort = 0,
+            LocalAudioPort = 0,
+            LocalControlFeedbackPort = 0,
+            ConnectionTimeoutSeconds = 0
+        };
+
+        var reassembly = new MoonshineMediaReassemblyPipeline(maxFrames: 16);
+        await using var session = new MoonshineClientStreamingSession(config, reassemblyPipeline: reassembly);
+        await session.StartAsync();
+
+        session.State.Should().Be(ClientSessionState.Streaming);
+
+        // 1. Simulate degraded condition (loss > 5%)
+        reassembly.SetSimulatedLossCount(50); // Set loss count on reassembly pipeline
+        await Task.Delay(550); // Advance window beyond 500 ms
+        session.EvaluateNetworkHealth();
+
+        session.State.Should().Be(ClientSessionState.Degraded);
+
+        // 2. Clear loss condition -> evaluate clean intervals
+        reassembly.SetSimulatedLossCount(0);
+
+        // First clean interval (0.5s) -> should remain Degraded (hysteresis hold)
+        await Task.Delay(550);
+        session.EvaluateNetworkHealth();
+        session.State.Should().Be(ClientSessionState.Degraded);
+
+        // Second clean interval (1.0s) -> should remain Degraded
+        await Task.Delay(550);
+        session.EvaluateNetworkHealth();
+        session.State.Should().Be(ClientSessionState.Degraded);
+
+        // Third clean interval (1.5s) -> should remain Degraded
+        await Task.Delay(550);
+        session.EvaluateNetworkHealth();
+        session.State.Should().Be(ClientSessionState.Degraded);
+
+        // Fourth clean interval (2.0s) -> should transition back to Streaming!
+        await Task.Delay(550);
+        session.EvaluateNetworkHealth();
+        session.State.Should().Be(ClientSessionState.Streaming);
+    }
+
+    [Fact]
+    public async Task ClientStreamingSession_InjectedDependencyOwnership_DoesNotDisposeCallerPipelines()
+    {
+        var config = new ClientSessionConfig { HostAddress = IPAddress.Loopback };
+        var reassembly = new MoonshineMediaReassemblyPipeline(maxFrames: 16);
+        var audio = new MoonshineClientAudioPipeline(48000, AudioChannelConfiguration.Stereo, false, false);
+
+        var session = new MoonshineClientStreamingSession(config, reassemblyPipeline: reassembly, audioPipeline: audio);
+        await session.StartAsync();
+        await session.DisposeAsync();
+
+        // Caller injected dependencies must NOT be disposed
+        var reassemblyMetrics = reassembly.Metrics;
+        reassemblyMetrics.FramesCompleted.Should().Be(0);
+
+        var audioMetrics = audio.Metrics;
+        audioMetrics.FramesDecoded.Should().Be(0);
+
+        // Clean up dependencies owned by test
+        reassembly.Dispose();
+        audio.Dispose();
+    }
+
+    [Fact]
     public async Task ClientStreamingSession_SendsKeyboardMouseGamepadInput_EncodesExactBinaryHeaders()
     {
         using var controlReceiver = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
@@ -209,7 +386,8 @@ public class MoonshineClientStreamingSessionTests
             LocalAudioPort = 0,
             LocalControlFeedbackPort = 0,
             SessionId = 0x5566778899AABBCCUL,
-            StreamId = 1
+            StreamId = 1,
+            ConnectionTimeoutSeconds = 0 // Disable timeout for this test
         };
 
         await using var session = new MoonshineClientStreamingSession(config);
@@ -254,5 +432,73 @@ public class MoonshineClientStreamingSessionTests
         }
 
         session.Metrics.TotalAudioPacketsReceived.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ClientStreamingSession_ConnectionTimeout_TransitionsToFaulted()
+    {
+        var config = new ClientSessionConfig
+        {
+            HostAddress = IPAddress.Loopback,
+            LocalVideoPort = 0,
+            LocalAudioPort = 0,
+            LocalControlFeedbackPort = 0,
+            ConnectionTimeoutSeconds = 0.5 // Short timeout for testing
+        };
+
+        var session = new MoonshineClientStreamingSession(config);
+        await session.StartAsync();
+
+        // Wait for connection to timeout (should fault after 0.5s of no activity)
+        await Task.Delay(800);
+        
+        session.EvaluateNetworkHealth();
+        
+        session.State.Should().Be(ClientSessionState.Faulted);
+        session.LastError.Should().Contain("timed out");
+    }
+
+    [Fact]
+    public async Task ClientStreamingSession_ReceivesKeepAliveAck_UpdatesRttMeasurement()
+    {
+        var config = new ClientSessionConfig
+        {
+            HostAddress = IPAddress.Loopback,
+            LocalVideoPort = 0,
+            LocalAudioPort = 0,
+            LocalControlFeedbackPort = 0,
+        };
+
+        await using var session = new MoonshineClientStreamingSession(config);
+        await session.StartAsync();
+
+        int clientControlPort = session.BoundLocalControlPort;
+        var clientControlEp = new IPEndPoint(IPAddress.Loopback, clientControlPort);
+        using var senderSocket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+
+        ulong currentQpc = (ulong)Stopwatch.GetTimestamp();
+        ulong sendTimeUs = (ulong)(currentQpc * 1_000_000.0 / Stopwatch.Frequency) - 15000; // Fake 15ms RTT
+
+        byte[] ackDatagram = new byte[MoonshineProtocolConstants.HeaderSize];
+        var mshnHdr = new MoonshinePacketHeader(
+            Magic: MoonshineProtocolConstants.Magic,
+            Version: MoonshineProtocolConstants.Version10,
+            MessageType: MoonshineMessageType.KeepAliveAck,
+            PayloadSize: 0,
+            SequenceNumber: 1,
+            SessionId: config.SessionId,
+            TimestampUs: sendTimeUs);
+
+        MoonshineProtocolCodec.TryWriteHeader(in mshnHdr, ackDatagram);
+        await senderSocket.SendToAsync(ackDatagram, SocketFlags.None, clientControlEp);
+
+        // Wait for control receive loop to process
+        for (int i = 0; i < 50 && session.Metrics.RoundTripTimeUs == 0; i++)
+        {
+            await Task.Delay(20);
+        }
+
+        session.Metrics.RoundTripTimeUs.Should().BeGreaterThan(0);
+        session.Metrics.RoundTripTimeUs.Should().BeGreaterThanOrEqualTo(14000);
     }
 }

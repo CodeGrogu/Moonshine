@@ -29,6 +29,7 @@ public readonly record struct HostAudioMetrics(
 /// Automatically detects and uses the PortCls WaveRT virtual audio driver IPC when available,
 /// or seamlessly falls back to real Windows Core Audio WASAPI Loopback capture with zero GC allocations.
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "CA2213:DisposableFieldsShouldBeDisposed", Justification = "Synchronization events remain alive to prevent ObjectDisposedException during concurrent worker loop unwinding and in-flight audio execution.")]
 public sealed class MoonshineHostAudioPipeline : IDisposable
 {
     private readonly uint _sampleRate;
@@ -59,8 +60,10 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
     private int _inFlightOperations;
     [ThreadStatic] private static int t_inFlightDepth;
     private readonly ManualResetEventSlim _drainCompletedEvent = new(initialState: true);
+    private readonly ManualResetEventSlim _workerExitedEvent = new(initialState: true);
 
     private readonly object _stateLock = new();
+    private readonly object _pcmProcessingLock = new();
 
     // Metrics tracking
     private ulong _totalFramesCaptured;
@@ -251,6 +254,7 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
             _activeSink = packetSink;
             _preferMoonshineFraming = preferMoonshineFraming;
             _workerCts = new CancellationTokenSource();
+            _workerExitedEvent.Reset();
             _isRunning = true;
 
             _audioWorkerThread = new Thread(AudioProcessingLoop)
@@ -270,24 +274,37 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
     /// </summary>
     public void Stop()
     {
-        Thread? worker = null;
+        Thread? worker;
         lock (_stateLock)
         {
-            if (!_isRunning) return;
-
+            if (!_isRunning && _audioWorkerThread == null) return;
             _isRunning = false;
-            _workerCts?.Cancel();
+            try
+            {
+                _workerCts?.Cancel();
+            }
+            catch (ObjectDisposedException) { }
             worker = _audioWorkerThread;
         }
 
-        if (worker is not null && worker.IsAlive && Thread.CurrentThread != worker)
+        if (Thread.CurrentThread != worker && worker is not null && worker.IsAlive)
         {
+            try
+            {
+                _workerExitedEvent.Wait(2000);
+            }
+            catch (ObjectDisposedException) { }
+
             worker.Join();
         }
 
         lock (_stateLock)
         {
-            _workerCts?.Dispose();
+            try
+            {
+                _workerCts?.Dispose();
+            }
+            catch (ObjectDisposedException) { }
             _workerCts = null;
             _audioWorkerThread = null;
             _activeSink = null;
@@ -355,7 +372,10 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
 
         try
         {
-            return ExecutePcmFrameStep(pcmSamples[..(int)requiredSamples], packetSink, preferMoonshineFraming);
+            lock (_pcmProcessingLock)
+            {
+                return ExecutePcmFrameStepLocked(pcmSamples[..(int)requiredSamples], packetSink, preferMoonshineFraming);
+            }
         }
         finally
         {
@@ -365,56 +385,59 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
 
     private bool ExecuteAudioFrameStep(AudioPacketSink packetSink, bool preferMoonshineFraming)
     {
-        long captureStart = Stopwatch.GetTimestamp();
-        Span<float> pcmSpan = _pcmStagingBuffer.AsSpan();
-        int samplesRead = 0;
-
-        if (_activeBackend == HostAudioBackend.VirtualDriverIpc && _ipcBridge is not null)
+        lock (_pcmProcessingLock)
         {
-            samplesRead = _ipcBridge.ReadRenderPcm(pcmSpan, waitEvent: false, timeoutMs: 0);
-            if (samplesRead < pcmSpan.Length)
+            long captureStart = Stopwatch.GetTimestamp();
+            Span<float> pcmSpan = _pcmStagingBuffer.AsSpan();
+            int samplesRead = 0;
+
+            if (_activeBackend == HostAudioBackend.VirtualDriverIpc && _ipcBridge is not null)
             {
-                if (samplesRead > 0)
+                samplesRead = _ipcBridge.ReadRenderPcm(pcmSpan, waitEvent: false, timeoutMs: 0);
+                if (samplesRead < pcmSpan.Length)
                 {
-                    pcmSpan[samplesRead..].Clear();
+                    if (samplesRead > 0)
+                    {
+                        pcmSpan[samplesRead..].Clear();
+                    }
+                    else
+                    {
+                        pcmSpan.Clear();
+                    }
+                    samplesRead = pcmSpan.Length;
                 }
-                else
-                {
-                    pcmSpan.Clear();
-                }
-                samplesRead = pcmSpan.Length;
             }
-        }
-        else if (_activeBackend == HostAudioBackend.WasapiLoopbackFallback && _wasapiLoopback is not null)
-        {
-            bool ok = _wasapiLoopback.TryReadSamples(pcmSpan, out samplesRead, out _);
-            if (!ok || samplesRead < pcmSpan.Length)
+            else if (_activeBackend == HostAudioBackend.WasapiLoopbackFallback && _wasapiLoopback is not null)
             {
-                if (samplesRead > 0 && samplesRead < pcmSpan.Length)
+                bool ok = _wasapiLoopback.TryReadSamples(pcmSpan, out samplesRead, out _);
+                if (!ok || samplesRead < pcmSpan.Length)
                 {
-                    pcmSpan[samplesRead..].Clear();
+                    if (samplesRead > 0 && samplesRead < pcmSpan.Length)
+                    {
+                        pcmSpan[samplesRead..].Clear();
+                    }
+                    else
+                    {
+                        pcmSpan.Clear();
+                    }
+                    samplesRead = pcmSpan.Length;
                 }
-                else
-                {
-                    pcmSpan.Clear();
-                }
-                samplesRead = pcmSpan.Length;
             }
-        }
-        else
-        {
-            return false;
-        }
+            else
+            {
+                return false;
+            }
 
-        long captureEnd = Stopwatch.GetTimestamp();
-        double captureUs = (double)(captureEnd - captureStart) * 1_000_000.0 / Stopwatch.Frequency;
-        _totalCaptureLatencyUs += captureUs;
-        _totalFramesCaptured++;
+            long captureEnd = Stopwatch.GetTimestamp();
+            double captureUs = (double)(captureEnd - captureStart) * 1_000_000.0 / Stopwatch.Frequency;
+            _totalCaptureLatencyUs += captureUs;
+            _totalFramesCaptured++;
 
-        return ExecutePcmFrameStep(pcmSpan[..samplesRead], packetSink, preferMoonshineFraming);
+            return ExecutePcmFrameStepLocked(pcmSpan[..samplesRead], packetSink, preferMoonshineFraming);
+        }
     }
 
-    private bool ExecutePcmFrameStep(ReadOnlySpan<float> pcmSpan, AudioPacketSink packetSink, bool preferMoonshineFraming)
+    private bool ExecutePcmFrameStepLocked(ReadOnlySpan<float> pcmSpan, AudioPacketSink packetSink, bool preferMoonshineFraming)
     {
         uint requiredSamples = _samplesPerFrame * _channels;
         if ((uint)pcmSpan.Length < requiredSamples)
@@ -429,9 +452,10 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
         Span<byte> encodedPayload = _encodedPayloadBuffer.AsSpan();
         int bytesEncoded = 0;
 
-        if (_encoder is not null)
+        OpusAudioEncoderPipeline? encoder = _encoder;
+        if (encoder is not null && encoder.IsActive)
         {
-            _encoder.TryEncode(
+            encoder.TryEncode(
                 validPcm,
                 _samplesPerFrame,
                 encodedPayload,
@@ -487,58 +511,72 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
 
     private void AudioProcessingLoop()
     {
-        var ct = _workerCts?.Token ?? CancellationToken.None;
-        var framePeriod = TimeSpan.FromMilliseconds(_frameDurationMs);
-        var nextTick = Stopwatch.GetTimestamp();
-        long ticksPerFrame = (long)(framePeriod.TotalSeconds * Stopwatch.Frequency);
-
-        while (!ct.IsCancellationRequested && Volatile.Read(ref _isRunning))
+        try
         {
-            AudioPacketSink? sink;
-            bool preferMoonshine;
-            lock (_stateLock)
-            {
-                if (_disposed || !_isRunning || ct.IsCancellationRequested) break;
-                sink = _activeSink;
-                preferMoonshine = _preferMoonshineFraming;
-            }
+            var ct = _workerCts?.Token ?? CancellationToken.None;
+            var framePeriod = TimeSpan.FromMilliseconds(_frameDurationMs);
+            var nextTick = Stopwatch.GetTimestamp();
+            long ticksPerFrame = (long)(framePeriod.TotalSeconds * Stopwatch.Frequency);
 
-            if (sink is not null)
+            while (!ct.IsCancellationRequested && Volatile.Read(ref _isRunning))
             {
-                if (TryEnterOperation())
+                AudioPacketSink? sink;
+                bool preferMoonshine;
+                lock (_stateLock)
                 {
-                    try
+                    if (_disposed || !_isRunning || ct.IsCancellationRequested) break;
+                    sink = _activeSink;
+                    preferMoonshine = _preferMoonshineFraming;
+                }
+
+                if (sink is not null)
+                {
+                    if (TryEnterOperation())
                     {
-                        ExecuteAudioFrameStep(sink, preferMoonshine);
+                        try
+                        {
+                            ExecuteAudioFrameStep(sink, preferMoonshine);
+                        }
+                        finally
+                        {
+                            ExitOperation();
+                        }
                     }
-                    finally
+                }
+
+                nextTick += ticksPerFrame;
+                long now = Stopwatch.GetTimestamp();
+                long waitTicks = nextTick - now;
+
+                if (waitTicks > 0)
+                {
+                    int waitMs = (int)((waitTicks * 1000) / Stopwatch.Frequency);
+                    if (waitMs > 1)
                     {
-                        ExitOperation();
+                        Thread.Sleep(waitMs - 1);
+                    }
+                    while (Stopwatch.GetTimestamp() < nextTick && !ct.IsCancellationRequested && Volatile.Read(ref _isRunning))
+                    {
+                        Thread.SpinWait(10);
                     }
                 }
-            }
-
-            nextTick += ticksPerFrame;
-            long now = Stopwatch.GetTimestamp();
-            long waitTicks = nextTick - now;
-
-            if (waitTicks > 0)
-            {
-                int waitMs = (int)((waitTicks * 1000) / Stopwatch.Frequency);
-                if (waitMs > 1)
+                else
                 {
-                    Thread.Sleep(waitMs - 1);
-                }
-                while (Stopwatch.GetTimestamp() < nextTick)
-                {
-                    Thread.SpinWait(10);
+                    // Align to current time if behind
+                    nextTick = now;
                 }
             }
-            else
+        }
+        // ALLOWED_EXCEPTION: Ignore task cancellation or disposed primitives on audio loop teardown.
+        catch (OperationCanceledException) { }
+        catch (ObjectDisposedException) { }
+        finally
+        {
+            try
             {
-                // Align to current time if behind
-                nextTick = now;
+                _workerExitedEvent.Set();
             }
+            catch (ObjectDisposedException) { }
         }
     }
 
@@ -552,7 +590,11 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
             }
             if (Interlocked.Increment(ref _inFlightOperations) == 1)
             {
-                _drainCompletedEvent.Reset();
+                try
+                {
+                    _drainCompletedEvent.Reset();
+                }
+                catch (ObjectDisposedException) { }
             }
             t_inFlightDepth++;
             return true;
@@ -564,7 +606,12 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
         t_inFlightDepth--;
         if (Interlocked.Decrement(ref _inFlightOperations) == 0)
         {
-            _drainCompletedEvent.Set();
+            try
+            {
+                _drainCompletedEvent.Set();
+            }
+            catch (ObjectDisposedException) { }
+
             if (Volatile.Read(ref _disposed))
             {
                 TeardownResourcesLocked();
@@ -579,21 +626,23 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
             if (_resourcesTeardownCompleted) return;
             _resourcesTeardownCompleted = true;
 
-            _ipcBridge?.Dispose();
-            _ipcBridge = null;
+            lock (_pcmProcessingLock)
+            {
+                _ipcBridge?.Dispose();
+                _ipcBridge = null;
 
-            _wasapiLoopback?.Dispose();
-            _wasapiLoopback = null;
+                _wasapiLoopback?.Dispose();
+                _wasapiLoopback = null;
 
-            _encoder?.Dispose();
-            _encoder = null;
+                _encoder?.Dispose();
+                _encoder = null;
 
-            _driverService?.Dispose();
-            _driverService = null;
+                _driverService?.Dispose();
+                _driverService = null;
 
-            _activeBackend = HostAudioBackend.Disabled;
+                _activeBackend = HostAudioBackend.Disabled;
+            }
 
-            _drainCompletedEvent.Dispose();
             Monitor.PulseAll(_stateLock);
         }
     }
@@ -621,8 +670,18 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
     /// </list>
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// Finalizes the audio pipeline to ensure background worker threads are joined if not explicitly disposed.
+    /// </summary>
+    ~MoonshineHostAudioPipeline()
+    {
+        Dispose();
+    }
+
     public void Dispose()
     {
+        GC.SuppressFinalize(this);
+
         if (Interlocked.Exchange(ref _disposeInitiated, 1) != 0)
         {
             // Disposal already initiated by another thread:

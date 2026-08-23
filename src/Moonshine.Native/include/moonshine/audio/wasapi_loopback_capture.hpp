@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <vector>
 #include <atomic>
+#include <mutex>
 
 #if defined(_WIN32)
 #ifndef NOMINMAX
@@ -78,6 +79,7 @@ private:
     bool _is_float_format{true};
     uint16_t _bits_per_sample{32};
 #endif
+    mutable std::recursive_mutex _mutex{};
 };
 
 } // namespace moonshine::audio

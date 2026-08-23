@@ -101,6 +101,7 @@ void OpusAudioEncoder::configure_channel_mapping() {
 }
 
 bool OpusAudioEncoder::initialize(const OpusEncoderConfig& config) {
+    std::lock_guard<std::recursive_mutex> lock(_mutex);
     cleanup();
 
     _config = config;
@@ -179,6 +180,7 @@ bool OpusAudioEncoder::encode_float(
     uint32_t max_payload_bytes,
     uint32_t& out_payload_bytes
 ) {
+    std::lock_guard<std::recursive_mutex> lock(_mutex);
     out_payload_bytes = 0;
     if (!_initialized || !pcm_samples || !out_payload || frame_samples == 0 || max_payload_bytes == 0) {
         return false;
@@ -230,6 +232,7 @@ bool OpusAudioEncoder::encode_pcm16(
     uint32_t max_payload_bytes,
     uint32_t& out_payload_bytes
 ) {
+    std::lock_guard<std::recursive_mutex> lock(_mutex);
     out_payload_bytes = 0;
     if (!_initialized || !pcm_samples || !out_payload || frame_samples == 0 || max_payload_bytes == 0) {
         return false;
@@ -275,6 +278,7 @@ bool OpusAudioEncoder::encode_pcm16(
 }
 
 bool OpusAudioEncoder::set_bitrate(uint32_t bitrate) {
+    std::lock_guard<std::recursive_mutex> lock(_mutex);
     if (!_initialized || bitrate == 0) return false;
     _config.bitrate = std::clamp(bitrate, 16000u, 512000u);
     if (_encoder) {
@@ -287,6 +291,7 @@ bool OpusAudioEncoder::set_bitrate(uint32_t bitrate) {
 }
 
 bool OpusAudioEncoder::set_complexity(uint32_t complexity) {
+    std::lock_guard<std::recursive_mutex> lock(_mutex);
     if (!_initialized) return false;
     _config.complexity = std::clamp(complexity, 0u, 10u);
     if (_encoder) {
@@ -299,6 +304,7 @@ bool OpusAudioEncoder::set_complexity(uint32_t complexity) {
 }
 
 void OpusAudioEncoder::get_metrics(OpusEncoderMetrics& out_metrics) const noexcept {
+    std::lock_guard<std::recursive_mutex> lock(_mutex);
     out_metrics.total_frames_encoded = _frames_encoded;
     out_metrics.total_bytes_encoded = _bytes_encoded;
     out_metrics.current_bitrate = _config.bitrate;
@@ -313,6 +319,7 @@ void OpusAudioEncoder::get_metrics(OpusEncoderMetrics& out_metrics) const noexce
 }
 
 void OpusAudioEncoder::reset() {
+    std::lock_guard<std::recursive_mutex> lock(_mutex);
     if (_encoder) {
         opus_encoder_ctl(_encoder, OPUS_RESET_STATE);
     }
@@ -325,6 +332,7 @@ void OpusAudioEncoder::reset() {
 }
 
 void OpusAudioEncoder::cleanup() {
+    std::lock_guard<std::recursive_mutex> lock(_mutex);
     _initialized = false;
     if (_encoder) {
         opus_encoder_destroy(_encoder);

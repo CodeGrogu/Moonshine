@@ -5,6 +5,7 @@
 #include <vector>
 #include <array>
 #include <chrono>
+#include <mutex>
 
 struct OpusDecoder;
 struct OpusMSDecoder;
@@ -109,6 +110,7 @@ private:
     uint32_t _decode_errors{0};
     uint32_t _concealment_frames{0};
     uint64_t _total_decode_time_ns{0};
+    mutable std::recursive_mutex _mutex{};
 };
 
 } // namespace moonshine::audio

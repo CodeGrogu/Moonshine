@@ -369,6 +369,17 @@ public sealed class MoonshineMediaReassemblyPipeline : IDisposable
         }
     }
 
+    /// <summary>
+    /// Sets simulated loss count for unit testing and diagnostic telemetry validation.
+    /// </summary>
+    public void SetSimulatedLossCount(ulong count)
+    {
+        lock (_lock)
+        {
+            _packetsLost = count;
+        }
+    }
+
     public void Dispose()
     {
         lock (_lock)

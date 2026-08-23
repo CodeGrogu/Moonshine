@@ -1,4 +1,5 @@
 using Moonshine.Core.Input;
+using Moonshine.Core.Session;
 
 namespace Moonshine.Core.Runtime;
 
@@ -16,6 +17,7 @@ public sealed class MoonshineClientCoordinator : IMoonshineClientService
     private string? _lastError;
     private CancellationTokenSource? _workerCts;
     private MoonshineClientInputPipeline? _inputPipeline;
+    private MoonshineClientStreamingSession? _activeSession;
     private bool _disposed;
 
     public ApplicationRole Role => ApplicationRole.Client;
@@ -24,6 +26,14 @@ public sealed class MoonshineClientCoordinator : IMoonshineClientService
         get
         {
             lock (_lock) return _inputPipeline;
+        }
+    }
+
+    public MoonshineClientStreamingSession? ActiveSession
+    {
+        get
+        {
+            lock (_lock) return _activeSession;
         }
     }
 
@@ -70,9 +80,12 @@ public sealed class MoonshineClientCoordinator : IMoonshineClientService
             lock (_lock)
             {
                 _workerCts = new CancellationTokenSource();
-                // Fail-closed baseline: reports Unsupported until native session control is implemented
-                _state = RuntimeState.Unsupported;
-                _lastError = "Client media transport and session control are not yet connected.";
+                
+                // Initialize input pipeline
+                _inputPipeline = new MoonshineClientInputPipeline();
+                _activeWorkers++;
+
+                _state = RuntimeState.Running;
             }
 
             return ValueTask.CompletedTask;
@@ -127,6 +140,63 @@ public sealed class MoonshineClientCoordinator : IMoonshineClientService
         }
     }
 
+    public async ValueTask<MoonshineClientStreamingSession> ConnectAndStartSessionAsync(ClientSessionConfig config, CancellationToken cancellationToken = default)
+    {
+        lock (_lock)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_state != RuntimeState.Running)
+            {
+                throw new InvalidOperationException("Client coordinator must be running before starting a session.");
+            }
+            if (_activeSession != null)
+            {
+                throw new InvalidOperationException("A client session is already active.");
+            }
+        }
+
+        var session = new MoonshineClientStreamingSession(config);
+
+        try
+        {
+            await session.StartAsync(cancellationToken).ConfigureAwait(false);
+            
+            lock (_lock)
+            {
+                _activeSession = session;
+                _isConnected = true;
+                _activeWorkers++;
+            }
+            return session;
+        }
+        catch (Exception)
+        {
+            await session.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    public async ValueTask DisconnectSessionAsync(MoonshineClientStreamingSession session)
+    {
+        bool wasActive = false;
+        lock (_lock)
+        {
+            if (ReferenceEquals(_activeSession, session))
+            {
+                _activeSession = null;
+                _isConnected = false;
+                _activeWorkers = Math.Max(0, _activeWorkers - 1);
+                wasActive = true;
+            }
+        }
+
+        if (wasActive)
+        {
+            await session.StopAsync().ConfigureAwait(false);
+            await session.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
     private void CleanupResourcesNoLock()
     {
         if (_workerCts is not null)
@@ -140,6 +210,16 @@ public sealed class MoonshineClientCoordinator : IMoonshineClientService
         {
             _inputPipeline.Dispose();
             _inputPipeline = null;
+        }
+
+        if (_activeSession is not null)
+        {
+            try
+            {
+                _activeSession.Dispose();
+            }
+            catch { }
+            _activeSession = null;
         }
 
         _activeWorkers = 0;

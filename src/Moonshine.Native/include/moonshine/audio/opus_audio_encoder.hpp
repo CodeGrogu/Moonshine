@@ -5,6 +5,7 @@
 #include <vector>
 #include <array>
 #include <chrono>
+#include <mutex>
 #include <span>
 
 struct OpusEncoder;
@@ -128,6 +129,7 @@ private:
 
     OpusEncoder* _encoder{nullptr};
     OpusMSEncoder* _ms_encoder{nullptr};
+    mutable std::recursive_mutex _mutex{};
 
     // Telemetry
     uint64_t _frames_encoded{0};

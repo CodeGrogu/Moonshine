@@ -125,10 +125,10 @@ public class HostClientStreamingIntegrationTests
             LocalControlFeedbackPort = 0
         };
 
-        var mockCapture = new MockDesktopCapturePipeline();
-        var mockEncoder = new MockVideoEncoderPipeline();
-        var hostInput = new MoonshineHostInputPipeline(config: new HostInputConfig { ExpectedSessionId = sessionId });
-        var hostAudio = new MoonshineHostAudioPipeline(sampleRate: 48000, topology: AudioChannelTopology.Stereo, bitrate: 128000, frameDurationMs: 5);
+        using var mockCapture = new MockDesktopCapturePipeline();
+        using var mockEncoder = new MockVideoEncoderPipeline();
+        using var hostInput = new MoonshineHostInputPipeline(config: new HostInputConfig { ExpectedSessionId = sessionId });
+        using var hostAudio = new MoonshineHostAudioPipeline(sampleRate: 48000, topology: AudioChannelTopology.Stereo, bitrate: 128000, frameDurationMs: 5);
 
         await using var hostSession = new MoonshineHostStreamingSession(
             config: hostConfig,

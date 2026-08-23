@@ -230,21 +230,26 @@ BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
 
 ---
 
-### Core Moonshine Streaming Protocol & Session Serialization Engine (Issue #27)
-<!-- VERIFIED: 2026-08-23, via `dotnet run -c Release --project src/Moonshine.Benchmarks -- --filter *SessionBenchmarks* --inProcess` in Windows 11 Pro build 26200, x64 RyuJIT AVX-512 -->
+### Core Moonshine Streaming Protocol & Session Serialization Engine (Issue #27, #35)
+<!-- VERIFIED: 2026-08-23, via `dotnet run -c Release --project src/Moonshine.Benchmarks -- --filter *SessionBenchmarks*` in Windows 11 Pro build 26200, x64 RyuJIT AVX-512 -->
 
 ```
 BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
 .NET SDK 10.0.400 / Host: .NET 9.0.16 (9.0.1626.22923), X64 RyuJIT AVX-512F+CD+BW+DQ+VL+VBMI
 
-| Method                                        | Mean Latency | Error       | StdDev        | Median        | Allocated Memory |
-| :-------------------------------------------- | -----------: | ----------: | ------------: | ------------: | ---------------: |
-| Session_VideoFramePacketise_DirectHotPath     |    20.341 μs | 0.9775 μs   | 2.8821 μs     |     19.507 μs |              0 B |
-| Session_BinaryContract_KeyboardPacketEncoding |     4.693 ns | 0.2402 ns   | 0.6929 ns     |      4.483 ns |              0 B |
-| Session_BinaryContract_MousePacketEncoding    |     4.819 ns | 0.1995 ns   | 0.5692 ns     |      4.699 ns |              0 B |
+| Method                                         | Mean Latency | Error       | StdDev        | Median        | Allocated Memory |
+| :--------------------------------------------- | -----------: | ----------: | ------------: | ------------: | ---------------: |
+| Session_VideoFramePacketise_DirectHotPath      |    18.041 μs | 0.5948 μs   | 1.7065 μs     |     17.346 μs |              0 B |
+| Session_BinaryContract_HelloRoundtrip          |     2.685 ns | 0.0976 ns   | 0.2721 ns     |      2.602 ns |              0 B |
+| Session_BinaryContract_SessionSetupRoundtrip   |     4.808 ns | 0.2658 ns   | 0.7669 ns     |      4.495 ns |              0 B |
+| Session_BinaryContract_KeyboardPacketRoundtrip |     5.905 ns | 0.2533 ns   | 0.7104 ns     |      5.748 ns |              0 B |
+| Session_BinaryContract_MousePacketRoundtrip    |     6.620 ns | 0.2144 ns   | 0.5868 ns     |      6.502 ns |              0 B |
+| Session_BinaryContract_GamepadPacketRoundtrip  |     9.023 ns | 0.3205 ns   | 0.8935 ns     |      8.847 ns |              0 B |
+| Session_BinaryContract_LossStatsRoundtrip      |     2.644 ns | 0.1908 ns   | 0.5414 ns     |      2.459 ns |              0 B |
+| Session_BinaryContract_IdrRequestRoundtrip     |     1.649 ns | 0.1743 ns   | 0.5139 ns     |      1.616 ns |              0 B |
 ```
 
 > [!NOTE]
-> **Measurement Semantics & Zero-Allocation Invariants**: All Moonshine-native binary wire contracts (global headers, session setup, keyboard, mouse, gamepad, and QoS feedback datagrams) serialize and deserialize in under 5.0 nanoseconds per datagram directly onto stack spans and preallocated pinned memory arenas with exactly zero managed heap allocations (`0 B Allocated`).
+> **Measurement Semantics & Microbenchmark Scope**: The microbenchmarks above measure local serialization and deserialization function execution times over stack spans and preallocated pinned buffers. They isolate the zero-allocation CPU encoding/decoding cost of each Moonshine-native binary wire contract (all completing under 10 ns with 0 B managed allocation). End-to-end user input latency (physical hardware event -> mapping -> binary serialization -> socket transmission -> network -> host reception -> OS injection) is measured separately via end-to-end integration and telemetry diagnostics.
 
 
