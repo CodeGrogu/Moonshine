@@ -10,4 +10,7 @@ All architectural decisions, native SIMD pipelines, managed protocols, and engin
 - **Safe Native Handle Lifetime**: C-ABI exports must use `std::shared_ptr` ownership guards (`SafeHandleStore<T>`) to prevent TOCTOU use-after-free races during concurrent disposal. Avoid managed finalisers on streaming pipeline wrappers with background worker threads.
 - **Formatting Standards**: British English standard, no em dashes, no emojis.
 - **MCP Research Protocols**: Always make use of `microsoftdocs/mcp` (for Windows, DirectX, Win32, and .NET documentation/samples), `com.microsoft/nuget` (for package searches, version verification, and security reviews), and `io.github.upstash/context7` (for library and documentation lookups).
-- **Verification Pipeline**: All changes must pass `scripts/verify_codebase.ps1` (environment probe, preflight sweep, physical artifact checks, 16 CTests, and 415 xUnit tests).
+- **Overseer Subagent Governance**: Overseer governs up to six specialized subagents (`researcher`, `implementer`, `adversary`, `test-writer`, `script-runner`, `specialist`). Work is mandatorily delegated to subagents.
+- **Script Timing & Polling Discipline**: Schedule timer checks between $\frac{1}{2} T$ and $3 \times T$ for scripts with estimated duration $T$, checking at most once, twice, or thrice.
+- **Verification Pipeline**: All changes must pass `scripts/verify_codebase.ps1` (environment probe, preflight sweep, physical artifact checks, 22 CTests, and 474 xUnit tests).
+
