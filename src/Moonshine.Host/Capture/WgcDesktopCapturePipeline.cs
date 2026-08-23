@@ -7,10 +7,12 @@ namespace Moonshine.Host.Capture;
 /// Modern Windows.Graphics.Capture & Direct3D 12 Low-Latency Desktop Ingestion Pipeline.
 /// Provides high-precision frame pacing and hybrid GPU multi-adapter compatibility.
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "CA2216:DisposableTypesShouldDeclareFinalizer", Justification = "Finaliser deliberately omitted: unmanaged handle lifetime is managed via SafeHandleStore and deterministic Dispose.")]
 public sealed class WgcDesktopCapturePipeline : IDesktopCapturePipeline
 {
-    private readonly IntPtr _hmonitor;
+    private IntPtr _hmonitor;
     private readonly uint _targetFps;
+    private CaptureSourceDescriptor? _source;
     private IntPtr _handle;
     private uint _width;
     private uint _height;
@@ -29,9 +31,10 @@ public sealed class WgcDesktopCapturePipeline : IDesktopCapturePipeline
     public uint Height => Volatile.Read(ref _height);
     public uint Format => Volatile.Read(ref _format);
     public bool IsHdr => Volatile.Read(ref _isHdr);
-    public uint AdapterIndex => 0;
-    public uint OutputIndex => 0;
+    public uint AdapterIndex => _source?.AdapterIndex ?? 0;
+    public uint OutputIndex => _source?.OutputIndex ?? 0;
     public uint TargetFps => _targetFps;
+    public CaptureSourceDescriptor? Source => _source;
     public bool IsAvailable => _handle != IntPtr.Zero;
 
     public CaptureMetrics Metrics
@@ -60,6 +63,15 @@ public sealed class WgcDesktopCapturePipeline : IDesktopCapturePipeline
     {
         _hmonitor = hmonitor;
         _targetFps = targetFps > 0 ? targetFps : 60;
+        Initialize();
+    }
+
+    public WgcDesktopCapturePipeline(CaptureSourceDescriptor source, uint targetFps = 60)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        _source = source;
+        _hmonitor = source.MonitorHandle;
+        _targetFps = targetFps > 0 ? targetFps : (uint)Math.Max(1, (int)Math.Round(source.RefreshRateHz));
         Initialize();
     }
 
@@ -149,18 +161,24 @@ public sealed class WgcDesktopCapturePipeline : IDesktopCapturePipeline
         }
     }
 
-    ~WgcDesktopCapturePipeline()
+    /// <summary>
+    /// Dynamically reconfigures the capture source to a new display monitor.
+    /// </summary>
+    public bool TryReconfigureSource(CaptureSourceDescriptor source)
     {
-        Dispose(false);
+        ArgumentNullException.ThrowIfNull(source);
+
+        lock (_lock)
+        {
+            if (_disposed) return false;
+            _source = source;
+            _hmonitor = source.MonitorHandle;
+            Initialize();
+            return _handle != IntPtr.Zero;
+        }
     }
 
     public void Dispose()
-    {
-        Dispose(true);
-        GC.SuppressFinalize(this);
-    }
-
-    private void Dispose(bool disposing)
     {
         lock (_lock)
         {
@@ -173,5 +191,6 @@ public sealed class WgcDesktopCapturePipeline : IDesktopCapturePipeline
                 _handle = IntPtr.Zero;
             }
         }
+        GC.SuppressFinalize(this);
     }
 }

@@ -16,6 +16,7 @@
     <ProjectReference Include="..\Moonshine.Core\Moonshine.Core.csproj" />
     <ProjectReference Include="..\Moonshine.Interop\Moonshine.Interop.csproj" />
     <ProjectReference Include="..\Moonshine.Protocol\Moonshine.Protocol.csproj" />
+    <PackageReference Include="Microsoft.Win32.SystemEvents" />
   </ItemGroup>
 
 </Project>

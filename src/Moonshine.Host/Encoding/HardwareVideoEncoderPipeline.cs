@@ -7,6 +7,7 @@ namespace Moonshine.Host.Encoding;
 /// <summary>
 /// Managed wrapper for multi-vendor hardware video encoder pipelines (NVENC, AMF, QuickSync, D3D11).
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "CA2216:DisposableTypesShouldDeclareFinalizer", Justification = "Finaliser deliberately omitted: managed disposal deterministically releases unmanaged hardware encoder resources via C-ABI.")]
 public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
 {
     private IntPtr _handle;
@@ -79,11 +80,6 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
         };
 
         _handle = MoonshineNativeMethods.EncoderCreate((uint)vendor, d3dDevice, in config);
-    }
-
-    ~HardwareVideoEncoderPipeline()
-    {
-        Dispose(false);
     }
 
     public unsafe bool TryEncodeFrame(

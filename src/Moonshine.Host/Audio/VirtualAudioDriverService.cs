@@ -8,6 +8,7 @@ namespace Moonshine.Host.Audio;
 /// Managed coordinator and service for querying, verifying, and configuring
 /// the dedicated Moonshine Windows Virtual Audio Driver (PortCls WaveRT miniport).
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "CA2216:DisposableTypesShouldDeclareFinalizer", Justification = "Finaliser deliberately omitted: managed disposal deterministically releases unmanaged driver service handles via C-ABI.")]
 public sealed class VirtualAudioDriverService : IDisposable
 {
     private IntPtr _handle;
@@ -24,14 +25,6 @@ public sealed class VirtualAudioDriverService : IDisposable
     public VirtualAudioDriverService()
     {
         _handle = MoonshineNativeMethods.VirtualAudioDriverCreate();
-    }
-
-    /// <summary>
-    /// Finaliser to guarantee native memory cleanup.
-    /// </summary>
-    ~VirtualAudioDriverService()
-    {
-        Dispose(false);
     }
 
     /// <summary>

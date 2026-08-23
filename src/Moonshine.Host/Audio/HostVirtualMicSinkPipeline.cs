@@ -19,6 +19,7 @@ public readonly record struct HostMicSinkMetrics(
 /// Interfaces with native C++23 MicAudioSink for sub-15ms voice latency, adaptive jitter buffering,
 /// clock drift compensation, and virtual audio device routing.
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "CA2216:DisposableTypesShouldDeclareFinalizer", Justification = "Finaliser deliberately omitted: managed disposal deterministically releases unmanaged mic sink resources via C-ABI.")]
 public sealed class HostVirtualMicSinkPipeline : IDisposable
 {
     private IntPtr _handle;
@@ -157,11 +158,6 @@ public sealed class HostVirtualMicSinkPipeline : IDisposable
             driftCorrections,
             jitterMs
         );
-    }
-
-    ~HostVirtualMicSinkPipeline()
-    {
-        Dispose(false);
     }
 
     public void Dispose()

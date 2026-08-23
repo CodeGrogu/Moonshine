@@ -677,6 +677,31 @@ public static unsafe partial class MoonshineNativeMethods
         out MoonshineDisplayInfo outInfo
     );
 
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_capture_get_display_extended_info")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int CaptureGetDisplayExtendedInfo(
+        uint adapterIndex,
+        uint displayIndex,
+        out MoonshineDisplayExtendedInfo outInfo
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_capture_get_display_mode_count")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial uint CaptureGetDisplayModeCount(
+        uint adapterIndex,
+        uint displayIndex
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_capture_get_display_modes")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static unsafe partial int CaptureGetDisplayModes(
+        uint adapterIndex,
+        uint displayIndex,
+        MoonshineDisplayModeDesc* outModes,
+        uint maxModes,
+        out uint outModeCount
+    );
+
     // ========================================================================
     // HDR10 Metadata Extraction & Real-Time Color Space Conversion APIs
     // ========================================================================

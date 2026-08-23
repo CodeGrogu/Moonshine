@@ -27,6 +27,7 @@ public class HostClientStreamingIntegrationTests
         public uint AdapterIndex => 0;
         public uint OutputIndex => 0;
         public bool IsAvailable => true;
+        public CaptureSourceDescriptor? Source => null;
         public CaptureMetrics Metrics => new(0, 0, 0, 0, 1920, 1080, 28, false, 0.0);
 
         public unsafe bool TryAcquireNextFrame(uint timeoutMs, out MoonshineCaptureFrameDesc frame)
@@ -44,6 +45,7 @@ public class HostClientStreamingIntegrationTests
 
         public void ReleaseFrame() { }
         public bool TryRecover() => true;
+        public bool TryReconfigureSource(CaptureSourceDescriptor source) => true;
         public void Dispose() { }
     }
 

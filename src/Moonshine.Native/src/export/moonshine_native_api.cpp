@@ -90,6 +90,36 @@ static_assert(offsetof(MoonshinePacketDesc, flags) == 15, "flags offset mismatch
 static_assert(offsetof(MoonshinePacketDesc, buffer_slot_index) == 16, "buffer_slot_index offset mismatch");
 static_assert(offsetof(MoonshinePacketDesc, payload_ptr) == 24, "payload_ptr offset mismatch");
 
+static_assert(sizeof(MoonshineDisplayModeDesc) == 32, "MoonshineDisplayModeDesc must be exactly 32 bytes");
+static_assert(alignof(MoonshineDisplayModeDesc) == 1, "MoonshineDisplayModeDesc packed alignment is 1");
+static_assert(offsetof(MoonshineDisplayModeDesc, width) == 0, "width offset mismatch");
+static_assert(offsetof(MoonshineDisplayModeDesc, height) == 4, "height offset mismatch");
+static_assert(offsetof(MoonshineDisplayModeDesc, refresh_rate_num) == 8, "refresh_rate_num offset mismatch");
+static_assert(offsetof(MoonshineDisplayModeDesc, refresh_rate_den) == 12, "refresh_rate_den offset mismatch");
+static_assert(offsetof(MoonshineDisplayModeDesc, format) == 16, "format offset mismatch");
+static_assert(offsetof(MoonshineDisplayModeDesc, scaling) == 20, "scaling offset mismatch");
+static_assert(offsetof(MoonshineDisplayModeDesc, scanline_ordering) == 24, "scanline_ordering offset mismatch");
+static_assert(offsetof(MoonshineDisplayModeDesc, is_hdr) == 28, "is_hdr offset mismatch");
+static_assert(offsetof(MoonshineDisplayModeDesc, reserved) == 29, "reserved offset mismatch");
+
+static_assert(sizeof(MoonshineDisplayExtendedInfo) == 152, "MoonshineDisplayExtendedInfo must be exactly 152 bytes");
+static_assert(alignof(MoonshineDisplayExtendedInfo) == 1, "MoonshineDisplayExtendedInfo packed alignment is 1");
+static_assert(offsetof(MoonshineDisplayExtendedInfo, display_index) == 0, "display_index offset mismatch");
+static_assert(offsetof(MoonshineDisplayExtendedInfo, adapter_index) == 4, "adapter_index offset mismatch");
+static_assert(offsetof(MoonshineDisplayExtendedInfo, monitor_handle) == 8, "monitor_handle offset mismatch");
+static_assert(offsetof(MoonshineDisplayExtendedInfo, desktop_left) == 16, "desktop_left offset mismatch");
+static_assert(offsetof(MoonshineDisplayExtendedInfo, desktop_top) == 20, "desktop_top offset mismatch");
+static_assert(offsetof(MoonshineDisplayExtendedInfo, desktop_right) == 24, "desktop_right offset mismatch");
+static_assert(offsetof(MoonshineDisplayExtendedInfo, desktop_bottom) == 28, "desktop_bottom offset mismatch");
+static_assert(offsetof(MoonshineDisplayExtendedInfo, dpi_scale) == 32, "dpi_scale offset mismatch");
+static_assert(offsetof(MoonshineDisplayExtendedInfo, is_primary) == 36, "is_primary offset mismatch");
+static_assert(offsetof(MoonshineDisplayExtendedInfo, is_attached_to_desktop) == 37, "is_attached_to_desktop offset mismatch");
+static_assert(offsetof(MoonshineDisplayExtendedInfo, is_hdr) == 38, "is_hdr offset mismatch");
+static_assert(offsetof(MoonshineDisplayExtendedInfo, bits_per_color) == 39, "bits_per_color offset mismatch");
+static_assert(offsetof(MoonshineDisplayExtendedInfo, device_name) == 40, "device_name offset mismatch");
+static_assert(offsetof(MoonshineDisplayExtendedInfo, friendly_name) == 72, "friendly_name offset mismatch");
+static_assert(offsetof(MoonshineDisplayExtendedInfo, reserved) == 136, "reserved offset mismatch");
+
 extern "C" {
 
 // ============================================================================
@@ -1223,6 +1253,197 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_capture_get_display_info(
     out_info->is_attached_to_desktop = 1;
     out_info->is_hdr = 0;
     out_info->bits_per_color = 8;
+    return 0;
+#endif
+}
+
+#if defined(_WIN32)
+static uint32_t GetMonitorDpiScale(HMONITOR hMon) {
+    if (!hMon) return 100;
+    HMODULE shcore = GetModuleHandleW(L"shcore.dll");
+    if (!shcore) shcore = LoadLibraryW(L"shcore.dll");
+    if (shcore) {
+        typedef HRESULT (WINAPI *GetDpiForMonitorProc)(HMONITOR, int, UINT*, UINT*);
+        auto pfn = reinterpret_cast<GetDpiForMonitorProc>(GetProcAddress(shcore, "GetDpiForMonitor"));
+        if (pfn) {
+            UINT dpiX = 96, dpiY = 96;
+            if (SUCCEEDED(pfn(hMon, 0, &dpiX, &dpiY)) && dpiX > 0) {
+                return (dpiX * 100) / 96;
+            }
+        }
+    }
+    return 100;
+}
+#endif
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_capture_get_display_extended_info(
+    uint32_t adapter_index,
+    uint32_t display_index,
+    MoonshineDisplayExtendedInfo* out_info
+) {
+    if (!out_info) return -1;
+    std::memset(out_info, 0, sizeof(MoonshineDisplayExtendedInfo));
+    out_info->adapter_index = adapter_index;
+    out_info->display_index = display_index;
+
+#if defined(_WIN32)
+    Microsoft::WRL::ComPtr<IDXGIFactory1> factory;
+    if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) return -1;
+    Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
+    if (FAILED(factory->EnumAdapters1(adapter_index, &adapter))) return -1;
+    Microsoft::WRL::ComPtr<IDXGIOutput> output;
+    if (FAILED(adapter->EnumOutputs(display_index, &output))) return -1;
+
+    DXGI_OUTPUT_DESC desc = {};
+    if (FAILED(output->GetDesc(&desc))) return -1;
+
+    out_info->monitor_handle = reinterpret_cast<int64_t>(desc.Monitor);
+    out_info->desktop_left = desc.DesktopCoordinates.left;
+    out_info->desktop_top = desc.DesktopCoordinates.top;
+    out_info->desktop_right = desc.DesktopCoordinates.right;
+    out_info->desktop_bottom = desc.DesktopCoordinates.bottom;
+    out_info->is_attached_to_desktop = desc.AttachedToDesktop ? 1 : 0;
+    out_info->bits_per_color = 8;
+    out_info->is_hdr = 0;
+    out_info->dpi_scale = GetMonitorDpiScale(desc.Monitor);
+
+    WideCharToMultiByte(CP_UTF8, 0, desc.DeviceName, -1, out_info->device_name, sizeof(out_info->device_name) - 1, nullptr, nullptr);
+
+    if (desc.Monitor) {
+        MONITORINFOEXW mi = {};
+        mi.cbSize = sizeof(mi);
+        if (GetMonitorInfoW(desc.Monitor, &mi)) {
+            out_info->is_primary = (mi.dwFlags & MONITORINFOF_PRIMARY) ? 1 : 0;
+
+            DISPLAY_DEVICEW dispDev = {};
+            dispDev.cb = sizeof(dispDev);
+            if (EnumDisplayDevicesW(mi.szDevice, 0, &dispDev, 0) && dispDev.DeviceString[0] != L'\0') {
+                WideCharToMultiByte(CP_UTF8, 0, dispDev.DeviceString, -1, out_info->friendly_name, sizeof(out_info->friendly_name) - 1, nullptr, nullptr);
+            }
+        }
+    }
+
+    if (out_info->friendly_name[0] == '\0') {
+        std::snprintf(out_info->friendly_name, sizeof(out_info->friendly_name), "%s", "Generic PnP Monitor");
+    }
+
+    Microsoft::WRL::ComPtr<IDXGIOutput6> output6;
+    if (SUCCEEDED(output.As(&output6))) {
+        DXGI_OUTPUT_DESC1 desc1 = {};
+        if (SUCCEEDED(output6->GetDesc1(&desc1))) {
+            out_info->bits_per_color = static_cast<uint8_t>(desc1.BitsPerColor);
+            out_info->is_hdr = (desc1.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020 ||
+                                desc1.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709) ? 1 : 0;
+        }
+    }
+
+    return 0;
+#else
+    out_info->monitor_handle = 1;
+    out_info->desktop_left = 0;
+    out_info->desktop_top = 0;
+    out_info->desktop_right = 1920;
+    out_info->desktop_bottom = 1080;
+    out_info->dpi_scale = 100;
+    out_info->is_primary = 1;
+    out_info->is_attached_to_desktop = 1;
+    out_info->is_hdr = 0;
+    out_info->bits_per_color = 8;
+    std::snprintf(out_info->device_name, sizeof(out_info->device_name), "%s", "\\\\.\\DISPLAY1");
+    std::snprintf(out_info->friendly_name, sizeof(out_info->friendly_name), "%s", "Mock Physical Display");
+    return 0;
+#endif
+}
+
+MOONSHINE_API uint32_t MOONSHINE_CONV moonshine_capture_get_display_mode_count(
+    uint32_t adapter_index,
+    uint32_t display_index
+) {
+#if defined(_WIN32)
+    Microsoft::WRL::ComPtr<IDXGIFactory1> factory;
+    if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) return 0;
+    Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
+    if (FAILED(factory->EnumAdapters1(adapter_index, &adapter))) return 0;
+    Microsoft::WRL::ComPtr<IDXGIOutput> output;
+    if (FAILED(adapter->EnumOutputs(display_index, &output))) return 0;
+
+    UINT numModes = 0;
+    if (SUCCEEDED(output->GetDisplayModeList(DXGI_FORMAT_B8G8R8A8_UNORM, 0, &numModes, nullptr))) {
+        return numModes;
+    }
+    return 0;
+#else
+    (void)adapter_index;
+    (void)display_index;
+    return 1;
+#endif
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_capture_get_display_modes(
+    uint32_t adapter_index,
+    uint32_t display_index,
+    MoonshineDisplayModeDesc* out_modes,
+    uint32_t max_modes,
+    uint32_t* out_mode_count
+) {
+    if (!out_modes || max_modes == 0 || !out_mode_count) return -1;
+    *out_mode_count = 0;
+
+#if defined(_WIN32)
+    Microsoft::WRL::ComPtr<IDXGIFactory1> factory;
+    if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) return -1;
+    Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
+    if (FAILED(factory->EnumAdapters1(adapter_index, &adapter))) return -1;
+    Microsoft::WRL::ComPtr<IDXGIOutput> output;
+    if (FAILED(adapter->EnumOutputs(display_index, &output))) return -1;
+
+    UINT numModes = 0;
+    if (FAILED(output->GetDisplayModeList(DXGI_FORMAT_B8G8R8A8_UNORM, 0, &numModes, nullptr)) || numModes == 0) {
+        return -1;
+    }
+
+    std::vector<DXGI_MODE_DESC> modes(numModes);
+    if (FAILED(output->GetDisplayModeList(DXGI_FORMAT_B8G8R8A8_UNORM, 0, &numModes, modes.data()))) {
+        return -1;
+    }
+
+    bool is_hdr = false;
+    Microsoft::WRL::ComPtr<IDXGIOutput6> output6;
+    if (SUCCEEDED(output.As(&output6))) {
+        DXGI_OUTPUT_DESC1 desc1 = {};
+        if (SUCCEEDED(output6->GetDesc1(&desc1))) {
+            is_hdr = (desc1.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020 ||
+                      desc1.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709);
+        }
+    }
+
+    uint32_t toCopy = (std::min)(static_cast<uint32_t>(numModes), max_modes);
+    for (uint32_t i = 0; i < toCopy; i++) {
+        out_modes[i].width = modes[i].Width;
+        out_modes[i].height = modes[i].Height;
+        out_modes[i].refresh_rate_num = modes[i].RefreshRate.Numerator;
+        out_modes[i].refresh_rate_den = modes[i].RefreshRate.Denominator;
+        out_modes[i].format = static_cast<uint32_t>(modes[i].Format);
+        out_modes[i].scaling = static_cast<uint32_t>(modes[i].Scaling);
+        out_modes[i].scanline_ordering = static_cast<uint32_t>(modes[i].ScanlineOrdering);
+        out_modes[i].is_hdr = is_hdr ? 1 : 0;
+        std::memset(out_modes[i].reserved, 0, sizeof(out_modes[i].reserved));
+    }
+    *out_mode_count = toCopy;
+    return 0;
+#else
+    (void)adapter_index;
+    (void)display_index;
+    out_modes[0].width = 1920;
+    out_modes[0].height = 1080;
+    out_modes[0].refresh_rate_num = 60;
+    out_modes[0].refresh_rate_den = 1;
+    out_modes[0].format = 87;
+    out_modes[0].scaling = 0;
+    out_modes[0].scanline_ordering = 0;
+    out_modes[0].is_hdr = 0;
+    std::memset(out_modes[0].reserved, 0, sizeof(out_modes[0].reserved));
+    *out_mode_count = 1;
     return 0;
 #endif
 }

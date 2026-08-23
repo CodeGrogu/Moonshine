@@ -33,6 +33,7 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
     private UnifiedHardwareEncoderEngine? _encoderEngine;
     private MoonshineHostAudioPipeline? _audioPipeline;
     private MoonshineHostInputPipeline? _inputPipeline;
+    private IDisplayTopologyWatcher? _topologyWatcher;
     private MoonshineVideoPacketiser? _videoPacketiser;
     private CongestionController? _congestionController;
 
@@ -119,7 +120,8 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
         IDesktopCapturePipeline? capturePipeline = null,
         UnifiedHardwareEncoderEngine? encoderEngine = null,
         MoonshineHostAudioPipeline? audioPipeline = null,
-        MoonshineHostInputPipeline? inputPipeline = null)
+        MoonshineHostInputPipeline? inputPipeline = null,
+        IDisplayTopologyWatcher? topologyWatcher = null)
     {
         _config = config ?? HostSessionConfig.Default;
         _clientVideoEndpoint = new IPEndPoint(_config.ClientAddress, _config.ClientVideoPort);
@@ -137,6 +139,8 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
 
         _inputPipeline = inputPipeline;
         _ownsInput = inputPipeline == null;
+
+        _topologyWatcher = topologyWatcher;
     }
 
     /// <summary>
@@ -241,7 +245,13 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
             _videoLoopTask = Task.Run(VideoFrameLoopAsync, CancellationToken.None);
             _controlFeedbackLoopTask = Task.Run(ControlFeedbackLoopAsync, CancellationToken.None);
 
-            // 10. Transition to Streaming state only after all backends are verified
+            // 10. Hook Display Topology Watcher if provided
+            if (_topologyWatcher != null)
+            {
+                _topologyWatcher.TopologyChanged += OnDisplayTopologyChanged;
+            }
+
+            // 11. Transition to Streaming state only after all backends are verified
             lock (_stateLock)
             {
                 _state = HostSessionState.Streaming;
@@ -301,6 +311,52 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
     {
         Interlocked.Increment(ref _keyframesRequested);
         Volatile.Write(ref _forceNextIdr, true);
+    }
+
+    private void OnDisplayTopologyChanged(object? sender, DisplayTopologyChangedEventArgs e)
+    {
+        HandleDisplayTopologyChanged(e);
+    }
+
+    /// <summary>
+    /// Handles asynchronous display topology changes and coordinates capture pipeline reconfiguration.
+    /// </summary>
+    public void HandleDisplayTopologyChanged(DisplayTopologyChangedEventArgs e)
+    {
+        ArgumentNullException.ThrowIfNull(e);
+
+        lock (_stateLock)
+        {
+            if (_disposed || _state != HostSessionState.Streaming) return;
+        }
+
+        if (e.NewTopology.IsHeadless)
+        {
+            // Headless transition: all displays detached.
+            return;
+        }
+
+        if (_capturePipeline != null)
+        {
+            var selectResult = CaptureSourceSelector.SelectSource(e.NewTopology, new CaptureSourceSelectionCriteria(
+                TargetWidth: _config.Width,
+                TargetHeight: _config.Height,
+                TargetFps: _config.Fps,
+                RequireHdr: _config.EnableHdr10,
+                FallbackPolicy: CaptureSourceFallbackPolicy.FallbackToPrimary
+            ));
+
+            if (selectResult.IsSuccess && selectResult.Source != null)
+            {
+                _capturePipeline.TryReconfigureSource(selectResult.Source);
+            }
+            else
+            {
+                _capturePipeline.TryRecover();
+            }
+
+            RequestKeyframe();
+        }
     }
 
     /// <summary>
@@ -773,6 +829,11 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
             {
             }
             _controlFeedbackLoopTask = null;
+        }
+
+        if (_topologyWatcher != null)
+        {
+            _topologyWatcher.TopologyChanged -= OnDisplayTopologyChanged;
         }
 
         if (_audioPipeline != null)

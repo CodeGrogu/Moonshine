@@ -8,6 +8,7 @@ namespace Moonshine.Host.Encoding;
 /// Provides direct Direct3D 11/12 texture registration, low-power VDENC mode,
 /// CBR rate control, zero B-frames, and progressive intra-refresh slice encoding.
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "CA2216:DisposableTypesShouldDeclareFinalizer", Justification = "Finaliser deliberately omitted: managed disposal deterministically releases unmanaged Intel QuickSync hardware encoder resources via C-ABI.")]
 public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
 {
     private IntPtr _handle;
@@ -86,11 +87,6 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
         {
             _ = MoonshineNativeMethods.QsvSetTuning(_handle, (uint)targetUsage, lowPowerVdenc ? 1 : 0);
         }
-    }
-
-    ~QsvHardwareEncoderPipeline()
-    {
-        Dispose(false);
     }
 
     public unsafe bool TryEncodeFrame(

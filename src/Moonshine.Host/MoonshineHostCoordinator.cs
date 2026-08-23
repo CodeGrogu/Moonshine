@@ -31,6 +31,7 @@ public sealed class MoonshineHostCoordinator : IMoonshineHostService
     private readonly List<MoonshineHostStreamingSession> _sessions = new();
     private MoonshineHostInputPipeline? _inputPipeline;
     private MoonshineHostDiscoveryAdvertiser? _discoveryAdvertiser;
+    private DisplayTopologyWatcher? _topologyWatcher;
     private HostState _state = HostState.Disabled;
     private int _activeWorkers;
     private int _activeBuffers;
@@ -83,6 +84,14 @@ public sealed class MoonshineHostCoordinator : IMoonshineHostService
         get
         {
             lock (_lock) return _discoveryAdvertiser;
+        }
+    }
+
+    public IDisplayTopologyWatcher? TopologyWatcher
+    {
+        get
+        {
+            lock (_lock) return _topologyWatcher;
         }
     }
 
@@ -157,6 +166,7 @@ public sealed class MoonshineHostCoordinator : IMoonshineHostService
                 _discoveryAdvertiser = new MoonshineHostDiscoveryAdvertiser(_endpointConfig);
                 _discoveryAdvertiser.Start();
                 _inputPipeline = new MoonshineHostInputPipeline();
+                _topologyWatcher = new DisplayTopologyWatcher();
                 _workerCts = new CancellationTokenSource();
                 _state = HostState.Running;
                 _lastError = null;
@@ -200,7 +210,8 @@ public sealed class MoonshineHostCoordinator : IMoonshineHostService
             capturePipeline: capturePipeline,
             encoderEngine: encoderEngine,
             audioPipeline: audioPipeline,
-            inputPipeline: inputPipeline ?? _inputPipeline);
+            inputPipeline: inputPipeline ?? _inputPipeline,
+            topologyWatcher: _topologyWatcher);
 
         try
         {
@@ -313,6 +324,12 @@ public sealed class MoonshineHostCoordinator : IMoonshineHostService
         {
             _inputPipeline.Dispose();
             _inputPipeline = null;
+        }
+
+        if (_topologyWatcher is not null)
+        {
+            _topologyWatcher.Dispose();
+            _topologyWatcher = null;
         }
 
         await _networkManager.StopListenersAsync().ConfigureAwait(false);

@@ -19,10 +19,12 @@ public sealed record CaptureMetrics(
 /// Direct3D 11/12 DXGI Desktop Duplication Capture Pipeline.
 /// Provides high-throughput, zero-copy VRAM surface acquisition for video encoders.
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "CA2216:DisposableTypesShouldDeclareFinalizer", Justification = "Finaliser deliberately omitted: unmanaged handle lifetime is managed via SafeHandleStore and deterministic Dispose.")]
 public sealed class DxgiDesktopCapturePipeline : IDesktopCapturePipeline
 {
-    private readonly uint _adapterIndex;
-    private readonly uint _outputIndex;
+    private uint _adapterIndex;
+    private uint _outputIndex;
+    private CaptureSourceDescriptor? _source;
     private IntPtr _handle;
     private uint _width;
     private uint _height;
@@ -43,6 +45,7 @@ public sealed class DxgiDesktopCapturePipeline : IDesktopCapturePipeline
     public bool IsHdr => Volatile.Read(ref _isHdr);
     public uint AdapterIndex => _adapterIndex;
     public uint OutputIndex => _outputIndex;
+    public CaptureSourceDescriptor? Source => _source;
     public bool IsAvailable => _handle != IntPtr.Zero;
 
     public CaptureMetrics Metrics
@@ -71,6 +74,15 @@ public sealed class DxgiDesktopCapturePipeline : IDesktopCapturePipeline
     {
         _adapterIndex = adapterIndex;
         _outputIndex = outputIndex;
+        Initialize();
+    }
+
+    public DxgiDesktopCapturePipeline(CaptureSourceDescriptor source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        _source = source;
+        _adapterIndex = source.AdapterIndex;
+        _outputIndex = source.OutputIndex;
         Initialize();
     }
 
@@ -171,18 +183,25 @@ public sealed class DxgiDesktopCapturePipeline : IDesktopCapturePipeline
         }
     }
 
-    ~DxgiDesktopCapturePipeline()
+    /// <summary>
+    /// Dynamically reconfigures the capture source to a new display output.
+    /// </summary>
+    public bool TryReconfigureSource(CaptureSourceDescriptor source)
     {
-        Dispose(false);
+        ArgumentNullException.ThrowIfNull(source);
+
+        lock (_lock)
+        {
+            if (_disposed) return false;
+            _source = source;
+            _adapterIndex = source.AdapterIndex;
+            _outputIndex = source.OutputIndex;
+            Initialize();
+            return _handle != IntPtr.Zero;
+        }
     }
 
     public void Dispose()
-    {
-        Dispose(true);
-        GC.SuppressFinalize(this);
-    }
-
-    private void Dispose(bool disposing)
     {
         lock (_lock)
         {
@@ -195,5 +214,6 @@ public sealed class DxgiDesktopCapturePipeline : IDesktopCapturePipeline
                 _handle = IntPtr.Zero;
             }
         }
+        GC.SuppressFinalize(this);
     }
 }

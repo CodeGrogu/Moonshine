@@ -137,6 +137,42 @@ typedef struct MoonshineDisplayInfo {
     uint8_t  reserved[5];
 } MoonshineDisplayInfo;
 
+/**
+ * @brief Blittable descriptor representing an available display mode (resolution & refresh rate).
+ */
+typedef struct MoonshineDisplayModeDesc {
+    uint32_t width;
+    uint32_t height;
+    uint32_t refresh_rate_num;
+    uint32_t refresh_rate_den;
+    uint32_t format;
+    uint32_t scaling;
+    uint32_t scanline_ordering;
+    uint8_t  is_hdr;
+    uint8_t  reserved[3];
+} MoonshineDisplayModeDesc;
+
+/**
+ * @brief Blittable descriptor representing extended physical display output metadata and Windows desktop topology.
+ */
+typedef struct MoonshineDisplayExtendedInfo {
+    uint32_t display_index;
+    uint32_t adapter_index;
+    int64_t  monitor_handle;
+    int32_t  desktop_left;
+    int32_t  desktop_top;
+    int32_t  desktop_right;
+    int32_t  desktop_bottom;
+    uint32_t dpi_scale;
+    uint8_t  is_primary;
+    uint8_t  is_attached_to_desktop;
+    uint8_t  is_hdr;
+    uint8_t  bits_per_color;
+    char     device_name[32];
+    char     friendly_name[64];
+    uint8_t  reserved[16];
+} MoonshineDisplayExtendedInfo;
+
 #pragma pack(pop)
 
 // ============================================================================
@@ -692,6 +728,22 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_capture_get_display_info(
     uint32_t adapter_index,
     uint32_t display_index,
     MoonshineDisplayInfo* out_info
+);
+MOONSHINE_API int MOONSHINE_CONV moonshine_capture_get_display_extended_info(
+    uint32_t adapter_index,
+    uint32_t display_index,
+    MoonshineDisplayExtendedInfo* out_info
+);
+MOONSHINE_API uint32_t MOONSHINE_CONV moonshine_capture_get_display_mode_count(
+    uint32_t adapter_index,
+    uint32_t display_index
+);
+MOONSHINE_API int MOONSHINE_CONV moonshine_capture_get_display_modes(
+    uint32_t adapter_index,
+    uint32_t display_index,
+    MoonshineDisplayModeDesc* out_modes,
+    uint32_t max_modes,
+    uint32_t* out_mode_count
 );
 
 // ============================================================================

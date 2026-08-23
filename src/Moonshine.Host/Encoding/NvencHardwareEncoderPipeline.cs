@@ -8,6 +8,7 @@ namespace Moonshine.Host.Encoding;
 /// Provides direct Direct3D 11/12 texture registration, P1-P7 ultra-low latency presets,
 /// CBR rate control, zero B-frames, and progressive intra-refresh slice encoding.
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "CA2216:DisposableTypesShouldDeclareFinalizer", Justification = "Finaliser deliberately omitted: managed disposal deterministically releases unmanaged NVENC hardware encoder resources via C-ABI.")]
 public sealed class NvencHardwareEncoderPipeline : IVideoEncoderPipeline
 {
     private IntPtr _handle;
@@ -86,11 +87,6 @@ public sealed class NvencHardwareEncoderPipeline : IVideoEncoderPipeline
         {
             _ = MoonshineNativeMethods.NvencSetTuning(_handle, (uint)preset, (uint)tuning);
         }
-    }
-
-    ~NvencHardwareEncoderPipeline()
-    {
-        Dispose(false);
     }
 
     public unsafe bool TryEncodeFrame(

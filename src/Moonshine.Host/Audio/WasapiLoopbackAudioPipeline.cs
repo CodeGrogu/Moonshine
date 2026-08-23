@@ -8,6 +8,7 @@ namespace Moonshine.Host.Audio;
 /// Intercepts system master audio output directly using WASAPI Loopback,
 /// supporting 48kHz Stereo, Surround 5.1, and Surround 7.1 with zero GC allocations.
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "CA2216:DisposableTypesShouldDeclareFinalizer", Justification = "Finaliser deliberately omitted: native SafeHandleStore defers deallocation via shared_ptr, preventing GC-thread use-after-free races during audio teardown.")]
 public sealed class WasapiLoopbackAudioPipeline : IDisposable
 {
     private IntPtr _handle;
@@ -36,11 +37,6 @@ public sealed class WasapiLoopbackAudioPipeline : IDisposable
         _bufferDurationMs = bufferDurationMs;
 
         _handle = MoonshineNativeMethods.AudioCaptureCreate(sampleRate, _channels, bufferDurationMs);
-    }
-
-    ~WasapiLoopbackAudioPipeline()
-    {
-        Dispose(false);
     }
 
     public unsafe bool TryReadSamples(

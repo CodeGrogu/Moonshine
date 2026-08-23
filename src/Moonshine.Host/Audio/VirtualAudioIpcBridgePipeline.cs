@@ -8,6 +8,7 @@ namespace Moonshine.Host.Audio;
 /// Managed coordinator for the real-time shared memory IPC audio bridge.
 /// Bridges host streaming and client microphone injection directly to the dedicated Windows virtual audio driver.
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "CA2216:DisposableTypesShouldDeclareFinalizer", Justification = "Finaliser deliberately omitted: managed disposal deterministically releases unmanaged IPC bridge handles via C-ABI.")]
 public sealed class VirtualAudioIpcBridgePipeline : IDisposable
 {
     private IntPtr _handle;
@@ -154,14 +155,6 @@ public sealed class VirtualAudioIpcBridgePipeline : IDisposable
     private void ThrowIfDisposed()
     {
         ObjectDisposedException.ThrowIf(_disposed || _handle == IntPtr.Zero, this);
-    }
-
-    /// <summary>
-    /// Finalizer for unmanaged resource cleanup.
-    /// </summary>
-    ~VirtualAudioIpcBridgePipeline()
-    {
-        Dispose(false);
     }
 
     /// <summary>

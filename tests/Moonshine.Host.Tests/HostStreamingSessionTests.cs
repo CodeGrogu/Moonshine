@@ -31,6 +31,7 @@ public class HostStreamingSessionTests
         public uint AdapterIndex => 0;
         public uint OutputIndex => 0;
         public bool IsAvailable { get; set; } = true;
+        public CaptureSourceDescriptor? Source { get; set; }
         public CaptureMetrics Metrics => new(0, 0, 0, 0, 1920, 1080, 28, false, 0.0);
 
         public bool ShouldFailAcquire { get; set; }
@@ -68,6 +69,12 @@ public class HostStreamingSessionTests
             }
 
             IsAvailable = true;
+            return true;
+        }
+
+        public bool TryReconfigureSource(CaptureSourceDescriptor source)
+        {
+            Source = source;
             return true;
         }
 

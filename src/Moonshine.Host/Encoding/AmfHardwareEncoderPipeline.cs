@@ -8,6 +8,7 @@ namespace Moonshine.Host.Encoding;
 /// Provides direct Direct3D 11/12 texture registration, VCN low-latency profiles,
 /// CBR rate control, zero B-frames, and progressive intra-refresh slice encoding.
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "CA2216:DisposableTypesShouldDeclareFinalizer", Justification = "Finaliser deliberately omitted: managed disposal deterministically releases unmanaged AMF hardware encoder resources via C-ABI.")]
 public sealed class AmfHardwareEncoderPipeline : IVideoEncoderPipeline
 {
     private IntPtr _handle;
@@ -85,11 +86,6 @@ public sealed class AmfHardwareEncoderPipeline : IVideoEncoderPipeline
         {
             _ = MoonshineNativeMethods.AmfSetTuning(_handle, (uint)preset, (uint)usage);
         }
-    }
-
-    ~AmfHardwareEncoderPipeline()
-    {
-        Dispose(false);
     }
 
     public unsafe bool TryEncodeFrame(

@@ -106,6 +106,46 @@ public unsafe struct MoonshineDisplayInfo
 }
 
 /// <summary>
+/// Exact binary match for MoonshineDisplayModeDesc (C-ABI, 32 bytes).
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public unsafe struct MoonshineDisplayModeDesc
+{
+    public uint Width;
+    public uint Height;
+    public uint RefreshRateNumerator;
+    public uint RefreshRateDenominator;
+    public uint Format;
+    public uint Scaling;
+    public uint ScanlineOrdering;
+    public byte IsHdr;
+    public fixed byte Reserved[3];
+}
+
+/// <summary>
+/// Exact binary match for MoonshineDisplayExtendedInfo (C-ABI, 152 bytes).
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public unsafe struct MoonshineDisplayExtendedInfo
+{
+    public uint DisplayIndex;
+    public uint AdapterIndex;
+    public long MonitorHandle;
+    public int DesktopLeft;
+    public int DesktopTop;
+    public int DesktopRight;
+    public int DesktopBottom;
+    public uint DpiScale;
+    public byte IsPrimary;
+    public byte IsAttachedToDesktop;
+    public byte IsHdr;
+    public byte BitsPerColor;
+    public fixed byte DeviceName[32];
+    public fixed byte FriendlyName[64];
+    public fixed byte Reserved[16];
+}
+
+/// <summary>
 /// Exact binary match for MoonshineHdr10Metadata (C-ABI, 32 bytes).
 /// </summary>
 [StructLayout(LayoutKind.Sequential, Pack = 1)]

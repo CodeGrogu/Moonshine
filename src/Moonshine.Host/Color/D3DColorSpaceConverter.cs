@@ -6,6 +6,7 @@ namespace Moonshine.Host.Color;
 /// Direct3D 11/12 GPU Color Space Converter.
 /// Provides real-time RGB10A2 / BGRA8 conversion to P010 / NV12 surfaces for hardware encoders.
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "CA2216:DisposableTypesShouldDeclareFinalizer", Justification = "Finaliser deliberately omitted: managed disposal deterministically releases unmanaged color converter resources via C-ABI.")]
 public sealed class D3DColorSpaceConverter : IDisposable
 {
     private IntPtr _handle;
@@ -35,11 +36,6 @@ public sealed class D3DColorSpaceConverter : IDisposable
         _inFormat = inFormat;
         _outFormat = outFormat;
         _handle = MoonshineNativeMethods.ColorConverterCreate(d3d11Device, width, height, inFormat, outFormat);
-    }
-
-    ~D3DColorSpaceConverter()
-    {
-        Dispose(false);
     }
 
     public bool TryConvert(IntPtr inTexture, IntPtr outTexture)
