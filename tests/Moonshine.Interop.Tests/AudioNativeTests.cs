@@ -100,4 +100,93 @@ public class AudioNativeTests
             MoonshineNativeMethods.AudioDestroy(handle);
         }
     }
+
+    [Fact]
+    public unsafe void MicCapture_CreateAndRead_Mono_ReturnsValidPcm()
+    {
+        IntPtr handle = MoonshineNativeMethods.MicCaptureCreate(48000, 1, 10);
+        handle.Should().NotBe(IntPtr.Zero);
+
+        try
+        {
+            int isActive = MoonshineNativeMethods.MicCaptureIsActive(handle);
+            isActive.Should().Be(1);
+
+            float[] buffer = new float[480];
+            fixed (float* ptr = buffer)
+            {
+                int readRes = MoonshineNativeMethods.MicCaptureReadFloat(
+                    handle,
+                    ptr,
+                    (uint)buffer.Length,
+                    out uint samplesRead,
+                    out ulong timestampQpc
+                );
+
+                readRes.Should().Be(1);
+                samplesRead.Should().Be(480);
+                timestampQpc.Should().BeGreaterThan(0);
+            }
+        }
+        finally
+        {
+            MoonshineNativeMethods.MicCaptureDestroy(handle);
+        }
+    }
+
+    [Fact]
+    public unsafe void MicCapture_CreateAndRead_Stereo_ReturnsValidPcm()
+    {
+        IntPtr handle = MoonshineNativeMethods.MicCaptureCreate(48000, 2, 10);
+        handle.Should().NotBe(IntPtr.Zero);
+
+        try
+        {
+            int isActive = MoonshineNativeMethods.MicCaptureIsActive(handle);
+            isActive.Should().Be(1);
+
+            float[] buffer = new float[960];
+            fixed (float* ptr = buffer)
+            {
+                int readRes = MoonshineNativeMethods.MicCaptureReadFloat(
+                    handle,
+                    ptr,
+                    (uint)buffer.Length,
+                    out uint samplesRead,
+                    out ulong timestampQpc
+                );
+
+                readRes.Should().Be(1);
+                samplesRead.Should().Be(960);
+                timestampQpc.Should().BeGreaterThan(0);
+            }
+        }
+        finally
+        {
+            MoonshineNativeMethods.MicCaptureDestroy(handle);
+        }
+    }
+
+    [Fact]
+    public unsafe void MicCapture_InvalidHandle_ReturnsFailure()
+    {
+        float[] buffer = new float[480];
+        fixed (float* ptr = buffer)
+        {
+            int readRes = MoonshineNativeMethods.MicCaptureReadFloat(
+                IntPtr.Zero,
+                ptr,
+                (uint)buffer.Length,
+                out uint samplesRead,
+                out ulong timestampQpc
+            );
+
+            readRes.Should().Be(0);
+            samplesRead.Should().Be(0);
+        }
+
+        int isActive = MoonshineNativeMethods.MicCaptureIsActive(IntPtr.Zero);
+        isActive.Should().Be(0);
+    }
 }
+

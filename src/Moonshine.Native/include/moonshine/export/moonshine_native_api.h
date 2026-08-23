@@ -413,6 +413,34 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_audio_capture_get_metrics(
 );
 
 // ============================================================================
+// WASAPI Microphone Audio Capture APIs
+// ============================================================================
+
+typedef void* MoonshineMicCaptureHandle;
+
+MOONSHINE_API MoonshineMicCaptureHandle MOONSHINE_CONV moonshine_mic_capture_create(
+    uint32_t sample_rate,
+    uint32_t channels,
+    uint32_t buffer_duration_ms
+);
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_mic_capture_destroy(
+    MoonshineMicCaptureHandle handle
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_mic_capture_read_float(
+    MoonshineMicCaptureHandle handle,
+    float* out_buffer,
+    uint32_t max_samples,
+    uint32_t* out_samples_read,
+    uint64_t* out_timestamp_qpc
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_mic_capture_is_active(
+    MoonshineMicCaptureHandle handle
+);
+
+// ============================================================================
 // Low-Latency Multi-Channel Opus Audio Encoder APIs
 // ============================================================================
 

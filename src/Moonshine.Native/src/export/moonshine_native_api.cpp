@@ -12,6 +12,7 @@
 #include "moonshine/video/dxgi_swapchain.hpp"
 #include "moonshine/audio/wasapi_renderer.hpp"
 #include "moonshine/audio/wasapi_loopback_capture.hpp"
+#include "moonshine/audio/wasapi_mic_capture.hpp"
 #include "moonshine/audio/opus_audio_encoder.hpp"
 #include "moonshine/audio/opus_audio_decoder.hpp"
 #include "moonshine/audio/mic_audio_sink.hpp"
@@ -75,6 +76,7 @@ namespace {
     SafeHandleStore<audio::OpusAudioEncoder> g_encoder_store;
     SafeHandleStore<audio::OpusAudioDecoder> g_decoder_store;
     SafeHandleStore<audio::WasapiLoopbackCapture> g_capture_store;
+    SafeHandleStore<audio::WasapiMicCapture> g_mic_capture_store;
     SafeHandleStore<audio::WasapiRenderer> g_renderer_store;
 }
 
@@ -527,6 +529,61 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_audio_capture_get_metrics(
     if (out_samples_captured) *out_samples_captured = metrics.total_samples_captured;
     if (out_underruns) *out_underruns = metrics.underruns;
     if (out_overruns) *out_overruns = metrics.overruns;
+}
+
+// ============================================================================
+// WASAPI Microphone Audio Capture APIs
+// ============================================================================
+
+MOONSHINE_API MoonshineMicCaptureHandle MOONSHINE_CONV moonshine_mic_capture_create(
+    uint32_t sample_rate,
+    uint32_t channels,
+    uint32_t buffer_duration_ms
+) {
+    auto* capture = new audio::WasapiMicCapture(sample_rate, channels, buffer_duration_ms);
+    if (!capture->initialize()) {
+        delete capture;
+        return nullptr;
+    }
+    g_mic_capture_store.register_handle(capture);
+    return static_cast<MoonshineMicCaptureHandle>(capture);
+}
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_mic_capture_destroy(
+    MoonshineMicCaptureHandle handle
+) {
+    if (!handle) return;
+    auto* capture = static_cast<audio::WasapiMicCapture*>(handle);
+    g_mic_capture_store.release(capture);
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_mic_capture_read_float(
+    MoonshineMicCaptureHandle handle,
+    float* out_buffer,
+    uint32_t max_samples,
+    uint32_t* out_samples_read,
+    uint64_t* out_timestamp_qpc
+) {
+    if (!handle || !out_buffer || !out_samples_read || !out_timestamp_qpc) return 0;
+    auto guard = g_mic_capture_store.acquire(static_cast<audio::WasapiMicCapture*>(handle));
+    if (!guard) return 0;
+    uint32_t read = 0;
+    uint64_t qpc = 0;
+    if (!guard->read_samples_float(out_buffer, max_samples, read, qpc)) {
+        return 0;
+    }
+    *out_samples_read = read;
+    *out_timestamp_qpc = qpc;
+    return 1;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_mic_capture_is_active(
+    MoonshineMicCaptureHandle handle
+) {
+    if (!handle) return 0;
+    auto guard = g_mic_capture_store.acquire(static_cast<audio::WasapiMicCapture*>(handle));
+    if (!guard) return 0;
+    return guard->is_active() ? 1 : 0;
 }
 
 // ============================================================================

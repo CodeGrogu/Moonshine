@@ -306,6 +306,32 @@ public static unsafe partial class MoonshineNativeMethods
     );
 
     // ========================================================================
+    // WASAPI Microphone Audio Capture APIs
+    // ========================================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_mic_capture_create")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial IntPtr MicCaptureCreate(uint sampleRate, uint channels, uint bufferDurationMs);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_mic_capture_destroy")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void MicCaptureDestroy(IntPtr handle);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_mic_capture_read_float")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int MicCaptureReadFloat(
+        IntPtr handle,
+        float* outBuffer,
+        uint maxSamples,
+        out uint outSamplesRead,
+        out ulong outTimestampQpc
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_mic_capture_is_active")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int MicCaptureIsActive(IntPtr handle);
+
+    // ========================================================================
     // Low-Latency Multi-Channel Opus Audio Encoder APIs
     // ========================================================================
 
