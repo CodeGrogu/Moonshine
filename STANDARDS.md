@@ -39,6 +39,7 @@ Every test accepted into the Moonshine repository must assert on real, concrete 
 - Verify exact recovered byte arrays, decoded frame dimensions, calculated FEC syndromes, and parsed packet headers.
 - Tests that only assert `Assert.True(true)`, `Assert.NotNull(result)`, or `Assert.DoesNotThrow` are rejected.
 - For data reconstruction subsystems (FEC, sequence unwrappers, jitter buffers, ring buffers): tests must deliberately corrupt or drop known inputs, reconstruct them, and assert byte-for-byte identity against the ground truth.
+- **Active Native Test Assertions**: Native C++ test sources must not use standard `<cassert>` `assert(...)` macros that are compiled out under `NDEBUG` in Release configurations. All test conditions must use active assertion macros (such as `REQUIRE(expr)` or `TEST_ASSERT(expr)`) that evaluate and fail deterministically across both Debug and Release builds.
 
 ### Rule 4: Standing Pre-Commit Preflight Sweep
 Before every commit, execute the canonical repository preflight scanner (`scripts/preflight.ps1`). The script enforces zero-tolerance checks for:
