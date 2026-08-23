@@ -271,31 +271,33 @@ BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
 ---
 
 ### Host Display Discovery & Capture Source Selection (Issue #36)
-<!-- VERIFIED: 2026-08-23, via `dotnet run -c Release --project src/Moonshine.Benchmarks -- --filter *CaptureSourceSelectorBenchmarks*` in Windows 11 Pro build 26200, x64 RyuJIT AVX-512 -->
+<!-- VERIFIED: 2026-08-23, via `dotnet run -c Release --project src/Moonshine.Benchmarks -- --filter *CaptureSourceSelectorBenchmarks* --job short --inProcess` in Windows 11 Pro build 26200, x64 RyuJIT AVX-512 -->
 
 ```
 BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
 .NET SDK 10.0.400 / Host: .NET 9.0.16 (9.0.1626.22923), X64 RyuJIT AVX-512F+CD+BW+DQ+VL+VBMI
 
-| Method                                                     | Mean Latency | Error    | StdDev   | Ratio | Allocated Memory |
-| :--------------------------------------------------------- | -----------: | -------: | -------: | ----: | ---------------: |
-| SelectSource_PrimaryDisplayPolicy                          |     15.27 ns | 0.677 ns | 1.995 ns |  1.00 |              0 B |
-| SelectSource_SpecificIndexPolicy                           |     30.71 ns | 0.654 ns | 1.213 ns |  2.04 |              0 B |
-| SelectSource_SpecificHandlePolicy                          |     30.89 ns | 0.646 ns | 1.320 ns |  2.06 |              0 B |
-| SelectSource_SpecificDevicePolicy                          |     35.64 ns | 1.103 ns | 3.184 ns |  2.37 |              0 B |
-| SelectSource_MatchResolutionPolicy                         |     40.63 ns | 0.596 ns | 0.498 ns |  2.70 |              0 B |
-| SelectSource_FallbackPolicy                                |     31.90 ns | 0.616 ns | 0.659 ns |  2.12 |              0 B |
-| SelectSource_ComplexTopology_PrimaryDisplayPolicy          |     11.68 ns | 0.225 ns | 0.211 ns |  0.78 |              0 B |
-| SelectSource_ComplexTopology_SpecificIndexPolicy           |     48.61 ns | 0.967 ns | 2.142 ns |  3.23 |              0 B |
-| SelectSource_ComplexTopology_MatchResolution_DiscreteGpu   |     99.61 ns | 2.021 ns | 4.035 ns |  6.63 |              0 B |
-| SelectSource_ComplexTopology_MatchResolution_StrictHdr     |     81.44 ns | 1.661 ns | 1.977 ns |  5.42 |              0 B |
-| SelectSource_ComplexTopology_MatchResolution_RotatedPortrait |  101.05 ns | 2.017 ns | 2.551 ns |  6.72 |              0 B |
-| SelectSource_ComplexTopology_MatchResolution_NegativeBounds |   102.85 ns | 2.086 ns | 2.784 ns |  6.84 |              0 B |
-| SelectSource_ComplexTopology_FallbackPolicy                |     74.71 ns | 1.502 ns | 2.106 ns |  4.97 |              0 B |
+| Method                                                     | Mean Latency | Error     | StdDev    | Ratio | Allocated Memory |
+| :--------------------------------------------------------- | -----------: | --------: | --------: | ----: | ---------------: |
+| SelectSource_PrimaryDisplayPolicy                          |     16.15 ns | 44.01 ns  |  2.412 ns |  1.02 |              0 B |
+| SelectSource_SpecificIndexPolicy                           |     28.92 ns | 27.68 ns  |  1.517 ns |  1.82 |              0 B |
+| SelectSource_SpecificHandlePolicy                          |     32.74 ns | 82.78 ns  |  4.538 ns |  2.06 |              0 B |
+| SelectSource_SpecificDevicePolicy                          |     46.66 ns | 39.92 ns  |  2.188 ns |  2.94 |              0 B |
+| SelectSource_MatchResolutionPolicy                         |     40.03 ns | 25.50 ns  |  1.398 ns |  2.52 |              0 B |
+| SelectSource_RequireExactResolutionPolicy                  |     34.77 ns | 34.57 ns  |  1.895 ns |  2.19 |              0 B |
+| SelectSource_FallbackPolicy                                |     35.27 ns | 62.41 ns  |  3.421 ns |  2.22 |              0 B |
+| SelectSource_ComplexTopology_PrimaryDisplayPolicy          |     16.63 ns | 46.50 ns  |  2.549 ns |  1.05 |              0 B |
+| SelectSource_ComplexTopology_SpecificIndexPolicy           |     57.85 ns | 109.77 ns |  6.017 ns |  3.64 |              0 B |
+| SelectSource_ComplexTopology_MatchResolution_DiscreteGpu   |    105.49 ns | 20.69 ns  |  1.134 ns |  6.64 |              0 B |
+| SelectSource_ComplexTopology_MatchResolution_StrictHdr     |     88.92 ns | 84.81 ns  |  4.649 ns |  5.59 |              0 B |
+| SelectSource_ComplexTopology_MatchResolution_RotatedPortrait |  115.56 ns | 318.27 ns | 17.445 ns |  7.27 |              0 B |
+| SelectSource_ComplexTopology_MatchResolution_NegativeBounds |    97.76 ns | 32.30 ns  |  1.770 ns |  6.15 |              0 B |
+| SelectSource_ComplexTopology_RequireExactResolutionPolicy  |     95.04 ns | 159.71 ns |  8.754 ns |  5.98 |              0 B |
+| SelectSource_ComplexTopology_FallbackPolicy                |     80.91 ns | 135.76 ns |  7.442 ns |  5.09 |              0 B |
 ```
 
 > [!NOTE]
-> **Measurement Semantics & Design Invariants**: Capture source selection operates deterministically across heterogeneous multi-monitor, multi-adapter Windows topologies (8 displays, 3 GPU adapters with mixed HDR/SDR, rotated portrait 90 deg, inverted 180 deg, negative coordinates, duplicate resolutions, and detached outputs) in 11 to 102 nanoseconds with strictly **0 B** heap allocations (`readonly record struct CaptureSourceSelectionResult` and pre-allocated `DisplayOutputInfo.Descriptor`). Non-HDR displays are strictly skipped when `RequireHdr = true`. 5-stage deterministic tie-breaking eliminates array order dependencies.
+> **Measurement Semantics & Design Invariants**: Capture source selection operates deterministically across heterogeneous multi-monitor, multi-adapter Windows topologies (8 displays, 3 GPU adapters with mixed HDR/SDR, rotated portrait 90 deg, inverted 180 deg, negative coordinates, duplicate resolutions, and detached outputs) in 16 to 115 nanoseconds with strictly **0 B** heap allocations (`readonly record struct CaptureSourceSelectionResult` and pre-allocated `DisplayOutputInfo.Descriptor`). Strict dimension checking in `RequireExactResolution` runs in 34.77 ns on dual-monitor and 95.04 ns on 8-display configurations. Non-HDR displays are strictly skipped when `RequireHdr = true`. Deterministic 5-stage tie-breaking eliminates array traversal dependencies.
 
 
 

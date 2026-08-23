@@ -3,7 +3,6 @@ using Moonshine.Host.Capture;
 
 namespace Moonshine.Benchmarks;
 
-[InProcess]
 [MemoryDiagnoser]
 public class CaptureSourceSelectorBenchmarks
 {
@@ -14,6 +13,7 @@ public class CaptureSourceSelectorBenchmarks
     private CaptureSourceSelectionCriteria _deviceCriteria = null!;
     private CaptureSourceSelectionCriteria _matchResolutionCriteria = null!;
     private CaptureSourceSelectionCriteria _fallbackCriteria = null!;
+    private CaptureSourceSelectionCriteria _exactResolutionCriteria = null!;
 
     private DisplayTopology _complexTopology = null!;
     private CaptureSourceSelectionCriteria _complexPrimaryCriteria = null!;
@@ -22,6 +22,7 @@ public class CaptureSourceSelectorBenchmarks
     private CaptureSourceSelectionCriteria _complexMatchStrictHdrCriteria = null!;
     private CaptureSourceSelectionCriteria _complexMatchRotatedPortraitCriteria = null!;
     private CaptureSourceSelectionCriteria _complexMatchNegativeBoundsCriteria = null!;
+    private CaptureSourceSelectionCriteria _complexExactResolutionCriteria = null!;
     private CaptureSourceSelectionCriteria _complexFallbackCriteria = null!;
 
     [GlobalSetup]
@@ -87,6 +88,7 @@ public class CaptureSourceSelectorBenchmarks
         _handleCriteria = new CaptureSourceSelectionCriteria(CaptureSelectionPolicy.SpecificMonitorHandle, PreferredMonitorHandle: (IntPtr)0x1002);
         _deviceCriteria = new CaptureSourceSelectionCriteria(CaptureSelectionPolicy.SpecificDeviceName, PreferredDeviceName: "\\\\.\\DISPLAY2");
         _matchResolutionCriteria = new CaptureSourceSelectionCriteria(CaptureSelectionPolicy.MatchResolution, TargetWidth: 1920, TargetHeight: 1080, TargetFps: 60.0);
+        _exactResolutionCriteria = new CaptureSourceSelectionCriteria(CaptureSelectionPolicy.RequireExactResolution, TargetWidth: 1920, TargetHeight: 1080, TargetFps: 60.0);
         _fallbackCriteria = new CaptureSourceSelectionCriteria(CaptureSelectionPolicy.SpecificDisplayIndex, PreferredAdapterIndex: 0, PreferredDisplayIndex: 99, FallbackPolicy: CaptureSourceFallbackPolicy.FallbackToPrimary);
 
         // 2. Heterogeneous 8-display, 3-adapter stress topology
@@ -276,6 +278,7 @@ public class CaptureSourceSelectorBenchmarks
         _complexMatchStrictHdrCriteria = new CaptureSourceSelectionCriteria(CaptureSelectionPolicy.MatchResolution, TargetWidth: 3840, TargetHeight: 2160, TargetFps: 60.0, RequireHdr: true);
         _complexMatchRotatedPortraitCriteria = new CaptureSourceSelectionCriteria(CaptureSelectionPolicy.MatchResolution, TargetWidth: 1080, TargetHeight: 1920, TargetFps: 60.0);
         _complexMatchNegativeBoundsCriteria = new CaptureSourceSelectionCriteria(CaptureSelectionPolicy.MatchResolution, TargetWidth: 1920, TargetHeight: 1080, TargetFps: 60.0);
+        _complexExactResolutionCriteria = new CaptureSourceSelectionCriteria(CaptureSelectionPolicy.RequireExactResolution, TargetWidth: 1920, TargetHeight: 1080, TargetFps: 60.0);
         _complexFallbackCriteria = new CaptureSourceSelectionCriteria(CaptureSelectionPolicy.SpecificDisplayIndex, PreferredAdapterIndex: 2, PreferredDisplayIndex: 99, FallbackPolicy: CaptureSourceFallbackPolicy.FallbackToPrimary);
     }
 
@@ -307,6 +310,12 @@ public class CaptureSourceSelectorBenchmarks
     public CaptureSourceSelectionResult SelectSource_MatchResolutionPolicy()
     {
         return CaptureSourceSelector.SelectSource(_topology, _matchResolutionCriteria);
+    }
+
+    [Benchmark]
+    public CaptureSourceSelectionResult SelectSource_RequireExactResolutionPolicy()
+    {
+        return CaptureSourceSelector.SelectSource(_topology, _exactResolutionCriteria);
     }
 
     [Benchmark]
@@ -349,6 +358,12 @@ public class CaptureSourceSelectorBenchmarks
     public CaptureSourceSelectionResult SelectSource_ComplexTopology_MatchResolution_NegativeBounds()
     {
         return CaptureSourceSelector.SelectSource(_complexTopology, _complexMatchNegativeBoundsCriteria);
+    }
+
+    [Benchmark]
+    public CaptureSourceSelectionResult SelectSource_ComplexTopology_RequireExactResolutionPolicy()
+    {
+        return CaptureSourceSelector.SelectSource(_complexTopology, _complexExactResolutionCriteria);
     }
 
     [Benchmark]
