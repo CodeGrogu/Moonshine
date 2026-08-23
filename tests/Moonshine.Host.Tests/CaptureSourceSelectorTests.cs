@@ -229,4 +229,163 @@ public class CaptureSourceSelectorTests
         result.Source.Should().BeNull();
         result.FailureReason.Should().NotBeNullOrWhiteSpace();
     }
+
+    [Fact]
+    public void SelectSource_WithMatchResolution_RequireHdr_StrictlySkipsNonHdrDisplays()
+    {
+        var topology = CreateMockTopology();
+        // Target is 1080p, which matches d1 (SDR, 1080p), but RequireHdr = true
+        var criteria = new CaptureSourceSelectionCriteria(
+            Policy: CaptureSelectionPolicy.MatchResolution,
+            TargetWidth: 1920,
+            TargetHeight: 1080,
+            TargetFps: 60.0,
+            RequireHdr: true,
+            FallbackPolicy: CaptureSourceFallbackPolicy.FailClosed
+        );
+
+        var result = CaptureSourceSelector.SelectSource(topology, criteria);
+
+        // Since only d0 is HDR (4K 120Hz), d0 must be selected even though d1 is 1080p
+        result.IsSuccess.Should().BeTrue();
+        result.Source.Should().NotBeNull();
+        result.Source!.IsHdr.Should().BeTrue();
+        result.Source.OutputIndex.Should().Be(0);
+    }
+
+    [Fact]
+    public void SelectSource_WithMatchResolution_RequireHdr_WhenNoHdrDisplaysExist_FailsClosed()
+    {
+        var adapters = new List<DisplayAdapterInfo>
+        {
+            new(0, 0x1000, "GPU", 8_000_000_000, true)
+        };
+
+        var d0 = new DisplayOutputInfo(
+            DisplayIndex: 0,
+            AdapterIndex: 0,
+            Width: 1920,
+            Height: 1080,
+            RefreshRateNumerator: 60,
+            RefreshRateDenominator: 1,
+            Rotation: 0,
+            IsAttachedToDesktop: true,
+            IsHdr: false, // SDR
+            BitsPerColor: 8,
+            DeviceName: "\\\\.\\DISPLAY1",
+            FriendlyName: "SDR Monitor",
+            IsPrimary: true
+        );
+
+        var topology = new DisplayTopology(
+            Adapters: adapters.AsReadOnly(),
+            Displays: new[] { d0 },
+            PrimaryDisplay: d0,
+            VirtualScreenBounds: new DesktopBounds(0, 0, 1920, 1080),
+            IsHeadless: false,
+            TimestampQpc: 123456789
+        );
+
+        var criteria = new CaptureSourceSelectionCriteria(
+            Policy: CaptureSelectionPolicy.MatchResolution,
+            TargetWidth: 1920,
+            TargetHeight: 1080,
+            RequireHdr: true,
+            FallbackPolicy: CaptureSourceFallbackPolicy.FailClosed
+        );
+
+        var result = CaptureSourceSelector.SelectSource(topology, criteria);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Source.Should().BeNull();
+    }
+
+    [Fact]
+    public void SelectSource_WithMatchResolution_DeterministicTieBreaking_EnforcesDocumentedOrder()
+    {
+        var adapters = new List<DisplayAdapterInfo>
+        {
+            new(0, 0x1000, "GPU 0", 8_000_000_000, true),
+            new(1, 0x2000, "GPU 1", 8_000_000_000, true)
+        };
+
+        // Two displays with identical resolution and refresh rate, but d0 is on GPU 0 and d1 is on GPU 1
+        var d0 = new DisplayOutputInfo(
+            DisplayIndex: 0,
+            AdapterIndex: 0,
+            Width: 1920,
+            Height: 1080,
+            RefreshRateNumerator: 60,
+            RefreshRateDenominator: 1,
+            Rotation: 0,
+            IsAttachedToDesktop: true,
+            IsHdr: false,
+            BitsPerColor: 8,
+            DeviceName: "\\\\.\\DISPLAY1",
+            IsPrimary: false
+        );
+
+        var d1 = new DisplayOutputInfo(
+            DisplayIndex: 0,
+            AdapterIndex: 1,
+            Width: 1920,
+            Height: 1080,
+            RefreshRateNumerator: 60,
+            RefreshRateDenominator: 1,
+            Rotation: 0,
+            IsAttachedToDesktop: true,
+            IsHdr: false,
+            BitsPerColor: 8,
+            DeviceName: "\\\\.\\DISPLAY2",
+            IsPrimary: false
+        );
+
+        // Put d1 first in array to test that ordering is NOT array-order dependent
+        var topology = new DisplayTopology(
+            Adapters: adapters.AsReadOnly(),
+            Displays: new[] { d1, d0 },
+            PrimaryDisplay: null,
+            VirtualScreenBounds: new DesktopBounds(0, 0, 3840, 1080),
+            IsHeadless: false,
+            TimestampQpc: 123456789
+        );
+
+        var criteria = new CaptureSourceSelectionCriteria(
+            Policy: CaptureSelectionPolicy.MatchResolution,
+            TargetWidth: 1920,
+            TargetHeight: 1080,
+            TargetFps: 60.0
+        );
+
+        var result = CaptureSourceSelector.SelectSource(topology, criteria);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Source.Should().NotBeNull();
+        // Lower adapter index (AdapterIndex: 0) wins tie-break over AdapterIndex: 1
+        result.Source!.AdapterIndex.Should().Be(0);
+        result.Source.DeviceName.Should().Be("\\\\.\\DISPLAY1");
+    }
+
+    [Fact]
+    public void SelectSource_ZeroGCAllocations_SteadyStateHotPath()
+    {
+        var topology = CreateMockTopology();
+        var criteria = new CaptureSourceSelectionCriteria(CaptureSelectionPolicy.PrimaryDisplay);
+
+        // Warmup JIT
+        for (int i = 0; i < 50; i++)
+        {
+            _ = CaptureSourceSelector.SelectSource(topology, criteria);
+        }
+
+        long bytesBefore = GC.GetAllocatedBytesForCurrentThread();
+
+        for (int i = 0; i < 1000; i++)
+        {
+            _ = CaptureSourceSelector.SelectSource(topology, criteria);
+        }
+
+        long bytesAfter = GC.GetAllocatedBytesForCurrentThread();
+        (bytesAfter - bytesBefore).Should().Be(0);
+    }
 }

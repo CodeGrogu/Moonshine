@@ -90,6 +90,9 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
 
     public bool IsStreaming => State == HostSessionState.Streaming;
 
+    private ulong _currentTopologyGeneration;
+    public ulong CurrentTopologyGeneration => Volatile.Read(ref _currentTopologyGeneration);
+
     public int BoundLocalVideoPort => (_videoSocket?.LocalEndPoint as IPEndPoint)?.Port ?? 0;
     public int BoundLocalAudioPort => (_audioSocket?.LocalEndPoint as IPEndPoint)?.Port ?? 0;
     public int BoundLocalControlPort => (_controlSocket?.LocalEndPoint as IPEndPoint)?.Port ?? 0;
@@ -248,6 +251,7 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
             // 10. Hook Display Topology Watcher if provided
             if (_topologyWatcher != null)
             {
+                Volatile.Write(ref _currentTopologyGeneration, _topologyWatcher.CurrentTopology.Generation);
                 _topologyWatcher.TopologyChanged += OnDisplayTopologyChanged;
             }
 
@@ -329,6 +333,8 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
         {
             if (_disposed || _state != HostSessionState.Streaming) return;
         }
+
+        Volatile.Write(ref _currentTopologyGeneration, e.NewTopology.Generation);
 
         if (e.NewTopology.IsHeadless)
         {

@@ -63,6 +63,24 @@ public sealed record DisplayOutputInfo(
     public double RefreshRateHz => RefreshRateDenominator > 0
         ? (double)RefreshRateNumerator / RefreshRateDenominator
         : 60.0;
+
+    /// <summary>
+    /// Pre-allocated capture source descriptor avoiding runtime allocations during capture source selection.
+    /// </summary>
+    public CaptureSourceDescriptor Descriptor { get; } = new(
+        AdapterIndex: AdapterIndex,
+        OutputIndex: DisplayIndex,
+        MonitorHandle: MonitorHandle,
+        DeviceName: DeviceName,
+        FriendlyName: FriendlyName,
+        Width: Width,
+        Height: Height,
+        RefreshRateHz: RefreshRateDenominator > 0 ? (double)RefreshRateNumerator / RefreshRateDenominator : 60.0,
+        Format: IsHdr ? 24u /* DXGI_FORMAT_R10G10B10A2_UNORM */ : 87u /* DXGI_FORMAT_B8G8R8A8_UNORM */,
+        IsHdr: IsHdr,
+        IsPrimary: IsPrimary,
+        DesktopBounds: DesktopBounds ?? new DesktopBounds(0, 0, (int)Width, (int)Height)
+    );
 }
 
 public sealed record DisplayTopology(
@@ -71,7 +89,8 @@ public sealed record DisplayTopology(
     DisplayOutputInfo? PrimaryDisplay,
     DesktopBounds VirtualScreenBounds,
     bool IsHeadless,
-    ulong TimestampQpc
+    ulong TimestampQpc,
+    ulong Generation = 0
 );
 
 /// <summary>
@@ -197,10 +216,17 @@ public static class DisplayManager
         return displays;
     }
 
+    private static ulong _topologyGenerationCounter;
+
+    /// <summary>
+    /// Generates the next monotonically increasing display topology generation sequence number.
+    /// </summary>
+    public static ulong NextTopologyGeneration() => Interlocked.Increment(ref _topologyGenerationCounter);
+
     /// <summary>
     /// Resolves an atomic snapshot of the complete Windows display topology across all GPU adapters.
     /// </summary>
-    public static DisplayTopology GetDisplayTopology()
+    public static DisplayTopology GetDisplayTopology(ulong? generation = null)
     {
         var adapters = GetPhysicalAdapters();
         var allDisplays = new List<DisplayOutputInfo>();
@@ -253,6 +279,7 @@ public static class DisplayManager
 
         bool isHeadless = !hasAttached;
         ulong timestampQpc = (ulong)Stopwatch.GetTimestamp();
+        ulong gen = generation ?? NextTopologyGeneration();
 
         return new DisplayTopology(
             Adapters: adapters,
@@ -260,7 +287,8 @@ public static class DisplayManager
             PrimaryDisplay: primary,
             VirtualScreenBounds: virtualBounds,
             IsHeadless: isHeadless,
-            TimestampQpc: timestampQpc
+            TimestampQpc: timestampQpc,
+            Generation: gen
         );
     }
 

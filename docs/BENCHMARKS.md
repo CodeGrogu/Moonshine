@@ -271,22 +271,25 @@ BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
 ---
 
 ### Host Display Discovery & Capture Source Selection (Issue #36)
-<!-- VERIFIED: 2026-08-23, via `dotnet test tests/Moonshine.Host.Tests -c Release --filter DisplayTopologyWatcherTests|CaptureSourceSelectorTests|DisplayManagerTests` in Windows 11 Pro build 26200, x64 RyuJIT AVX-512 -->
+<!-- VERIFIED: 2026-08-23, via `dotnet run -c Release --project src/Moonshine.Benchmarks -- --filter *CaptureSourceSelectorBenchmarks*` in Windows 11 Pro build 26200, x64 RyuJIT AVX-512 -->
 
 ```
 BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
 .NET SDK 10.0.400 / Host: .NET 9.0.16 (9.0.1626.22923), X64 RyuJIT AVX-512F+CD+BW+DQ+VL+VBMI
 
-| Method                                              | Mean Latency | Error     | StdDev    | Median    | Allocated Memory |
-| :-------------------------------------------------- | -----------: | --------: | --------: | --------: | ---------------: |
-| CaptureSourceSelector_SelectSource_PrimaryPolicy    |     7.820 ns | 0.2104 ns | 0.5898 ns |  7.680 ns |              0 B |
-| CaptureSourceSelector_SelectSource_IndexPolicy      |     0.840 ns | 0.0450 ns | 0.1262 ns |  0.820 ns |              0 B |
-| CaptureSourceSelector_SelectSource_ResolutionPolicy |     0.910 ns | 0.0380 ns | 0.1065 ns |  0.890 ns |              0 B |
-| DisplayTopologyWatcher_ClassifyChange               |    32.140 ns | 0.8500 ns | 2.3830 ns | 31.850 ns |              0 B |
+| Method                             | Mean Latency | Error    | StdDev   | Ratio | Allocated Memory |
+| :--------------------------------- | -----------: | -------: | -------: | ----: | ---------------: |
+| SelectSource_PrimaryDisplayPolicy  |     15.84 ns | 0.543 ns | 1.593 ns |  1.00 |              0 B |
+| SelectSource_SpecificIndexPolicy   |     32.84 ns | 0.826 ns | 2.408 ns |  2.09 |              0 B |
+| SelectSource_SpecificHandlePolicy  |     32.58 ns | 1.022 ns | 3.012 ns |  2.08 |              0 B |
+| SelectSource_SpecificDevicePolicy  |     39.09 ns | 1.684 ns | 4.966 ns |  2.49 |              0 B |
+| SelectSource_MatchResolutionPolicy |     50.86 ns | 1.483 ns | 4.373 ns |  3.24 |              0 B |
+| SelectSource_FallbackPolicy        |     39.90 ns | 0.971 ns | 2.834 ns |  2.54 |              0 B |
 ```
 
 > [!NOTE]
-> **Measurement Semantics & Design Invariants**: Capture source selection operates deterministically in sub-microsecond time with zero heap allocations on precomputed topology descriptors. Display topology changes are monitored via asynchronous Win32 `SystemEvents.DisplaySettingsChanged` notifications, completely decoupled from the frame acquisition and encoding hot paths.
+> **Measurement Semantics & Design Invariants**: Capture source selection operates deterministically in 15 to 51 nanoseconds with strictly **0 B** heap allocations (`readonly record struct CaptureSourceSelectionResult` and pre-allocated `DisplayOutputInfo.Descriptor`). Non-HDR displays are strictly skipped when `RequireHdr = true`. 5-stage deterministic tie-breaking eliminates array order dependencies. Display topology changes are monitored via asynchronous Win32 `SystemEvents.DisplaySettingsChanged` notifications, completely decoupled from the frame acquisition and encoding hot paths.
+
 
 
 
