@@ -953,4 +953,194 @@ public static class MoonshineProtocolCodec
 
         return MoonshineErrorCode.Success;
     }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool TryWriteGetHostCapabilities(uint queryMask, Span<byte> destination)
+    {
+        if (destination.Length < 4) return false;
+
+        BinaryPrimitives.WriteUInt32BigEndian(destination[..4], queryMask);
+        return true;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static MoonshineErrorCode TryReadGetHostCapabilities(ReadOnlySpan<byte> source, out uint queryMask)
+    {
+        queryMask = default;
+        if (source.Length < 4) return MoonshineErrorCode.BufferTooSmall;
+
+        queryMask = BinaryPrimitives.ReadUInt32BigEndian(source[..4]);
+        return MoonshineErrorCode.Success;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool TryWriteHostCapabilitiesResponse(in MoonshineHostCapabilitiesResponsePayload payload, Span<byte> destination)
+    {
+        if (destination.Length < 32) return false;
+
+        BinaryPrimitives.WriteUInt32BigEndian(destination[..4], payload.SupportedVideoCodecs);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[4..8], payload.SupportedAudioCodecs);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[8..12], payload.MaxEncodeWidth);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[12..16], payload.MaxEncodeHeight);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[16..20], payload.MaxEncodeFps);
+        destination[20] = payload.SupportsHdr10;
+        destination[21] = payload.SupportsVirtualAudio;
+        destination[22] = payload.SupportsMicBackchannel;
+        destination[23] = payload.Reserved;
+        BinaryPrimitives.WriteUInt32BigEndian(destination[24..28], payload.MaxBitrateKbps);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[28..32], payload.Reserved2);
+
+        return true;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static MoonshineErrorCode TryReadHostCapabilitiesResponse(ReadOnlySpan<byte> source, out MoonshineHostCapabilitiesResponsePayload payload)
+    {
+        payload = default;
+        if (source.Length < 32) return MoonshineErrorCode.BufferTooSmall;
+
+        payload = new MoonshineHostCapabilitiesResponsePayload
+        {
+            SupportedVideoCodecs = BinaryPrimitives.ReadUInt32BigEndian(source[..4]),
+            SupportedAudioCodecs = BinaryPrimitives.ReadUInt32BigEndian(source[4..8]),
+            MaxEncodeWidth = BinaryPrimitives.ReadUInt32BigEndian(source[8..12]),
+            MaxEncodeHeight = BinaryPrimitives.ReadUInt32BigEndian(source[12..16]),
+            MaxEncodeFps = BinaryPrimitives.ReadUInt32BigEndian(source[16..20]),
+            SupportsHdr10 = source[20],
+            SupportsVirtualAudio = source[21],
+            SupportsMicBackchannel = source[22],
+            Reserved = source[23],
+            MaxBitrateKbps = BinaryPrimitives.ReadUInt32BigEndian(source[24..28]),
+            Reserved2 = BinaryPrimitives.ReadUInt32BigEndian(source[28..32])
+        };
+
+        return MoonshineErrorCode.Success;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool TryWriteGetHostConfiguration(uint queryScope, Span<byte> destination)
+    {
+        if (destination.Length < 4) return false;
+
+        BinaryPrimitives.WriteUInt32BigEndian(destination[..4], queryScope);
+        return true;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static MoonshineErrorCode TryReadGetHostConfiguration(ReadOnlySpan<byte> source, out uint queryScope)
+    {
+        queryScope = default;
+        if (source.Length < 4) return MoonshineErrorCode.BufferTooSmall;
+
+        queryScope = BinaryPrimitives.ReadUInt32BigEndian(source[..4]);
+        return MoonshineErrorCode.Success;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool TryWriteHostConfiguration(in MoonshineHostConfigurationPayload payload, Span<byte> destination)
+    {
+        if (destination.Length < 48) return false;
+
+        BinaryPrimitives.WriteUInt32BigEndian(destination[..4], payload.ConfigVersion);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[4..8], payload.DisplayWidth);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[8..12], payload.DisplayHeight);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[12..16], payload.RefreshRateHz);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[16..20], payload.TargetBitrateKbps);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[20..24], payload.MaxBitrateKbps);
+        destination[24] = (byte)payload.PreferredCodec;
+        destination[25] = payload.Hdr10Enabled;
+        destination[26] = payload.AudioChannels;
+        destination[27] = payload.AudioQualityMode;
+        BinaryPrimitives.WriteUInt32BigEndian(destination[28..32], payload.AudioBitrateKbps);
+        BinaryPrimitives.WriteUInt16BigEndian(destination[32..34], payload.InputPollingRateHz);
+        destination[34] = payload.MicPassthroughEnabled;
+        destination[35] = payload.VirtualAudioDriverEnabled;
+        BinaryPrimitives.WriteUInt32BigEndian(destination[36..40], payload.Reserved1);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[40..44], payload.Reserved2);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[44..48], payload.Reserved3);
+
+        return true;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static MoonshineErrorCode TryReadHostConfiguration(ReadOnlySpan<byte> source, out MoonshineHostConfigurationPayload payload)
+    {
+        payload = default;
+        if (source.Length < 48) return MoonshineErrorCode.BufferTooSmall;
+
+        payload = new MoonshineHostConfigurationPayload
+        {
+            ConfigVersion = BinaryPrimitives.ReadUInt32BigEndian(source[..4]),
+            DisplayWidth = BinaryPrimitives.ReadUInt32BigEndian(source[4..8]),
+            DisplayHeight = BinaryPrimitives.ReadUInt32BigEndian(source[8..12]),
+            RefreshRateHz = BinaryPrimitives.ReadUInt32BigEndian(source[12..16]),
+            TargetBitrateKbps = BinaryPrimitives.ReadUInt32BigEndian(source[16..20]),
+            MaxBitrateKbps = BinaryPrimitives.ReadUInt32BigEndian(source[20..24]),
+            PreferredCodec = (MoonshineVideoCodec)source[24],
+            Hdr10Enabled = source[25],
+            AudioChannels = source[26],
+            AudioQualityMode = source[27],
+            AudioBitrateKbps = BinaryPrimitives.ReadUInt32BigEndian(source[28..32]),
+            InputPollingRateHz = BinaryPrimitives.ReadUInt16BigEndian(source[32..34]),
+            MicPassthroughEnabled = source[34],
+            VirtualAudioDriverEnabled = source[35],
+            Reserved1 = BinaryPrimitives.ReadUInt32BigEndian(source[36..40]),
+            Reserved2 = BinaryPrimitives.ReadUInt32BigEndian(source[40..44]),
+            Reserved3 = BinaryPrimitives.ReadUInt32BigEndian(source[44..48])
+        };
+
+        return MoonshineErrorCode.Success;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool TryWriteSetHostConfigurationResponse(in MoonshineSetHostConfigurationResponsePayload payload, Span<byte> destination)
+    {
+        if (destination.Length < 8) return false;
+
+        BinaryPrimitives.WriteUInt32BigEndian(destination[..4], (uint)payload.StatusCode);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[4..8], payload.AppliedConfigVersion);
+
+        return true;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static MoonshineErrorCode TryReadSetHostConfigurationResponse(ReadOnlySpan<byte> source, out MoonshineSetHostConfigurationResponsePayload payload)
+    {
+        payload = default;
+        if (source.Length < 8) return MoonshineErrorCode.BufferTooSmall;
+
+        payload = new MoonshineSetHostConfigurationResponsePayload
+        {
+            StatusCode = (MoonshineErrorCode)BinaryPrimitives.ReadUInt32BigEndian(source[..4]),
+            AppliedConfigVersion = BinaryPrimitives.ReadUInt32BigEndian(source[4..8])
+        };
+
+        return MoonshineErrorCode.Success;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool TryWriteConfigurationChanged(in MoonshineConfigurationChangedPayload payload, Span<byte> destination)
+    {
+        if (destination.Length < 8) return false;
+
+        BinaryPrimitives.WriteUInt32BigEndian(destination[..4], payload.NewConfigVersion);
+        BinaryPrimitives.WriteUInt32BigEndian(destination[4..8], payload.ChangeReasonFlags);
+
+        return true;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static MoonshineErrorCode TryReadConfigurationChanged(ReadOnlySpan<byte> source, out MoonshineConfigurationChangedPayload payload)
+    {
+        payload = default;
+        if (source.Length < 8) return MoonshineErrorCode.BufferTooSmall;
+
+        payload = new MoonshineConfigurationChangedPayload
+        {
+            NewConfigVersion = BinaryPrimitives.ReadUInt32BigEndian(source[..4]),
+            ChangeReasonFlags = BinaryPrimitives.ReadUInt32BigEndian(source[4..8])
+        };
+
+        return MoonshineErrorCode.Success;
+    }
 }

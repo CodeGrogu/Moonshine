@@ -406,4 +406,371 @@ public class MoonshineProtocolContractsTests
         ((ushort)MoonshineMessageType.DiscoveryAnnouncement).Should().Be(0x0902);
         ((ushort)MoonshineMessageType.DiscoveryResponse).Should().Be(0x0903);
     }
+
+    [Fact]
+    public void GetHostCapabilities_Serialisation_RoundtripAndOffsets_MatchExactWirePattern()
+    {
+        uint queryMask = 0x01020304;
+        byte[] buffer = new byte[4];
+
+        bool writeOk = MoonshineProtocolCodec.TryWriteGetHostCapabilities(queryMask, buffer);
+        writeOk.Should().BeTrue();
+
+        buffer[0].Should().Be(0x01);
+        buffer[1].Should().Be(0x02);
+        buffer[2].Should().Be(0x03);
+        buffer[3].Should().Be(0x04);
+
+        MoonshineErrorCode readResult = MoonshineProtocolCodec.TryReadGetHostCapabilities(buffer, out uint decoded);
+        readResult.Should().Be(MoonshineErrorCode.Success);
+        decoded.Should().Be(0x01020304);
+    }
+
+    [Fact]
+    public void GetHostCapabilities_TruncatedBuffer_FailsGracefully()
+    {
+        byte[] truncatedBuffer = new byte[3];
+
+        bool writeOk = MoonshineProtocolCodec.TryWriteGetHostCapabilities(0x12345678, truncatedBuffer);
+        writeOk.Should().BeFalse();
+
+        MoonshineErrorCode readResult = MoonshineProtocolCodec.TryReadGetHostCapabilities(truncatedBuffer, out uint decoded);
+        readResult.Should().Be(MoonshineErrorCode.BufferTooSmall);
+        decoded.Should().Be(0);
+    }
+
+    [Fact]
+    public void HostCapabilitiesResponse_Serialisation_RoundtripAndOffsets_MatchExactWirePattern()
+    {
+        var original = new MoonshineHostCapabilitiesResponsePayload
+        {
+            SupportedVideoCodecs = 0x01020304,
+            SupportedAudioCodecs = 0x05060708,
+            MaxEncodeWidth = 3840,
+            MaxEncodeHeight = 2160,
+            MaxEncodeFps = 144,
+            SupportsHdr10 = 1,
+            SupportsVirtualAudio = 1,
+            SupportsMicBackchannel = 1,
+            Reserved = 0xAA,
+            MaxBitrateKbps = 100000,
+            Reserved2 = 0xDEADBEEF
+        };
+
+        byte[] buffer = new byte[32];
+        bool writeOk = MoonshineProtocolCodec.TryWriteHostCapabilitiesResponse(original, buffer);
+        writeOk.Should().BeTrue();
+
+        // Exact big-endian byte offsets validation
+        buffer[0].Should().Be(0x01);
+        buffer[1].Should().Be(0x02);
+        buffer[2].Should().Be(0x03);
+        buffer[3].Should().Be(0x04);
+
+        buffer[4].Should().Be(0x05);
+        buffer[5].Should().Be(0x06);
+        buffer[6].Should().Be(0x07);
+        buffer[7].Should().Be(0x08);
+
+        buffer[8].Should().Be(0x00);
+        buffer[9].Should().Be(0x00);
+        buffer[10].Should().Be(0x0F);
+        buffer[11].Should().Be(0x00);
+
+        buffer[12].Should().Be(0x00);
+        buffer[13].Should().Be(0x00);
+        buffer[14].Should().Be(0x08);
+        buffer[15].Should().Be(0x70);
+
+        buffer[16].Should().Be(0x00);
+        buffer[17].Should().Be(0x00);
+        buffer[18].Should().Be(0x00);
+        buffer[19].Should().Be(0x90);
+
+        buffer[20].Should().Be(1);
+        buffer[21].Should().Be(1);
+        buffer[22].Should().Be(1);
+        buffer[23].Should().Be(0xAA);
+
+        buffer[24].Should().Be(0x00);
+        buffer[25].Should().Be(0x01);
+        buffer[26].Should().Be(0x86);
+        buffer[27].Should().Be(0xA0);
+
+        buffer[28].Should().Be(0xDE);
+        buffer[29].Should().Be(0xAD);
+        buffer[30].Should().Be(0xBE);
+        buffer[31].Should().Be(0xEF);
+
+        MoonshineErrorCode readResult = MoonshineProtocolCodec.TryReadHostCapabilitiesResponse(buffer, out MoonshineHostCapabilitiesResponsePayload decoded);
+        readResult.Should().Be(MoonshineErrorCode.Success);
+        decoded.SupportedVideoCodecs.Should().Be(original.SupportedVideoCodecs);
+        decoded.SupportedAudioCodecs.Should().Be(original.SupportedAudioCodecs);
+        decoded.MaxEncodeWidth.Should().Be(original.MaxEncodeWidth);
+        decoded.MaxEncodeHeight.Should().Be(original.MaxEncodeHeight);
+        decoded.MaxEncodeFps.Should().Be(original.MaxEncodeFps);
+        decoded.SupportsHdr10.Should().Be(original.SupportsHdr10);
+        decoded.SupportsVirtualAudio.Should().Be(original.SupportsVirtualAudio);
+        decoded.SupportsMicBackchannel.Should().Be(original.SupportsMicBackchannel);
+        decoded.Reserved.Should().Be(original.Reserved);
+        decoded.MaxBitrateKbps.Should().Be(original.MaxBitrateKbps);
+        decoded.Reserved2.Should().Be(original.Reserved2);
+    }
+
+    [Fact]
+    public void HostCapabilitiesResponse_TruncatedBuffer_FailsGracefully()
+    {
+        byte[] truncatedBuffer = new byte[31];
+        var original = new MoonshineHostCapabilitiesResponsePayload { MaxEncodeWidth = 1920 };
+
+        bool writeOk = MoonshineProtocolCodec.TryWriteHostCapabilitiesResponse(original, truncatedBuffer);
+        writeOk.Should().BeFalse();
+
+        MoonshineErrorCode readResult = MoonshineProtocolCodec.TryReadHostCapabilitiesResponse(truncatedBuffer, out MoonshineHostCapabilitiesResponsePayload decoded);
+        readResult.Should().Be(MoonshineErrorCode.BufferTooSmall);
+        decoded.MaxEncodeWidth.Should().Be(0);
+    }
+
+    [Fact]
+    public void GetHostConfiguration_Serialisation_RoundtripAndOffsets_MatchExactWirePattern()
+    {
+        uint queryScope = 0xAABBCCDD;
+        byte[] buffer = new byte[4];
+
+        bool writeOk = MoonshineProtocolCodec.TryWriteGetHostConfiguration(queryScope, buffer);
+        writeOk.Should().BeTrue();
+
+        buffer[0].Should().Be(0xAA);
+        buffer[1].Should().Be(0xBB);
+        buffer[2].Should().Be(0xCC);
+        buffer[3].Should().Be(0xDD);
+
+        MoonshineErrorCode readResult = MoonshineProtocolCodec.TryReadGetHostConfiguration(buffer, out uint decoded);
+        readResult.Should().Be(MoonshineErrorCode.Success);
+        decoded.Should().Be(0xAABBCCDD);
+    }
+
+    [Fact]
+    public void GetHostConfiguration_TruncatedBuffer_FailsGracefully()
+    {
+        byte[] truncatedBuffer = new byte[3];
+
+        bool writeOk = MoonshineProtocolCodec.TryWriteGetHostConfiguration(0x12345678, truncatedBuffer);
+        writeOk.Should().BeFalse();
+
+        MoonshineErrorCode readResult = MoonshineProtocolCodec.TryReadGetHostConfiguration(truncatedBuffer, out uint decoded);
+        readResult.Should().Be(MoonshineErrorCode.BufferTooSmall);
+        decoded.Should().Be(0);
+    }
+
+    [Fact]
+    public void HostConfiguration_Serialisation_RoundtripAndOffsets_MatchExactWirePattern()
+    {
+        var original = new MoonshineHostConfigurationPayload
+        {
+            ConfigVersion = 42,
+            DisplayWidth = 2560,
+            DisplayHeight = 1440,
+            RefreshRateHz = 165,
+            TargetBitrateKbps = 50000,
+            MaxBitrateKbps = 80000,
+            PreferredCodec = MoonshineVideoCodec.Av1,
+            Hdr10Enabled = 1,
+            AudioChannels = 6,
+            AudioQualityMode = 2,
+            AudioBitrateKbps = 512,
+            InputPollingRateHz = 1000,
+            MicPassthroughEnabled = 1,
+            VirtualAudioDriverEnabled = 1,
+            Reserved1 = 0x11223344,
+            Reserved2 = 0x55667788,
+            Reserved3 = 0x99AABBCC
+        };
+
+        byte[] buffer = new byte[48];
+        bool writeOk = MoonshineProtocolCodec.TryWriteHostConfiguration(original, buffer);
+        writeOk.Should().BeTrue();
+
+        // Exact big-endian byte offsets validation
+        buffer[0].Should().Be(0x00);
+        buffer[1].Should().Be(0x00);
+        buffer[2].Should().Be(0x00);
+        buffer[3].Should().Be(0x2A);
+
+        buffer[4].Should().Be(0x00);
+        buffer[5].Should().Be(0x00);
+        buffer[6].Should().Be(0x0A);
+        buffer[7].Should().Be(0x00);
+
+        buffer[8].Should().Be(0x00);
+        buffer[9].Should().Be(0x00);
+        buffer[10].Should().Be(0x05);
+        buffer[11].Should().Be(0xA0);
+
+        buffer[12].Should().Be(0x00);
+        buffer[13].Should().Be(0x00);
+        buffer[14].Should().Be(0x00);
+        buffer[15].Should().Be(0xA5);
+
+        buffer[16].Should().Be(0x00);
+        buffer[17].Should().Be(0x00);
+        buffer[18].Should().Be(0xC3);
+        buffer[19].Should().Be(0x50);
+
+        buffer[20].Should().Be(0x00);
+        buffer[21].Should().Be(0x01);
+        buffer[22].Should().Be(0x38);
+        buffer[23].Should().Be(0x80);
+
+        buffer[24].Should().Be((byte)MoonshineVideoCodec.Av1);
+        buffer[25].Should().Be(1);
+        buffer[26].Should().Be(6);
+        buffer[27].Should().Be(2);
+
+        buffer[28].Should().Be(0x00);
+        buffer[29].Should().Be(0x00);
+        buffer[30].Should().Be(0x02);
+        buffer[31].Should().Be(0x00);
+
+        buffer[32].Should().Be(0x03);
+        buffer[33].Should().Be(0xE8);
+
+        buffer[34].Should().Be(1);
+        buffer[35].Should().Be(1);
+
+        buffer[36].Should().Be(0x11);
+        buffer[37].Should().Be(0x22);
+        buffer[38].Should().Be(0x33);
+        buffer[39].Should().Be(0x44);
+
+        buffer[40].Should().Be(0x55);
+        buffer[41].Should().Be(0x66);
+        buffer[42].Should().Be(0x77);
+        buffer[43].Should().Be(0x88);
+
+        buffer[44].Should().Be(0x99);
+        buffer[45].Should().Be(0xAA);
+        buffer[46].Should().Be(0xBB);
+        buffer[47].Should().Be(0xCC);
+
+        MoonshineErrorCode readResult = MoonshineProtocolCodec.TryReadHostConfiguration(buffer, out MoonshineHostConfigurationPayload decoded);
+        readResult.Should().Be(MoonshineErrorCode.Success);
+        decoded.ConfigVersion.Should().Be(original.ConfigVersion);
+        decoded.DisplayWidth.Should().Be(original.DisplayWidth);
+        decoded.DisplayHeight.Should().Be(original.DisplayHeight);
+        decoded.RefreshRateHz.Should().Be(original.RefreshRateHz);
+        decoded.TargetBitrateKbps.Should().Be(original.TargetBitrateKbps);
+        decoded.MaxBitrateKbps.Should().Be(original.MaxBitrateKbps);
+        decoded.PreferredCodec.Should().Be(original.PreferredCodec);
+        decoded.Hdr10Enabled.Should().Be(original.Hdr10Enabled);
+        decoded.AudioChannels.Should().Be(original.AudioChannels);
+        decoded.AudioQualityMode.Should().Be(original.AudioQualityMode);
+        decoded.AudioBitrateKbps.Should().Be(original.AudioBitrateKbps);
+        decoded.InputPollingRateHz.Should().Be(original.InputPollingRateHz);
+        decoded.MicPassthroughEnabled.Should().Be(original.MicPassthroughEnabled);
+        decoded.VirtualAudioDriverEnabled.Should().Be(original.VirtualAudioDriverEnabled);
+        decoded.Reserved1.Should().Be(original.Reserved1);
+        decoded.Reserved2.Should().Be(original.Reserved2);
+        decoded.Reserved3.Should().Be(original.Reserved3);
+    }
+
+    [Fact]
+    public void HostConfiguration_TruncatedBuffer_FailsGracefully()
+    {
+        byte[] truncatedBuffer = new byte[47];
+        var original = new MoonshineHostConfigurationPayload { ConfigVersion = 1 };
+
+        bool writeOk = MoonshineProtocolCodec.TryWriteHostConfiguration(original, truncatedBuffer);
+        writeOk.Should().BeFalse();
+
+        MoonshineErrorCode readResult = MoonshineProtocolCodec.TryReadHostConfiguration(truncatedBuffer, out MoonshineHostConfigurationPayload decoded);
+        readResult.Should().Be(MoonshineErrorCode.BufferTooSmall);
+        decoded.ConfigVersion.Should().Be(0);
+    }
+
+    [Fact]
+    public void SetHostConfigurationResponse_Serialisation_RoundtripAndOffsets_MatchExactWirePattern()
+    {
+        var original = new MoonshineSetHostConfigurationResponsePayload
+        {
+            StatusCode = MoonshineErrorCode.UnauthorizedConfiguration,
+            AppliedConfigVersion = 42
+        };
+
+        byte[] buffer = new byte[8];
+        bool writeOk = MoonshineProtocolCodec.TryWriteSetHostConfigurationResponse(original, buffer);
+        writeOk.Should().BeTrue();
+
+        buffer[0].Should().Be(0x00);
+        buffer[1].Should().Be(0x00);
+        buffer[2].Should().Be(0x00);
+        buffer[3].Should().Be(0x0C); // UnauthorizedConfiguration = 12 (0x0C)
+
+        buffer[4].Should().Be(0x00);
+        buffer[5].Should().Be(0x00);
+        buffer[6].Should().Be(0x00);
+        buffer[7].Should().Be(0x2A); // 42 = 0x2A
+
+        MoonshineErrorCode readResult = MoonshineProtocolCodec.TryReadSetHostConfigurationResponse(buffer, out MoonshineSetHostConfigurationResponsePayload decoded);
+        readResult.Should().Be(MoonshineErrorCode.Success);
+        decoded.StatusCode.Should().Be(MoonshineErrorCode.UnauthorizedConfiguration);
+        decoded.AppliedConfigVersion.Should().Be(42);
+    }
+
+    [Fact]
+    public void SetHostConfigurationResponse_TruncatedBuffer_FailsGracefully()
+    {
+        byte[] truncatedBuffer = new byte[7];
+        var original = new MoonshineSetHostConfigurationResponsePayload { AppliedConfigVersion = 1 };
+
+        bool writeOk = MoonshineProtocolCodec.TryWriteSetHostConfigurationResponse(original, truncatedBuffer);
+        writeOk.Should().BeFalse();
+
+        MoonshineErrorCode readResult = MoonshineProtocolCodec.TryReadSetHostConfigurationResponse(truncatedBuffer, out MoonshineSetHostConfigurationResponsePayload decoded);
+        readResult.Should().Be(MoonshineErrorCode.BufferTooSmall);
+        decoded.AppliedConfigVersion.Should().Be(0);
+    }
+
+    [Fact]
+    public void ConfigurationChanged_Serialisation_RoundtripAndOffsets_MatchExactWirePattern()
+    {
+        var original = new MoonshineConfigurationChangedPayload
+        {
+            NewConfigVersion = 43,
+            ChangeReasonFlags = 0x00000005
+        };
+
+        byte[] buffer = new byte[8];
+        bool writeOk = MoonshineProtocolCodec.TryWriteConfigurationChanged(original, buffer);
+        writeOk.Should().BeTrue();
+
+        buffer[0].Should().Be(0x00);
+        buffer[1].Should().Be(0x00);
+        buffer[2].Should().Be(0x00);
+        buffer[3].Should().Be(0x2B); // 43 = 0x2B
+
+        buffer[4].Should().Be(0x00);
+        buffer[5].Should().Be(0x00);
+        buffer[6].Should().Be(0x00);
+        buffer[7].Should().Be(0x05);
+
+        MoonshineErrorCode readResult = MoonshineProtocolCodec.TryReadConfigurationChanged(buffer, out MoonshineConfigurationChangedPayload decoded);
+        readResult.Should().Be(MoonshineErrorCode.Success);
+        decoded.NewConfigVersion.Should().Be(43);
+        decoded.ChangeReasonFlags.Should().Be(0x00000005);
+    }
+
+    [Fact]
+    public void ConfigurationChanged_TruncatedBuffer_FailsGracefully()
+    {
+        byte[] truncatedBuffer = new byte[7];
+        var original = new MoonshineConfigurationChangedPayload { NewConfigVersion = 1 };
+
+        bool writeOk = MoonshineProtocolCodec.TryWriteConfigurationChanged(original, truncatedBuffer);
+        writeOk.Should().BeFalse();
+
+        MoonshineErrorCode readResult = MoonshineProtocolCodec.TryReadConfigurationChanged(truncatedBuffer, out MoonshineConfigurationChangedPayload decoded);
+        readResult.Should().Be(MoonshineErrorCode.BufferTooSmall);
+        decoded.NewConfigVersion.Should().Be(0);
+    }
 }

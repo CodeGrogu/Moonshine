@@ -1,4 +1,5 @@
 using System.Net;
+using Moonshine.Core.Security;
 using Moonshine.Host.Audio;
 using Moonshine.Host.Encoding;
 using Moonshine.Interop;
@@ -84,6 +85,7 @@ public sealed record HostSessionConfig
     public bool EnableMicrophoneBackchannel { get; init; } = true;
     public int MicUdpPort { get; init; } = 48002;
     public int LocalMicPort { get; init; }
+    public AuthorisationLevel AuthorisationLevel { get; init; } = AuthorisationLevel.Administrator;
 
     public static HostSessionConfig Default => new();
 }

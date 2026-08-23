@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using Moonshine.Core.Audio;
+using Moonshine.Core.Control;
 using Moonshine.Core.Feedback;
 using Moonshine.Core.Media;
 using Moonshine.Interop;
@@ -118,6 +119,7 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
     private MoonshineClientAudioPipeline? _audioPipeline;
     private MoonshineFeedbackReporter? _feedbackReporter;
     private ClientMicrophoneCapturePipeline? _micCapturePipeline;
+    private MoonshineRemoteHostControlClient? _controlClient;
 
     private Socket? _videoSocket;
     private Socket? _audioSocket;
@@ -181,6 +183,7 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
 
     public Action<MoonshineFrameDesc>? OnVideoFrameReassembled { get; set; }
     public Action<ClientSessionState, string?>? OnStateChanged { get; set; }
+    public MoonshineRemoteHostControlClient? ControlClient => _controlClient;
 
     public ClientSessionMetrics Metrics
     {
@@ -251,7 +254,10 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
             // 1. Initialise sockets
             InitSockets();
 
-            // 2. Perform protocol handshake and stream capabilities negotiation if configured
+            // 2. Initialise Remote Host Control Client
+            _controlClient = new MoonshineRemoteHostControlClient(_controlSocket, _hostControlEndpoint, _config.SessionId);
+
+            // 3. Perform protocol handshake and stream capabilities negotiation if configured
             if (_config.PerformHandshake)
             {
                 lock (_stateLock)
@@ -749,6 +755,8 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
                 // Update activity timestamp on any valid packet from host
                 Interlocked.Exchange(ref _lastHostActivityTimestampQpc, Stopwatch.GetTimestamp());
 
+                _controlClient?.ProcessIncomingControlMessage(datagram);
+
                 switch (header.MessageType)
                 {
                     case MoonshineMessageType.KeepAliveAck:
@@ -1100,6 +1108,9 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
 
         _feedbackReporter?.Dispose();
         _feedbackReporter = null;
+
+        _controlClient?.Dispose();
+        _controlClient = null;
 
         _videoSocket?.Dispose();
         _videoSocket = null;

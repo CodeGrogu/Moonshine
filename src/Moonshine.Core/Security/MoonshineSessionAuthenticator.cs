@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
+using Moonshine.Protocol.Contracts;
 
 namespace Moonshine.Core.Security;
 
@@ -34,6 +36,88 @@ public sealed class MoonshineSessionAuthenticator
     private readonly Lock _lock = new();
     private readonly HashSet<uint> _seenSequences = [];
     private uint _highestSequence;
+    private readonly byte[]? _hmacKey;
+    private readonly MoonshineSessionKeys? _sessionKeys;
+    private readonly ulong _freshnessWindowUs;
+
+    /// <summary>
+    /// Gets a value indicating whether a header HMAC authentication key is configured.
+    /// </summary>
+    public bool HasHmacKey => _hmacKey != null && _hmacKey.Length > 0;
+
+    /// <summary>
+    /// Gets the full derived session keys if initialised with full directional keys.
+    /// </summary>
+    public MoonshineSessionKeys? SessionKeys => _sessionKeys;
+
+    /// <summary>
+    /// Gets the configured freshness window in microseconds.
+    /// </summary>
+    public ulong FreshnessWindowUs => _freshnessWindowUs;
+
+    /// <summary>
+    /// Initialises a new instance of the <see cref="MoonshineSessionAuthenticator"/> class.
+    /// </summary>
+    /// <param name="hmacKey">Optional HMAC authentication key.</param>
+    /// <param name="freshnessWindowUs">Freshness window threshold in microseconds (default 5s).</param>
+    public MoonshineSessionAuthenticator(
+        byte[]? hmacKey = null,
+        ulong freshnessWindowUs = DefaultFreshnessWindowUs)
+    {
+        _hmacKey = hmacKey != null ? (byte[])hmacKey.Clone() : null;
+        _freshnessWindowUs = freshnessWindowUs > 0 ? freshnessWindowUs : DefaultFreshnessWindowUs;
+    }
+
+    /// <summary>
+    /// Initialises a new instance of the <see cref="MoonshineSessionAuthenticator"/> class with a key span.
+    /// </summary>
+    /// <param name="hmacKey">HMAC authentication key span.</param>
+    /// <param name="freshnessWindowUs">Freshness window threshold in microseconds (default 5s).</param>
+    public MoonshineSessionAuthenticator(
+        ReadOnlySpan<byte> hmacKey,
+        ulong freshnessWindowUs = DefaultFreshnessWindowUs)
+    {
+        _hmacKey = hmacKey.ToArray();
+        _freshnessWindowUs = freshnessWindowUs > 0 ? freshnessWindowUs : DefaultFreshnessWindowUs;
+    }
+
+    /// <summary>
+    /// Initialises a new instance of the <see cref="MoonshineSessionAuthenticator"/> class with derived session keys.
+    /// </summary>
+    /// <param name="sessionKeys">Derived cryptographic directional session keys.</param>
+    /// <param name="freshnessWindowUs">Freshness window threshold in microseconds (default 5s).</param>
+    public MoonshineSessionAuthenticator(
+        MoonshineSessionKeys sessionKeys,
+        ulong freshnessWindowUs = DefaultFreshnessWindowUs)
+    {
+        _sessionKeys = sessionKeys;
+        _hmacKey = sessionKeys.HeaderHmacKey != null ? (byte[])sessionKeys.HeaderHmacKey.Clone() : null;
+        _freshnessWindowUs = freshnessWindowUs > 0 ? freshnessWindowUs : DefaultFreshnessWindowUs;
+    }
+
+    /// <summary>
+    /// Validates sequence freshness and replay protection against the active session state.
+    /// </summary>
+    /// <param name="sequenceNumber">The incoming sequence number to validate.</param>
+    /// <param name="timestampUs">The sender's timestamp in microseconds.</param>
+    /// <param name="status">Receives the validation outcome status.</param>
+    /// <returns>True if the sequence is fresh and not replayed; otherwise false.</returns>
+    public bool ValidateIncomingSequence(
+        uint sequenceNumber,
+        ulong timestampUs,
+        out SessionValidationStatus status)
+    {
+        ulong currentEpochUs = (ulong)(Stopwatch.GetTimestamp() * 1_000_000.0 / Stopwatch.Frequency);
+        SessionValidationResult result = ValidateMessage(
+            protocolVersion: MoonshineProtocolConstants.Version10,
+            sequenceNumber: sequenceNumber,
+            timestampUs: timestampUs,
+            currentEpochUs: currentEpochUs,
+            freshnessWindowUs: _freshnessWindowUs);
+
+        status = result.Status;
+        return status == SessionValidationStatus.Valid;
+    }
 
     /// <summary>
     /// Derives discrete directional session keys from a shared secret, client/host nonces, and session ID via HKDF-SHA256.
@@ -138,6 +222,31 @@ public sealed class MoonshineSessionAuthenticator
         }
 
         return new SessionValidationResult(SessionValidationStatus.Valid, "Message successfully validated.");
+    }
+
+    /// <summary>
+    /// Computes HMAC-SHA256 authentication tag over message header and payload using the configured session HMAC key.
+    /// </summary>
+    /// <param name="headerAndPayload">The header and payload byte span to sign.</param>
+    /// <param name="destination">The destination buffer (at least 32 bytes) receiving the HMAC tag.</param>
+    /// <returns>True if computed successfully; false if no HMAC key is configured.</returns>
+    public bool ComputeMessageAuthTag(ReadOnlySpan<byte> headerAndPayload, Span<byte> destination)
+    {
+        if (_hmacKey == null || _hmacKey.Length == 0) return false;
+        ComputeMessageAuthTag(_hmacKey, headerAndPayload, destination);
+        return true;
+    }
+
+    /// <summary>
+    /// Verifies HMAC-SHA256 authentication tag in constant time using the configured session HMAC key.
+    /// </summary>
+    /// <param name="headerAndPayload">The header and payload byte span to authenticate.</param>
+    /// <param name="expectedTag">The 32-byte authentication tag.</param>
+    /// <returns>True if authentication tag matches; otherwise false.</returns>
+    public bool VerifyMessageAuthTag(ReadOnlySpan<byte> headerAndPayload, ReadOnlySpan<byte> expectedTag)
+    {
+        if (_hmacKey == null || _hmacKey.Length == 0) return false;
+        return VerifyMessageAuthTag(_hmacKey, headerAndPayload, expectedTag);
     }
 
     /// <summary>

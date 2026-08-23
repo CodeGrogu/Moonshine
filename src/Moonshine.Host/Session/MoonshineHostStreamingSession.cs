@@ -4,9 +4,11 @@ using System.Net;
 using System.Net.Sockets;
 using Moonshine.Core.Congestion;
 using Moonshine.Core.Media;
+using Moonshine.Core.Security;
 using Moonshine.Core.Transport;
 using Moonshine.Host.Audio;
 using Moonshine.Host.Capture;
+using Moonshine.Host.Control;
 using Moonshine.Host.Encoding;
 using Moonshine.Host.Input;
 using Moonshine.Interop;
@@ -36,6 +38,9 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
     private IDisplayTopologyWatcher? _topologyWatcher;
     private MoonshineVideoPacketiser? _videoPacketiser;
     private CongestionController? _congestionController;
+    private readonly HostConfigurationService _configurationService;
+    private readonly MoonshineSessionAuthenticator? _authenticator;
+    private uint _currentFps;
 
     private Socket? _videoSocket;
     private Socket? _audioSocket;
@@ -94,6 +99,8 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
 
     public bool IsStreaming => State == HostSessionState.Streaming;
 
+    public HostConfigurationService ConfigurationService => _configurationService;
+
     private ulong _currentTopologyGeneration;
     public ulong CurrentTopologyGeneration => Volatile.Read(ref _currentTopologyGeneration);
 
@@ -131,9 +138,13 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
         MoonshineHostAudioPipeline? audioPipeline = null,
         MoonshineHostInputPipeline? inputPipeline = null,
         IDisplayTopologyWatcher? topologyWatcher = null,
-        HostMicrophoneUplinkService? micUplinkService = null)
+        HostMicrophoneUplinkService? micUplinkService = null,
+        HostConfigurationService? configurationService = null,
+        MoonshineSessionAuthenticator? authenticator = null)
     {
         _config = config ?? HostSessionConfig.Default;
+        _currentFps = _config.Fps > 0 ? _config.Fps : 60;
+        _authenticator = authenticator;
         _clientVideoEndpoint = new IPEndPoint(_config.ClientAddress, _config.ClientVideoPort);
         _clientAudioEndpoint = new IPEndPoint(_config.ClientAddress, _config.ClientAudioPort);
         _clientControlEndpoint = new IPEndPoint(_config.ClientAddress, _config.ClientControlFeedbackPort);
@@ -154,6 +165,62 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
 
         _micUplinkService = micUplinkService;
         _ownsMicUplink = micUplinkService == null;
+
+        if (configurationService != null)
+        {
+            _configurationService = configurationService;
+        }
+        else
+        {
+            var capabilities = new MoonshineHostCapabilitiesResponsePayload
+            {
+                SupportedVideoCodecs = (uint)(MoonshineCapabilities.Av1 | MoonshineCapabilities.Hevc | MoonshineCapabilities.H264),
+                SupportedAudioCodecs = (uint)MoonshineAudioCodec.Opus,
+                MaxEncodeWidth = 3840,
+                MaxEncodeHeight = 2160,
+                MaxEncodeFps = 240,
+                SupportsHdr10 = (byte)(_config.EnableHdr10 ? 1 : 1),
+                SupportsVirtualAudio = 1,
+                SupportsMicBackchannel = (byte)(_config.EnableMicrophoneBackchannel ? 1 : 0),
+                Reserved = 0,
+                MaxBitrateKbps = Math.Max(150000, _config.BitrateKbps * 2),
+                Reserved2 = 0
+            };
+
+            var initialConfig = new MoonshineHostConfigurationPayload
+            {
+                ConfigVersion = 1,
+                DisplayWidth = _config.Width,
+                DisplayHeight = _config.Height,
+                RefreshRateHz = _config.Fps,
+                TargetBitrateKbps = _config.BitrateKbps,
+                MaxBitrateKbps = Math.Max(_config.BitrateKbps * 2, 50000),
+                PreferredCodec = _config.Codec switch
+                {
+                    VideoCodec.Av1 => MoonshineVideoCodec.Av1,
+                    VideoCodec.HevcMain10 or VideoCodec.Hevc => MoonshineVideoCodec.Hevc,
+                    VideoCodec.H264 => MoonshineVideoCodec.H264,
+                    _ => MoonshineVideoCodec.Hevc
+                },
+                Hdr10Enabled = (byte)(_config.EnableHdr10 ? 1 : 0),
+                AudioChannels = (byte)(_config.AudioTopology switch
+                {
+                    AudioChannelTopology.Surround51 => 6,
+                    AudioChannelTopology.Surround71 => 8,
+                    _ => 2
+                }),
+                AudioQualityMode = 0,
+                AudioBitrateKbps = _config.AudioBitrate > 0 ? _config.AudioBitrate / 1000 : 128,
+                InputPollingRateHz = 1000,
+                MicPassthroughEnabled = (byte)(_config.EnableMicrophoneBackchannel ? 1 : 0),
+                VirtualAudioDriverEnabled = 1,
+                Reserved1 = 0,
+                Reserved2 = 0,
+                Reserved3 = 0
+            };
+
+            _configurationService = new HostConfigurationService(capabilities, initialConfig);
+        }
     }
 
     /// <summary>
@@ -483,7 +550,6 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
 
     private async Task VideoFrameLoopAsync()
     {
-        long targetFrameIntervalTicks = (long)(Stopwatch.Frequency / (double)_config.Fps);
         long nextFrameTimestamp = Stopwatch.GetTimestamp();
         byte[] bitstreamBuffer = new byte[2 * 1024 * 1024]; // 2 MB max frame buffer
         ulong frameIndex = 0;
@@ -492,6 +558,8 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
         {
             try
             {
+                uint targetFps = Volatile.Read(ref _currentFps);
+                long targetFrameIntervalTicks = (long)(Stopwatch.Frequency / (double)(targetFps > 0 ? targetFps : 60));
                 long startTimestamp = Stopwatch.GetTimestamp();
                 if (_capturePipeline == null || _encoderEngine == null || _videoPacketiser == null)
                 {
@@ -788,6 +856,156 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                             }
                             continue;
                         }
+                        else if (packetHeader.MessageType == MoonshineMessageType.GetHostCapabilities)
+                        {
+                            if (MoonshineProtocolCodec.TryReadGetHostCapabilities(datagram[MoonshineProtocolConstants.HeaderSize..], out uint queryMask) == MoonshineErrorCode.Success)
+                            {
+                                var caps = _configurationService.Capabilities;
+                                byte[] respBuffer = new byte[MoonshineProtocolConstants.HeaderSize + 32];
+                                var respHeader = new MoonshinePacketHeader(
+                                    Magic: MoonshineProtocolConstants.Magic,
+                                    Version: MoonshineProtocolConstants.Version10,
+                                    MessageType: MoonshineMessageType.HostCapabilitiesResponse,
+                                    PayloadSize: 32,
+                                    SequenceNumber: packetHeader.SequenceNumber,
+                                    SessionId: _config.SessionId,
+                                    TimestampUs: (ulong)Stopwatch.GetTimestamp());
+
+                                MoonshineProtocolCodec.TryWriteHeader(in respHeader, respBuffer);
+                                MoonshineProtocolCodec.TryWriteHostCapabilitiesResponse(in caps, respBuffer.AsSpan(MoonshineProtocolConstants.HeaderSize));
+
+                                try
+                                {
+                                    _controlSocket?.SendTo(respBuffer, result.RemoteEndPoint);
+                                }
+                                // ALLOWED_EXCEPTION: Transient socket error on host capabilities response send.
+                                catch (SocketException) { }
+                            }
+                            continue;
+                        }
+                        else if (packetHeader.MessageType == MoonshineMessageType.GetHostConfiguration)
+                        {
+                            if (MoonshineProtocolCodec.TryReadGetHostConfiguration(datagram[MoonshineProtocolConstants.HeaderSize..], out uint queryScope) == MoonshineErrorCode.Success)
+                            {
+                                var currentConfig = _configurationService.CurrentConfiguration;
+                                byte[] respBuffer = new byte[MoonshineProtocolConstants.HeaderSize + 48];
+                                var respHeader = new MoonshinePacketHeader(
+                                    Magic: MoonshineProtocolConstants.Magic,
+                                    Version: MoonshineProtocolConstants.Version10,
+                                    MessageType: MoonshineMessageType.HostConfigurationResponse,
+                                    PayloadSize: 48,
+                                    SequenceNumber: packetHeader.SequenceNumber,
+                                    SessionId: _config.SessionId,
+                                    TimestampUs: (ulong)Stopwatch.GetTimestamp());
+
+                                MoonshineProtocolCodec.TryWriteHeader(in respHeader, respBuffer);
+                                MoonshineProtocolCodec.TryWriteHostConfiguration(in currentConfig, respBuffer.AsSpan(MoonshineProtocolConstants.HeaderSize));
+
+                                try
+                                {
+                                    _controlSocket?.SendTo(respBuffer, result.RemoteEndPoint);
+                                }
+                                // ALLOWED_EXCEPTION: Transient socket error on host configuration response send.
+                                catch (SocketException) { }
+                            }
+                            continue;
+                        }
+                        else if (packetHeader.MessageType == MoonshineMessageType.SetHostConfiguration)
+                        {
+                            if (MoonshineProtocolCodec.TryReadHostConfiguration(datagram[MoonshineProtocolConstants.HeaderSize..], out var proposed) == MoonshineErrorCode.Success)
+                            {
+                                if (_authenticator != null)
+                                {
+                                    if (!_authenticator.ValidateIncomingSequence(packetHeader.SequenceNumber, packetHeader.TimestampUs, out var status))
+                                    {
+                                        MoonshineErrorCode seqErr = status switch
+                                        {
+                                            SessionValidationStatus.DuplicateSequence => MoonshineErrorCode.DuplicateSequence,
+                                            SessionValidationStatus.StaleTimestamp => MoonshineErrorCode.StaleTimestamp,
+                                            _ => MoonshineErrorCode.AuthenticationFailed
+                                        };
+
+                                        SendSetConfigurationResponse(result.RemoteEndPoint, packetHeader.SequenceNumber, seqErr, _configurationService.ConfigVersion);
+                                        continue;
+                                    }
+
+                                    if (packetHeader.PayloadSize >= 80 && datagram.Length >= MoonshineProtocolConstants.HeaderSize + 80)
+                                    {
+                                        ReadOnlySpan<byte> signedContent = datagram[..(MoonshineProtocolConstants.HeaderSize + 48)];
+                                        ReadOnlySpan<byte> tag = datagram.Slice(MoonshineProtocolConstants.HeaderSize + 48, 32);
+
+                                        if (!_authenticator.VerifyMessageAuthTag(signedContent, tag))
+                                        {
+                                            SendSetConfigurationResponse(result.RemoteEndPoint, packetHeader.SequenceNumber, MoonshineErrorCode.AuthenticationFailed, _configurationService.ConfigVersion);
+                                            continue;
+                                        }
+                                    }
+                                }
+
+                                bool success = _configurationService.TryApplyConfiguration(
+                                    proposed,
+                                    _config.AuthorisationLevel,
+                                    out var effective,
+                                    out var errorCode,
+                                    out _);
+
+                                if (success)
+                                {
+                                    if (effective.TargetBitrateKbps > 0)
+                                    {
+                                        _encoderEngine?.ReconfigureBitrate(effective.TargetBitrateKbps, effective.RefreshRateHz);
+                                    }
+                                    if (effective.AudioBitrateKbps > 0)
+                                    {
+                                        _audioPipeline?.ReconfigureBitrate(effective.AudioBitrateKbps * 1000);
+                                    }
+
+                                    if (effective.DisplayWidth != _config.Width ||
+                                        effective.DisplayHeight != _config.Height ||
+                                        effective.RefreshRateHz != _config.Fps)
+                                    {
+                                        RequestKeyframe();
+                                        if (effective.RefreshRateHz > 0)
+                                        {
+                                            Volatile.Write(ref _currentFps, effective.RefreshRateHz);
+                                            _encoderEngine?.ReconfigureBitrate(effective.TargetBitrateKbps, effective.RefreshRateHz);
+                                        }
+                                    }
+                                }
+
+                                SendSetConfigurationResponse(result.RemoteEndPoint, packetHeader.SequenceNumber, errorCode, effective.ConfigVersion);
+
+                                if (success)
+                                {
+                                    var changedPayload = new MoonshineConfigurationChangedPayload
+                                    {
+                                        NewConfigVersion = effective.ConfigVersion,
+                                        ChangeReasonFlags = 0
+                                    };
+
+                                    byte[] changedBuffer = new byte[MoonshineProtocolConstants.HeaderSize + 8];
+                                    var changedHeader = new MoonshinePacketHeader(
+                                        Magic: MoonshineProtocolConstants.Magic,
+                                        Version: MoonshineProtocolConstants.Version10,
+                                        MessageType: MoonshineMessageType.ConfigurationChanged,
+                                        PayloadSize: 8,
+                                        SequenceNumber: packetHeader.SequenceNumber,
+                                        SessionId: _config.SessionId,
+                                        TimestampUs: (ulong)(Stopwatch.GetTimestamp() * 1_000_000.0 / Stopwatch.Frequency));
+
+                                    MoonshineProtocolCodec.TryWriteHeader(in changedHeader, changedBuffer);
+                                    MoonshineProtocolCodec.TryWriteConfigurationChanged(in changedPayload, changedBuffer.AsSpan(MoonshineProtocolConstants.HeaderSize));
+
+                                    try
+                                    {
+                                        _controlSocket?.SendTo(changedBuffer, result.RemoteEndPoint);
+                                    }
+                                    // ALLOWED_EXCEPTION: Transient socket error on configuration changed notification send.
+                                    catch (SocketException) { }
+                                }
+                            }
+                            continue;
+                        }
                         else if (packetHeader.MessageType == MoonshineMessageType.Teardown)
                         {
                             _ = Task.Run(() => StopAsync(CancellationToken.None));
@@ -839,6 +1057,41 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                 await Task.Delay(50, _cts.Token).ConfigureAwait(false);
             }
         }
+    }
+
+    private void SendSetConfigurationResponse(
+        EndPoint? remoteEp,
+        uint sequenceNumber,
+        MoonshineErrorCode statusCode,
+        uint appliedConfigVersion)
+    {
+        if (remoteEp == null || _controlSocket == null) return;
+
+        var respPayload = new MoonshineSetHostConfigurationResponsePayload
+        {
+            StatusCode = statusCode,
+            AppliedConfigVersion = appliedConfigVersion
+        };
+
+        byte[] respBuffer = new byte[MoonshineProtocolConstants.HeaderSize + 8];
+        var respHeader = new MoonshinePacketHeader(
+            Magic: MoonshineProtocolConstants.Magic,
+            Version: MoonshineProtocolConstants.Version10,
+            MessageType: MoonshineMessageType.SetHostConfigurationResponse,
+            PayloadSize: 8,
+            SequenceNumber: sequenceNumber,
+            SessionId: _config.SessionId,
+            TimestampUs: (ulong)(Stopwatch.GetTimestamp() * 1_000_000.0 / Stopwatch.Frequency));
+
+        MoonshineProtocolCodec.TryWriteHeader(in respHeader, respBuffer);
+        MoonshineProtocolCodec.TryWriteSetHostConfigurationResponse(in respPayload, respBuffer.AsSpan(MoonshineProtocolConstants.HeaderSize));
+
+        try
+        {
+            _controlSocket.SendTo(respBuffer, remoteEp);
+        }
+        // ALLOWED_EXCEPTION: Transient socket error on set host configuration response send.
+        catch (SocketException) { }
     }
 
     private async Task MicrophoneUplinkLoopAsync()
