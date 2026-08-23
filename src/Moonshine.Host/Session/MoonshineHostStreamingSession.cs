@@ -345,6 +345,7 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
         if (_capturePipeline != null)
         {
             var selectResult = CaptureSourceSelector.SelectSource(e.NewTopology, new CaptureSourceSelectionCriteria(
+                Policy: CaptureSelectionPolicy.MatchResolution,
                 TargetWidth: _config.Width,
                 TargetHeight: _config.Height,
                 TargetFps: _config.Fps,
