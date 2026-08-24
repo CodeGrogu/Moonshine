@@ -36,6 +36,15 @@ public interface IVideoEncoderPipeline : IDisposable
 
     EncodeSubmissionResult SubmitFrame(
         IntPtr d3dTexture,
+        ulong frameId,
+        ulong timestampUs,
+        bool forceIdr,
+        Span<byte> outBitstream,
+        out int bytesWritten
+    );
+
+    EncodeSubmissionResult SubmitFrame(
+        IntPtr d3dTexture,
         bool forceIdr,
         Span<byte> outBitstream,
         out int bytesWritten

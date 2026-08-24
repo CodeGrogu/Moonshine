@@ -22,6 +22,7 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
     private readonly Lock _lock = new();
 
     private ulong _framesEncoded;
+    private ulong _submittedFrameCounter;
     private ulong _totalEncodingTimeQpc;
     private ulong _encodingErrorsCount;
 
@@ -179,6 +180,8 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
 
     public EncodeSubmissionResult SubmitFrame(
         IntPtr d3dTexture,
+        ulong frameId,
+        ulong timestampUs,
         bool forceIdr,
         Span<byte> outBitstream,
         out int bytesWritten
@@ -223,6 +226,12 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
             );
         }
 
+        desc.FrameIndex = frameId;
+        if (timestampUs > 0)
+        {
+            desc.TimestampQpc = (long)timestampUs;
+        }
+
         bool isKey = desc.IsKeyframe != 0;
         return new EncodeSubmissionResult(
             Submitted: true,
@@ -232,6 +241,18 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
             PacketDesc: desc,
             Result: EncoderResult.Success
         );
+    }
+
+    public EncodeSubmissionResult SubmitFrame(
+        IntPtr d3dTexture,
+        bool forceIdr,
+        Span<byte> outBitstream,
+        out int bytesWritten
+    )
+    {
+        ulong frameId = Interlocked.Increment(ref _submittedFrameCounter);
+        ulong timestampUs = (ulong)(Stopwatch.GetTimestamp() * (1_000_000.0 / Stopwatch.Frequency));
+        return SubmitFrame(d3dTexture, frameId, timestampUs, forceIdr, outBitstream, out bytesWritten);
     }
 
     public bool TryPollPacket(

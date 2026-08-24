@@ -134,4 +134,364 @@ public class HardwareVideoEncoderPipelineTests
 
         (afterAlloc - beforeAlloc).Should().Be(0, "HardwareVideoEncoderPipeline hot path must be zero allocation");
     }
+
+    [Fact]
+    public void HardwareVideoEncoderPipeline_AccessUnitValidation_ValidatesCompleteAccessUnits()
+    {
+        // 1. H.264 Access Units
+        // Keyframe AU: SPS (7) + PPS (8) + IDR slice (5)
+        byte[] h264KeyframeAu = [
+            0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0xC0, 0x28, // SPS (7)
+            0x00, 0x00, 0x00, 0x01, 0x68, 0xCE, 0x38, 0x80, // PPS (8)
+            0x00, 0x00, 0x01, 0x65, 0x88, 0x84, 0x00        // IDR (5)
+        ];
+        var h264KeyResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.H264, h264KeyframeAu);
+        h264KeyResult.IsValid.Should().BeTrue();
+        h264KeyResult.HasParameterSets.Should().BeTrue();
+        h264KeyResult.HasIdr.Should().BeTrue();
+        h264KeyResult.HasRandomAccessPoint.Should().BeTrue();
+        h264KeyResult.IsCompleteAccessUnit.Should().BeTrue();
+        h264KeyResult.NaluCount.Should().Be(3);
+
+        // Inter-frame AU: Non-IDR P-slice (1)
+        byte[] h264InterAu = [0x00, 0x00, 0x00, 0x01, 0x41, 0x9A, 0x24];
+        var h264InterResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.H264, h264InterAu);
+        h264InterResult.IsValid.Should().BeTrue();
+        h264InterResult.HasParameterSets.Should().BeFalse();
+        h264InterResult.HasIdr.Should().BeFalse();
+        h264InterResult.HasRandomAccessPoint.Should().BeFalse();
+        h264InterResult.IsCompleteAccessUnit.Should().BeTrue();
+        h264InterResult.NaluCount.Should().Be(1);
+
+        // Parameter sets only without slice (incomplete AU)
+        byte[] h264ParamSetsOnly = [
+            0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0xC0, 0x28,
+            0x00, 0x00, 0x00, 0x01, 0x68, 0xCE, 0x38, 0x80
+        ];
+        var h264ParamResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.H264, h264ParamSetsOnly);
+        h264ParamResult.IsValid.Should().BeTrue();
+        h264ParamResult.HasParameterSets.Should().BeTrue();
+        h264ParamResult.HasIdr.Should().BeFalse();
+        h264ParamResult.HasRandomAccessPoint.Should().BeTrue();
+        h264ParamResult.IsCompleteAccessUnit.Should().BeFalse();
+        h264ParamResult.NaluCount.Should().Be(2);
+
+        // 2. HEVC Access Units
+        // Keyframe AU: VPS (32) + SPS (33) + PPS (34) + IDR (19)
+        byte[] hevcKeyframeAu = [
+            0x00, 0x00, 0x00, 0x01, 0x40, 0x01, 0x0C, 0x01, // VPS (32)
+            0x00, 0x00, 0x00, 0x01, 0x42, 0x01, 0x01, 0x01, // SPS (33)
+            0x00, 0x00, 0x00, 0x01, 0x44, 0x01, 0xC0, 0xF0, // PPS (34)
+            0x00, 0x00, 0x00, 0x01, 0x26, 0x01, 0xAF, 0xFE  // IDR (19)
+        ];
+        var hevcKeyResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.HevcMain10, hevcKeyframeAu);
+        hevcKeyResult.IsValid.Should().BeTrue();
+        hevcKeyResult.HasParameterSets.Should().BeTrue();
+        hevcKeyResult.HasIdr.Should().BeTrue();
+        hevcKeyResult.HasRandomAccessPoint.Should().BeTrue();
+        hevcKeyResult.IsCompleteAccessUnit.Should().BeTrue();
+        hevcKeyResult.NaluCount.Should().Be(4);
+
+        // Clean Random Access (CRA, 21): 0x2A >> 1 = 21
+        byte[] hevcCraAu = [0x00, 0x00, 0x00, 0x01, 0x2A, 0x01, 0x11, 0x22];
+        var hevcCraResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.Hevc, hevcCraAu);
+        hevcCraResult.IsValid.Should().BeTrue();
+        hevcCraResult.HasParameterSets.Should().BeFalse();
+        hevcCraResult.HasIdr.Should().BeFalse();
+        hevcCraResult.HasRandomAccessPoint.Should().BeTrue();
+        hevcCraResult.IsCompleteAccessUnit.Should().BeTrue();
+        hevcCraResult.NaluCount.Should().Be(1);
+
+        // Inter-frame TRAIL (1): 0x02 >> 1 = 1
+        byte[] hevcTrailAu = [0x00, 0x00, 0x00, 0x01, 0x02, 0x01, 0xD0];
+        var hevcTrailResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.HevcMain10, hevcTrailAu);
+        hevcTrailResult.IsValid.Should().BeTrue();
+        hevcTrailResult.HasParameterSets.Should().BeFalse();
+        hevcTrailResult.HasIdr.Should().BeFalse();
+        hevcTrailResult.HasRandomAccessPoint.Should().BeFalse();
+        hevcTrailResult.IsCompleteAccessUnit.Should().BeTrue();
+        hevcTrailResult.NaluCount.Should().Be(1);
+
+        // Parameter sets only without slice (incomplete AU)
+        byte[] hevcParamSetsOnly = [
+            0x00, 0x00, 0x00, 0x01, 0x40, 0x01, 0x0C, 0x01,
+            0x00, 0x00, 0x00, 0x01, 0x42, 0x01, 0x01, 0x01,
+            0x00, 0x00, 0x00, 0x01, 0x44, 0x01, 0xC0, 0xF0
+        ];
+        var hevcParamResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.Hevc, hevcParamSetsOnly);
+        hevcParamResult.IsValid.Should().BeTrue();
+        hevcParamResult.HasParameterSets.Should().BeTrue();
+        hevcParamResult.HasIdr.Should().BeFalse();
+        hevcParamResult.HasRandomAccessPoint.Should().BeFalse();
+        hevcParamResult.IsCompleteAccessUnit.Should().BeFalse();
+        hevcParamResult.NaluCount.Should().Be(3);
+
+        // 3. AV1 Access Units
+        // Complete Keyframe AU: Sequence Header OBU (1) + Frame OBU (6)
+        byte[] av1KeyframeAu = [
+            0x0A, 0x02, 0x01, 0x02, // OBU Type 1 (Sequence Header), size 2
+            0x32, 0x02, 0x03, 0x04  // OBU Type 6 (Frame), size 2
+        ];
+        var av1KeyResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.Av1, av1KeyframeAu);
+        av1KeyResult.IsValid.Should().BeTrue();
+        av1KeyResult.HasParameterSets.Should().BeTrue();
+        av1KeyResult.HasIdr.Should().BeTrue();
+        av1KeyResult.HasRandomAccessPoint.Should().BeTrue();
+        av1KeyResult.IsCompleteAccessUnit.Should().BeTrue();
+        av1KeyResult.NaluCount.Should().Be(2);
+
+        // Complete Inter-frame AU: Frame Header OBU (3)
+        byte[] av1FrameHeaderAu = [0x1A, 0x02, 0x10, 0x20]; // OBU Type 3 (Frame Header), size 2
+        var av1InterResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.Av1, av1FrameHeaderAu);
+        av1InterResult.IsValid.Should().BeTrue();
+        av1InterResult.HasParameterSets.Should().BeFalse();
+        av1InterResult.HasIdr.Should().BeFalse();
+        av1InterResult.HasRandomAccessPoint.Should().BeFalse();
+        av1InterResult.IsCompleteAccessUnit.Should().BeTrue();
+        av1InterResult.NaluCount.Should().Be(1);
+
+        // Incomplete AU: Sequence Header OBU only (1)
+        byte[] av1SeqOnly = [0x0A, 0x02, 0x01, 0x02];
+        var av1SeqResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.Av1, av1SeqOnly);
+        av1SeqResult.IsValid.Should().BeTrue();
+        av1SeqResult.HasParameterSets.Should().BeTrue();
+        av1SeqResult.HasIdr.Should().BeTrue();
+        av1SeqResult.HasRandomAccessPoint.Should().BeTrue();
+        av1SeqResult.IsCompleteAccessUnit.Should().BeFalse();
+        av1SeqResult.NaluCount.Should().Be(1);
+
+        // 4. Invalid / Malformed Payloads
+        byte[] tooShort = [0x00, 0x01];
+        var tooShortResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.H264, tooShort);
+        tooShortResult.IsValid.Should().BeFalse();
+        tooShortResult.HasParameterSets.Should().BeFalse();
+        tooShortResult.HasIdr.Should().BeFalse();
+        tooShortResult.HasRandomAccessPoint.Should().BeFalse();
+        tooShortResult.IsCompleteAccessUnit.Should().BeFalse();
+        tooShortResult.NaluCount.Should().Be(0);
+
+        byte[] garbage = [0xFF, 0xFE, 0xFD, 0xFC];
+        var garbageResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.Hevc, garbage);
+        garbageResult.IsValid.Should().BeFalse();
+        garbageResult.IsCompleteAccessUnit.Should().BeFalse();
+        garbageResult.NaluCount.Should().Be(0);
+    }
+
+    [Fact]
+    public void HardwareVideoEncoderPipeline_SubmitFrame_CorrelatesFrameIdAndTimestamp()
+    {
+        using var pipeline = new HardwareVideoEncoderPipeline(
+            width: 1920,
+            height: 1080,
+            fps: 60,
+            bitrateKbps: 20000,
+            codec: VideoCodec.HevcMain10,
+            vendor: EncoderVendor.Auto,
+            d3dDevice: IntPtr.Zero
+        );
+
+        Span<byte> buffer = stackalloc byte[1024];
+        const ulong expectedFrameId = 77102UL;
+        const ulong expectedTimestampUs = 9876543210UL;
+
+        // 1. SubmitFrame with explicit frame ID and timestamp on uninitialised pipeline fails closed safely
+        var uninitSubmission = pipeline.SubmitFrame(
+            d3dTexture: IntPtr.Zero,
+            frameId: expectedFrameId,
+            timestampUs: expectedTimestampUs,
+            forceIdr: true,
+            outBitstream: buffer,
+            out int uninitBytesWritten
+        );
+        uninitSubmission.Submitted.Should().BeFalse();
+        uninitSubmission.OutputAvailable.Should().BeFalse();
+        uninitSubmission.KeyFrame.Should().BeFalse();
+        uninitSubmission.BytesWritten.Should().Be(0);
+        uninitBytesWritten.Should().Be(0);
+        uninitSubmission.Result.Should().Be(EncoderResult.NotAvailable);
+
+        // 2. SubmitFrame on disposed pipeline returns DeviceLost
+        var disposedPipeline = new HardwareVideoEncoderPipeline(1920, 1080, d3dDevice: IntPtr.Zero);
+        disposedPipeline.Dispose();
+        var disposedSubmission = disposedPipeline.SubmitFrame(
+            d3dTexture: IntPtr.Zero,
+            frameId: expectedFrameId,
+            timestampUs: expectedTimestampUs,
+            forceIdr: false,
+            outBitstream: buffer,
+            out int disposedBytesWritten
+        );
+        disposedSubmission.Submitted.Should().BeFalse();
+        disposedSubmission.BytesWritten.Should().Be(0);
+        disposedBytesWritten.Should().Be(0);
+        disposedSubmission.Result.Should().Be(EncoderResult.DeviceLost);
+
+        // 3. Exercise pipeline implementation correlation with synthetic encoder
+        using var correlatingPipeline = new SyntheticCorrelatingEncoderPipeline();
+        correlatingPipeline.IsActive.Should().BeTrue();
+
+        var submission = correlatingPipeline.SubmitFrame(
+            d3dTexture: IntPtr.Zero,
+            frameId: expectedFrameId,
+            timestampUs: expectedTimestampUs,
+            forceIdr: true,
+            outBitstream: buffer,
+            out int submitWritten
+        );
+
+        submission.Submitted.Should().BeTrue();
+        submission.OutputAvailable.Should().BeTrue();
+        submission.KeyFrame.Should().BeTrue();
+        submission.BytesWritten.Should().Be(submitWritten);
+        submitWritten.Should().BeGreaterThan(0);
+        submission.Result.Should().Be(EncoderResult.Success);
+        submission.PacketDesc.FrameIndex.Should().Be(expectedFrameId);
+        submission.PacketDesc.TimestampQpc.Should().Be((long)expectedTimestampUs);
+
+        // 4. Sequential frame submissions preserve distinct monotonic identifiers
+        for (ulong i = 1; i <= 5; i++)
+        {
+            ulong seqFrameId = expectedFrameId + i;
+            ulong seqTimestampUs = expectedTimestampUs + (i * 16666UL);
+            bool isKey = i == 3;
+
+            var seqSubmission = correlatingPipeline.SubmitFrame(
+                d3dTexture: IntPtr.Zero,
+                frameId: seqFrameId,
+                timestampUs: seqTimestampUs,
+                forceIdr: isKey,
+                outBitstream: buffer,
+                out int seqWritten
+            );
+
+            seqSubmission.Submitted.Should().BeTrue();
+            seqSubmission.OutputAvailable.Should().BeTrue();
+            seqSubmission.KeyFrame.Should().Be(isKey);
+            seqSubmission.BytesWritten.Should().Be(seqWritten);
+            seqWritten.Should().BeGreaterThan(0);
+            seqSubmission.Result.Should().Be(EncoderResult.Success);
+            seqSubmission.PacketDesc.FrameIndex.Should().Be(seqFrameId);
+            seqSubmission.PacketDesc.TimestampQpc.Should().Be((long)seqTimestampUs);
+        }
+    }
+
+    private sealed class SyntheticCorrelatingEncoderPipeline : IVideoEncoderPipeline
+    {
+        public uint Width => 1920;
+        public uint Height => 1080;
+        public uint Fps => 60;
+        public uint BitrateKbps => 20000;
+        public VideoCodec Codec => VideoCodec.HevcMain10;
+        public EncoderVendor Vendor => EncoderVendor.Direct3D11Hardware;
+        public bool IsActive { get; set; } = true;
+        public EncoderImplementationKind ImplementationKind => EncoderImplementationKind.SyntheticTest;
+        public bool IsHardwareAccelerated => false;
+        public bool HasProducedValidOutput => true;
+        public Type ImplementationType => GetType();
+        public EncoderRuntimeState RuntimeState => IsActive ? EncoderRuntimeState.Ready : EncoderRuntimeState.Disposed;
+        public double AverageEncodingLatencyMicroseconds => 150.0;
+
+        public bool TryEncodeFrame(
+            IntPtr d3dTexture,
+            bool forceIdr,
+            out MoonshineEncodedPacketDesc desc,
+            Span<byte> outBitstream,
+            out int bytesWritten)
+        {
+            if (!IsActive)
+            {
+                desc = default;
+                bytesWritten = 0;
+                return false;
+            }
+
+            byte[] syntheticNalu = forceIdr
+                ? [0x00, 0x00, 0x00, 0x01, 0x26, 0x01, 0xAF, 0xFE]
+                : [0x00, 0x00, 0x00, 0x01, 0x02, 0x01, 0xD0];
+
+            syntheticNalu.CopyTo(outBitstream);
+            bytesWritten = syntheticNalu.Length;
+
+            desc = new MoonshineEncodedPacketDesc
+            {
+                PayloadSize = (uint)bytesWritten,
+                IsKeyframe = (byte)(forceIdr ? 1 : 0),
+                FrameIndex = 0,
+                TimestampQpc = 0,
+                IsHeaderPacket = (byte)(forceIdr ? 1 : 0),
+                TemporalId = 0,
+                Reserved = 0
+            };
+            return true;
+        }
+
+        public EncodeSubmissionResult SubmitFrame(
+            IntPtr d3dTexture,
+            ulong frameId,
+            ulong timestampUs,
+            bool forceIdr,
+            Span<byte> outBitstream,
+            out int bytesWritten)
+        {
+            if (!IsActive)
+            {
+                bytesWritten = 0;
+                return new EncodeSubmissionResult(
+                    Submitted: false,
+                    OutputAvailable: false,
+                    KeyFrame: false,
+                    BytesWritten: 0,
+                    PacketDesc: default,
+                    Result: EncoderResult.DeviceLost
+                );
+            }
+
+            if (!TryEncodeFrame(d3dTexture, forceIdr, out var desc, outBitstream, out bytesWritten))
+            {
+                return new EncodeSubmissionResult(
+                    Submitted: false,
+                    OutputAvailable: false,
+                    KeyFrame: false,
+                    BytesWritten: 0,
+                    PacketDesc: default,
+                    Result: EncoderResult.EncoderFailure
+                );
+            }
+
+            desc.FrameIndex = frameId;
+            if (timestampUs > 0)
+            {
+                desc.TimestampQpc = (long)timestampUs;
+            }
+
+            return new EncodeSubmissionResult(
+                Submitted: true,
+                OutputAvailable: bytesWritten > 0,
+                KeyFrame: desc.IsKeyframe != 0,
+                BytesWritten: bytesWritten,
+                PacketDesc: desc,
+                Result: EncoderResult.Success
+            );
+        }
+
+        public EncodeSubmissionResult SubmitFrame(
+            IntPtr d3dTexture,
+            bool forceIdr,
+            Span<byte> outBitstream,
+            out int bytesWritten)
+        {
+            return SubmitFrame(d3dTexture, 0, 0, forceIdr, outBitstream, out bytesWritten);
+        }
+
+        public bool TryPollPacket(Span<byte> outBitstream, out MoonshineEncodedPacketDesc desc, out int bytesWritten)
+        {
+            desc = default;
+            bytesWritten = 0;
+            return false;
+        }
+
+        public bool Reconfigure(uint bitrateKbps, uint fps, uint peakBitrateKbps = 0) => true;
+        public void RequestKeyframe() { }
+        public void Dispose() { IsActive = false; }
+    }
 }

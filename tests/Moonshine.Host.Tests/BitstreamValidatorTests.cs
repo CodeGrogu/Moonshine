@@ -145,4 +145,107 @@ public class BitstreamValidatorTests
         submission.PacketDesc.FrameIndex.Should().Be(1);
         submission.Result.Should().Be(EncoderResult.Success);
     }
+
+    [Fact]
+    public void ValidateAccessUnit_H264_IdentifiesAllStructuralProperties()
+    {
+        // Combined SPS (7), PPS (8), IDR (5)
+        byte[] h264KeyframeAu = [
+            0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0xC0, 0x28, // SPS (7)
+            0x00, 0x00, 0x00, 0x01, 0x68, 0xCE, 0x38, 0x80, // PPS (8)
+            0x00, 0x00, 0x01, 0x65, 0x88, 0x84, 0x00        // IDR (5)
+        ];
+
+        var result = BitstreamValidator.ValidateAccessUnit(VideoCodec.H264, h264KeyframeAu);
+        result.IsValid.Should().BeTrue();
+        result.HasParameterSets.Should().BeTrue();
+        result.HasIdr.Should().BeTrue();
+        result.HasRandomAccessPoint.Should().BeTrue();
+        result.IsCompleteAccessUnit.Should().BeTrue();
+        result.NaluCount.Should().Be(3);
+
+        // Non-IDR P-slice (1)
+        byte[] h264PSlice = [0x00, 0x00, 0x00, 0x01, 0x41, 0x9A, 0x24];
+        var nonIdrResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.H264, h264PSlice);
+        nonIdrResult.IsValid.Should().BeTrue();
+        nonIdrResult.HasParameterSets.Should().BeFalse();
+        nonIdrResult.HasIdr.Should().BeFalse();
+        nonIdrResult.HasRandomAccessPoint.Should().BeFalse();
+        nonIdrResult.IsCompleteAccessUnit.Should().BeTrue();
+        nonIdrResult.NaluCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void ValidateAccessUnit_Hevc_IdentifiesAllStructuralProperties()
+    {
+        // Combined VPS (32), SPS (33), PPS (34), IDR (19)
+        byte[] hevcKeyframeAu = [
+            0x00, 0x00, 0x00, 0x01, 0x40, 0x01, 0x0C, 0x01, // VPS (32)
+            0x00, 0x00, 0x00, 0x01, 0x42, 0x01, 0x01, 0x01, // SPS (33)
+            0x00, 0x00, 0x00, 0x01, 0x44, 0x01, 0xC0, 0xF0, // PPS (34)
+            0x00, 0x00, 0x00, 0x01, 0x26, 0x01, 0xAF, 0xFE  // IDR (19)
+        ];
+
+        var result = BitstreamValidator.ValidateAccessUnit(VideoCodec.HevcMain10, hevcKeyframeAu);
+        result.IsValid.Should().BeTrue();
+        result.HasParameterSets.Should().BeTrue();
+        result.HasIdr.Should().BeTrue();
+        result.HasRandomAccessPoint.Should().BeTrue();
+        result.IsCompleteAccessUnit.Should().BeTrue();
+        result.NaluCount.Should().Be(4);
+
+        // CRA (21) - 0x2A >> 1 = 21
+        byte[] hevcCra = [0x00, 0x00, 0x00, 0x01, 0x2A, 0x01, 0x11, 0x22];
+        var craResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.Hevc, hevcCra);
+        craResult.IsValid.Should().BeTrue();
+        craResult.HasParameterSets.Should().BeFalse();
+        craResult.HasIdr.Should().BeFalse();
+        craResult.HasRandomAccessPoint.Should().BeTrue();
+        craResult.IsCompleteAccessUnit.Should().BeTrue();
+        craResult.NaluCount.Should().Be(1);
+
+        // TRAIL (1) - 0x02 >> 1 = 1
+        byte[] hevcTrail = [0x00, 0x00, 0x00, 0x01, 0x02, 0x01, 0xD0];
+        var trailResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.Hevc, hevcTrail);
+        trailResult.IsValid.Should().BeTrue();
+        trailResult.HasParameterSets.Should().BeFalse();
+        trailResult.HasIdr.Should().BeFalse();
+        trailResult.HasRandomAccessPoint.Should().BeFalse();
+        trailResult.IsCompleteAccessUnit.Should().BeTrue();
+        trailResult.NaluCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void ValidateAccessUnit_Av1_IdentifiesAllStructuralProperties()
+    {
+        // OBU Sequence Header: obu_type = 1 -> (1 << 3) = 0x08 | 0x02 = 0x0A
+        byte[] av1SeqHeader = [0x0A, 0x0A, 0x00, 0x00];
+        var seqResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.Av1, av1SeqHeader);
+        seqResult.IsValid.Should().BeTrue();
+        seqResult.HasParameterSets.Should().BeTrue();
+        seqResult.HasIdr.Should().BeTrue();
+        seqResult.HasRandomAccessPoint.Should().BeTrue();
+        seqResult.IsCompleteAccessUnit.Should().BeFalse();
+        seqResult.NaluCount.Should().Be(1);
+
+        // OBU Frame: obu_type = 6 -> (6 << 3) = 0x30 | 0x02 = 0x32
+        byte[] av1Frame = [0x32, 0x10, 0x20, 0x30];
+        var frameResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.Av1, av1Frame);
+        frameResult.IsValid.Should().BeTrue();
+        frameResult.HasParameterSets.Should().BeFalse();
+        frameResult.HasIdr.Should().BeFalse();
+        frameResult.HasRandomAccessPoint.Should().BeFalse();
+        frameResult.IsCompleteAccessUnit.Should().BeTrue();
+        frameResult.NaluCount.Should().Be(1);
+
+        // OBU Frame Header: obu_type = 3 -> (3 << 3) = 0x18 | 0x02 = 0x1A
+        byte[] av1FrameHeader = [0x1A, 0x10, 0x20, 0x30];
+        var frameHeaderResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.Av1, av1FrameHeader);
+        frameHeaderResult.IsValid.Should().BeTrue();
+        frameHeaderResult.HasParameterSets.Should().BeFalse();
+        frameHeaderResult.HasIdr.Should().BeFalse();
+        frameHeaderResult.HasRandomAccessPoint.Should().BeFalse();
+        frameHeaderResult.IsCompleteAccessUnit.Should().BeTrue();
+        frameHeaderResult.NaluCount.Should().Be(1);
+    }
 }

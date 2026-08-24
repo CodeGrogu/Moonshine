@@ -23,18 +23,20 @@ NvencSession::NvencSession(NvencSession&& other) noexcept
     : _api(other._api),
       _d3d_device(other._d3d_device),
       _session(other._session),
-      _bitstream_buffer(other._bitstream_buffer),
       _config(other._config),
       _preset(other._preset),
       _tuning(other._tuning),
       _intra_refresh_enabled(other._intra_refresh_enabled),
       _intra_refresh_period(other._intra_refresh_period),
       _intra_refresh_count(other._intra_refresh_count),
-      _is_configured(other._is_configured) {
+      _is_configured(other._is_configured),
+      _bitstream_pool(std::move(other._bitstream_pool)) {
+    std::lock_guard<std::mutex> lock(other._in_flight_mutex);
+    _in_flight_frames = std::move(other._in_flight_frames);
+
     other._api = nullptr;
     other._d3d_device = nullptr;
     other._session = nullptr;
-    other._bitstream_buffer = nullptr;
     other._is_configured = false;
 }
 
@@ -44,7 +46,6 @@ NvencSession& NvencSession::operator=(NvencSession&& other) noexcept {
         _api = other._api;
         _d3d_device = other._d3d_device;
         _session = other._session;
-        _bitstream_buffer = other._bitstream_buffer;
         _config = other._config;
         _preset = other._preset;
         _tuning = other._tuning;
@@ -52,11 +53,14 @@ NvencSession& NvencSession::operator=(NvencSession&& other) noexcept {
         _intra_refresh_period = other._intra_refresh_period;
         _intra_refresh_count = other._intra_refresh_count;
         _is_configured = other._is_configured;
+        _bitstream_pool = std::move(other._bitstream_pool);
+
+        std::lock_guard<std::mutex> lock(other._in_flight_mutex);
+        _in_flight_frames = std::move(other._in_flight_frames);
 
         other._api = nullptr;
         other._d3d_device = nullptr;
         other._session = nullptr;
-        other._bitstream_buffer = nullptr;
         other._is_configured = false;
     }
     return *this;
@@ -121,14 +125,8 @@ bool NvencSession::configure(const EncoderConfig& config) {
 #if defined(_WIN32)
     const auto& fn = _api->functions();
 
-    // Destroy existing bitstream buffer if re-configuring
-    if (_bitstream_buffer) {
-        auto pfn_destroy_bitstream = reinterpret_cast<PNVENCDESTROYBITSTREAMBUFFER>(fn.nvEncDestroyBitstreamBuffer);
-        if (pfn_destroy_bitstream) {
-            pfn_destroy_bitstream(_session, _bitstream_buffer);
-        }
-        _bitstream_buffer = nullptr;
-    }
+    // Clear existing bitstream buffers if re-configuring
+    _bitstream_pool.clear(_session, fn);
 
     auto selected_codec = static_cast<VideoCodec>(config.codec);
     GUID codec_guid = NV_ENC_CODEC_H264_GUID_LOCAL;
@@ -237,20 +235,103 @@ bool NvencSession::configure(const EncoderConfig& config) {
         return false;
     }
 
-    NV_ENC_CREATE_BITSTREAM_BUFFER create_bitstream{};
-    create_bitstream.version = NV_ENC_CREATE_BITSTREAM_BUFFER_VER;
-    auto pfn_create_bitstream = reinterpret_cast<PNVENCCREATEBITSTREAMBUFFER>(fn.nvEncCreateBitstreamBuffer);
-    if (!pfn_create_bitstream || pfn_create_bitstream(_session, &create_bitstream) != NV_ENC_SUCCESS || !create_bitstream.bitstreamBuffer) {
-        close();
-        return false;
-    }
-    _bitstream_buffer = create_bitstream.bitstreamBuffer;
-
     _config = config;
     _is_configured = true;
     return true;
 #else
     (void)config;
+    return false;
+#endif
+}
+
+bool NvencSession::encode(
+    void* registered_resource,
+    bool force_idr,
+    uint64_t frame_id,
+    uint64_t timestamp_us,
+    EncodedPacketDesc& out_desc,
+    uint8_t* out_bitstream,
+    uint32_t max_buffer_size,
+    uint32_t& out_written_size
+) {
+#if defined(_WIN32)
+    if (!_session || !_api || !registered_resource || !out_bitstream || max_buffer_size == 0) {
+        out_written_size = 0;
+        return false;
+    }
+
+    const auto& fn = _api->functions();
+    void* bitstream_buf = _bitstream_pool.acquire_buffer(_session, fn);
+    if (!bitstream_buf) {
+        out_written_size = 0;
+        return false;
+    }
+
+    NvencMappedResourceGuard map_guard(_session, &fn, registered_resource);
+    if (!map_guard.is_valid()) {
+        _bitstream_pool.release_buffer(bitstream_buf);
+        out_written_size = 0;
+        return false;
+    }
+
+    NV_ENC_PIC_PARAMS pic_params{};
+    pic_params.version = NV_ENC_PIC_PARAMS_VER;
+    pic_params.inputWidth = _config.width;
+    pic_params.inputHeight = _config.height;
+    pic_params.inputPitch = _config.width;
+    pic_params.inputBuffer = map_guard.mapped_resource();
+    pic_params.outputBitstream = bitstream_buf;
+    pic_params.bufferFmt = map_guard.mapped_buffer_format();
+    pic_params.pictureStruct = NV_ENC_PIC_STRUCT_FRAME;
+    pic_params.frameIdx = static_cast<uint32_t>(frame_id);
+    pic_params.inputTimeStamp = timestamp_us;
+    pic_params.encodePicFlags = 0;
+    if (force_idr) {
+        pic_params.encodePicFlags |= NV_ENC_PIC_FLAG_FORCEIDR | NV_ENC_PIC_FLAG_OUTPUT_SPSPPS;
+    }
+
+    auto pfn_encode = reinterpret_cast<PNVENCENCODEPICTURE>(fn.nvEncEncodePicture);
+    if (!pfn_encode || pfn_encode(_session, &pic_params) != NV_ENC_SUCCESS) {
+        _bitstream_pool.release_buffer(bitstream_buf);
+        out_written_size = 0;
+        return false;
+    }
+
+    NvencLockedBitstreamGuard lock_guard(_session, &fn, bitstream_buf);
+    if (!lock_guard.is_valid()) {
+        _bitstream_pool.release_buffer(bitstream_buf);
+        out_written_size = 0;
+        return false;
+    }
+
+    uint32_t copy_size = (std::min)(lock_guard.bitstream_size(), max_buffer_size);
+    std::memcpy(out_bitstream, lock_guard.bitstream_ptr(), copy_size);
+
+    out_written_size = copy_size;
+    out_desc.frame_index = frame_id;
+    if (timestamp_us > 0) {
+        out_desc.timestamp_qpc = static_cast<int64_t>(timestamp_us);
+    } else {
+        auto now = std::chrono::high_resolution_clock::now().time_since_epoch();
+        out_desc.timestamp_qpc = std::chrono::duration_cast<std::chrono::microseconds>(now).count();
+    }
+    out_desc.payload_size = copy_size;
+    out_desc.is_keyframe = (lock_guard.is_keyframe() || force_idr) ? 1 : 0;
+    out_desc.is_header_packet = out_desc.is_keyframe;
+    out_desc.temporal_id = 0;
+    out_desc.reserved = 0;
+
+    _bitstream_pool.release_buffer(bitstream_buf);
+    return true;
+#else
+    (void)registered_resource;
+    (void)force_idr;
+    (void)frame_id;
+    (void)timestamp_us;
+    (void)out_desc;
+    (void)out_bitstream;
+    (void)max_buffer_size;
+    out_written_size = 0;
     return false;
 #endif
 }
@@ -264,16 +345,43 @@ bool NvencSession::encode(
     uint32_t max_buffer_size,
     uint32_t& out_written_size
 ) {
+    auto now = std::chrono::high_resolution_clock::now().time_since_epoch();
+    uint64_t timestamp_us = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(now).count()
+    );
+    return encode(
+        registered_resource,
+        force_idr,
+        static_cast<uint64_t>(frame_idx),
+        timestamp_us,
+        out_desc,
+        out_bitstream,
+        max_buffer_size,
+        out_written_size
+    );
+}
+
+bool NvencSession::submit_frame(
+    void* registered_resource,
+    bool force_idr,
+    uint64_t frame_id,
+    uint64_t timestamp_us,
+    void* surface
+) {
 #if defined(_WIN32)
-    if (!_session || !_api || !_bitstream_buffer || !registered_resource || !out_bitstream || max_buffer_size == 0) {
-        out_written_size = 0;
+    if (!_session || !_api || !registered_resource) {
         return false;
     }
 
     const auto& fn = _api->functions();
+    void* bitstream_buf = _bitstream_pool.acquire_buffer(_session, fn);
+    if (!bitstream_buf) {
+        return false;
+    }
+
     NvencMappedResourceGuard map_guard(_session, &fn, registered_resource);
     if (!map_guard.is_valid()) {
-        out_written_size = 0;
+        _bitstream_pool.release_buffer(bitstream_buf);
         return false;
     }
 
@@ -283,10 +391,11 @@ bool NvencSession::encode(
     pic_params.inputHeight = _config.height;
     pic_params.inputPitch = _config.width;
     pic_params.inputBuffer = map_guard.mapped_resource();
-    pic_params.outputBitstream = _bitstream_buffer;
+    pic_params.outputBitstream = bitstream_buf;
     pic_params.bufferFmt = map_guard.mapped_buffer_format();
     pic_params.pictureStruct = NV_ENC_PIC_STRUCT_FRAME;
-    pic_params.frameIdx = frame_idx;
+    pic_params.frameIdx = static_cast<uint32_t>(frame_id);
+    pic_params.inputTimeStamp = timestamp_us;
     pic_params.encodePicFlags = 0;
     if (force_idr) {
         pic_params.encodePicFlags |= NV_ENC_PIC_FLAG_FORCEIDR | NV_ENC_PIC_FLAG_OUTPUT_SPSPPS;
@@ -294,37 +403,87 @@ bool NvencSession::encode(
 
     auto pfn_encode = reinterpret_cast<PNVENCENCODEPICTURE>(fn.nvEncEncodePicture);
     if (!pfn_encode || pfn_encode(_session, &pic_params) != NV_ENC_SUCCESS) {
-        out_written_size = 0;
+        _bitstream_pool.release_buffer(bitstream_buf);
         return false;
     }
 
-    NvencLockedBitstreamGuard lock_guard(_session, &fn, _bitstream_buffer);
-    if (!lock_guard.is_valid()) {
-        out_written_size = 0;
-        return false;
+    {
+        std::lock_guard<std::mutex> lock(_in_flight_mutex);
+        _in_flight_frames.push_back(NvencInFlightFrame{
+            .frame_id = frame_id,
+            .timestamp_us = timestamp_us,
+            .surface = surface,
+            .registered_resource = registered_resource,
+            .bitstream_buffer = bitstream_buf,
+            .submitted = true,
+            .completed = false,
+            .keyframe = force_idr
+        });
     }
-
-    uint32_t copy_size = (std::min)(lock_guard.bitstream_size(), max_buffer_size);
-    std::memcpy(out_bitstream, lock_guard.bitstream_ptr(), copy_size);
-
-    out_written_size = copy_size;
-    out_desc.frame_index = frame_idx;
-    auto now = std::chrono::high_resolution_clock::now().time_since_epoch();
-    out_desc.timestamp_qpc = std::chrono::duration_cast<std::chrono::microseconds>(now).count();
-    out_desc.payload_size = copy_size;
-    out_desc.is_keyframe = (lock_guard.is_keyframe() || force_idr) ? 1 : 0;
-    out_desc.is_header_packet = out_desc.is_keyframe;
-    out_desc.temporal_id = 0;
-    out_desc.reserved = 0;
 
     return true;
 #else
     (void)registered_resource;
     (void)force_idr;
-    (void)frame_idx;
-    (void)out_desc;
+    (void)frame_id;
+    (void)timestamp_us;
+    (void)surface;
+    return false;
+#endif
+}
+
+bool NvencSession::poll_packet(
+    uint8_t* out_bitstream,
+    uint32_t max_buffer_size,
+    EncodedPacketDesc& out_desc,
+    uint32_t& out_written_size
+) {
+#if defined(_WIN32)
+    out_written_size = 0;
+    if (!_session || !_api || !out_bitstream || max_buffer_size == 0) {
+        return false;
+    }
+
+    NvencInFlightFrame in_flight{};
+    {
+        std::lock_guard<std::mutex> lock(_in_flight_mutex);
+        if (_in_flight_frames.empty()) {
+            return false;
+        }
+        in_flight = _in_flight_frames.front();
+        _in_flight_frames.pop_front();
+    }
+
+    const auto& fn = _api->functions();
+    NvencLockedBitstreamGuard lock_guard(_session, &fn, in_flight.bitstream_buffer);
+    if (!lock_guard.is_valid()) {
+        _bitstream_pool.release_buffer(in_flight.bitstream_buffer);
+        return false;
+    }
+
+    uint32_t copy_size = (std::min)(lock_guard.bitstream_size(), max_buffer_size);
+    std::memcpy(out_bitstream, lock_guard.bitstream_ptr(), copy_size);
+    out_written_size = copy_size;
+
+    out_desc.frame_index = in_flight.frame_id;
+    if (in_flight.timestamp_us > 0) {
+        out_desc.timestamp_qpc = static_cast<int64_t>(in_flight.timestamp_us);
+    } else {
+        auto now = std::chrono::high_resolution_clock::now().time_since_epoch();
+        out_desc.timestamp_qpc = std::chrono::duration_cast<std::chrono::microseconds>(now).count();
+    }
+    out_desc.payload_size = copy_size;
+    out_desc.is_keyframe = (lock_guard.is_keyframe() || in_flight.keyframe) ? 1 : 0;
+    out_desc.is_header_packet = out_desc.is_keyframe;
+    out_desc.temporal_id = 0;
+    out_desc.reserved = 0;
+
+    _bitstream_pool.release_buffer(in_flight.bitstream_buffer);
+    return true;
+#else
     (void)out_bitstream;
     (void)max_buffer_size;
+    (void)out_desc;
     out_written_size = 0;
     return false;
 #endif
@@ -372,13 +531,11 @@ void NvencSession::close() {
 #if defined(_WIN32)
     if (_session && _api) {
         const auto& fn = _api->functions();
-        if (_bitstream_buffer && fn.nvEncDestroyBitstreamBuffer) {
-            auto pfn_destroy_bitstream = reinterpret_cast<PNVENCDESTROYBITSTREAMBUFFER>(fn.nvEncDestroyBitstreamBuffer);
-            if (pfn_destroy_bitstream) {
-                pfn_destroy_bitstream(_session, _bitstream_buffer);
-            }
-            _bitstream_buffer = nullptr;
+        {
+            std::lock_guard<std::mutex> lock(_in_flight_mutex);
+            _in_flight_frames.clear();
         }
+        _bitstream_pool.clear(_session, fn);
 
         if (fn.nvEncDestroyEncoder) {
             auto pfn_destroy_encoder = reinterpret_cast<PNVENCDESTROYENCODER>(fn.nvEncDestroyEncoder);
@@ -389,7 +546,10 @@ void NvencSession::close() {
         _session = nullptr;
     }
 #endif
-    _bitstream_buffer = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(_in_flight_mutex);
+        _in_flight_frames.clear();
+    }
     _session = nullptr;
     _api = nullptr;
     _d3d_device = nullptr;
@@ -409,11 +569,15 @@ void* NvencSession::session_handle() const noexcept {
 }
 
 void* NvencSession::bitstream_buffer() const noexcept {
-    return _bitstream_buffer;
+    return nullptr;
 }
 
 const EncoderConfig& NvencSession::config() const noexcept {
     return _config;
+}
+
+NvencBitstreamPool& NvencSession::bitstream_pool() noexcept {
+    return _bitstream_pool;
 }
 
 void NvencSession::set_preset_and_tuning(NvencPreset preset, NvencTuning tuning) noexcept {

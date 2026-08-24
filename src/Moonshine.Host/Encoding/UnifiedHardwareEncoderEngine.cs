@@ -106,6 +106,53 @@ public sealed class UnifiedHardwareEncoderEngine : IDisposable
 
     public EncodeSubmissionResult SubmitFrame(
         IntPtr d3dTexture,
+        ulong frameId,
+        ulong timestampUs,
+        bool forceIdr,
+        Span<byte> outBitstream,
+        out int bytesWritten
+    )
+    {
+        lock (_lock)
+        {
+            if (_disposed || !_pipeline.IsActive)
+            {
+                bytesWritten = 0;
+                return new EncodeSubmissionResult(
+                    Submitted: false,
+                    OutputAvailable: false,
+                    KeyFrame: false,
+                    BytesWritten: 0,
+                    PacketDesc: default,
+                    Result: _disposed ? EncoderResult.DeviceLost : EncoderResult.NotAvailable
+                );
+            }
+
+            var submission = _pipeline.SubmitFrame(d3dTexture, frameId, timestampUs, forceIdr, outBitstream, out bytesWritten);
+            if (submission.Submitted && submission.OutputAvailable)
+            {
+                Interlocked.Increment(ref _framesEncoded);
+                if (submission.KeyFrame)
+                {
+                    Interlocked.Increment(ref _keyframesEmitted);
+                }
+                Interlocked.Add(ref _bytesEmitted, bytesWritten);
+                if (bytesWritten > 0 && BitstreamValidator.ValidateBitstream(Codec, outBitstream[..bytesWritten], out _))
+                {
+                    Volatile.Write(ref _hasProducedValidOutput, true);
+                }
+            }
+            else if (!submission.Submitted || submission.Result != EncoderResult.Success)
+            {
+                Interlocked.Increment(ref _encodingErrors);
+            }
+
+            return submission;
+        }
+    }
+
+    public EncodeSubmissionResult SubmitFrame(
+        IntPtr d3dTexture,
         bool forceIdr,
         Span<byte> outBitstream,
         out int bytesWritten

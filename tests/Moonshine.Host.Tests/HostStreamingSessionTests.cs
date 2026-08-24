@@ -142,6 +142,8 @@ public class HostStreamingSessionTests
 
         public EncodeSubmissionResult SubmitFrame(
             IntPtr d3dTexture,
+            ulong frameId,
+            ulong timestampUs,
             bool forceIdr,
             Span<byte> outBitstream,
             out int bytesWritten)
@@ -158,6 +160,12 @@ public class HostStreamingSessionTests
                 );
             }
 
+            desc.FrameIndex = frameId;
+            if (timestampUs > 0)
+            {
+                desc.TimestampQpc = (long)timestampUs;
+            }
+
             return new EncodeSubmissionResult(
                 Submitted: true,
                 OutputAvailable: true,
@@ -166,6 +174,15 @@ public class HostStreamingSessionTests
                 PacketDesc: desc,
                 Result: EncoderResult.Success
             );
+        }
+
+        public EncodeSubmissionResult SubmitFrame(
+            IntPtr d3dTexture,
+            bool forceIdr,
+            Span<byte> outBitstream,
+            out int bytesWritten)
+        {
+            return SubmitFrame(d3dTexture, 0, (ulong)Stopwatch.GetTimestamp(), forceIdr, outBitstream, out bytesWritten);
         }
 
         public bool TryPollPacket(

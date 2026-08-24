@@ -150,6 +150,7 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
         {
             // Operational is reported ONLY when the backend is a real hardware-accelerated encoder that has produced valid output.
             // Synthetic test or placeholder encoders report Available, NEVER Operational.
+            // The AND-gate (ImplementationKind == HardwareAccelerated && HasProducedValidOutput) is strictly load-bearing for operational safety across all vendors and must never be bypassed.
             if (_encoderEngine.ImplementationKind == EncoderImplementationKind.HardwareAccelerated && _encoderEngine.HasProducedValidOutput)
             {
                 videoEncoder = ComponentReadiness.Operational;
