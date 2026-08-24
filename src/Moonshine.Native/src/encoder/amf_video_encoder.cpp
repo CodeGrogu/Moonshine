@@ -198,9 +198,16 @@ bool AmfVideoEncoder::query_capabilities(void* d3d_device, EncoderCaps& out_caps
 
 bool AmfVideoEncoder::query_codec_support(VideoCodec codec) {
 #if defined(_WIN32)
-    HMODULE hAmf = LoadLibraryW(L"amfrt64.dll");
-    if (!hAmf) return false;
-    FreeLibrary(hAmf);
+    static const bool s_supported = []() {
+        HMODULE hAmf = LoadLibraryExW(L"amfrt64.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+        if (!hAmf) {
+            hAmf = LoadLibraryW(L"amfrt64.dll");
+        }
+        if (!hAmf) return false;
+        FreeLibrary(hAmf);
+        return true;
+    }();
+    if (!s_supported) return false;
     return codec == VideoCodec::H264 || codec == VideoCodec::Hevc ||
            codec == VideoCodec::HevcMain10 || codec == VideoCodec::Av1;
 #else

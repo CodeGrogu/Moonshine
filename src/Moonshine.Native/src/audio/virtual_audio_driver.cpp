@@ -29,64 +29,6 @@ VirtualAudioDriverController::~VirtualAudioDriverController()
 bool VirtualAudioDriverController::Initialize()
 {
     m_initialized = true;
-
-#if defined(_WIN32)
-    // Check if Moonshine Audio endpoints are present in CoreAudio
-    HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-    bool coInitialized = SUCCEEDED(hr);
-
-    IMMDeviceEnumerator* pEnumerator = nullptr;
-    hr = CoCreateInstance(
-        __uuidof(MMDeviceEnumerator),
-        nullptr,
-        CLSCTX_ALL,
-        __uuidof(IMMDeviceEnumerator),
-        reinterpret_cast<void**>(&pEnumerator)
-    );
-
-    if (SUCCEEDED(hr) && pEnumerator) {
-        IMMDeviceCollection* pCollection = nullptr;
-        hr = pEnumerator->EnumAudioEndpoints(eAll, DEVICE_STATE_ACTIVE, &pCollection);
-        if (SUCCEEDED(hr) && pCollection) {
-            UINT count = 0;
-            pCollection->GetCount(&count);
-            for (UINT i = 0; i < count; ++i) {
-                IMMDevice* pEndpoint = nullptr;
-                if (SUCCEEDED(pCollection->Item(i, &pEndpoint)) && pEndpoint) {
-                    IPropertyStore* pProps = nullptr;
-                    if (SUCCEEDED(pEndpoint->OpenPropertyStore(STGM_READ, &pProps)) && pProps) {
-                        PROPVARIANT varName;
-                        PropVariantInit(&varName);
-                        if (SUCCEEDED(pProps->GetValue(PKEY_Device_FriendlyName, &varName)) && varName.pwszVal) {
-                            int len = WideCharToMultiByte(CP_UTF8, 0, varName.pwszVal, -1, nullptr, 0, nullptr, nullptr);
-                            if (len > 0) {
-                                std::string name(static_cast<size_t>(len - 1), '\0');
-                                WideCharToMultiByte(CP_UTF8, 0, varName.pwszVal, -1, &name[0], len, nullptr, nullptr);
-                                if (name.find("Moonshine Audio") != std::string::npos ||
-                                    name.find("Moonshine Microphone") != std::string::npos) {
-                                    m_isDriverInstalled = true;
-                                }
-                            }
-                        }
-                        PropVariantClear(&varName);
-                        pProps->Release();
-                    }
-                    pEndpoint->Release();
-                }
-            }
-            pCollection->Release();
-        }
-        pEnumerator->Release();
-    }
-
-    if (coInitialized) {
-        CoUninitialize();
-    }
-#else
-    // Cross-platform mock state
-    m_isDriverInstalled = true;
-#endif
-
     return true;
 }
 
@@ -97,15 +39,20 @@ void VirtualAudioDriverController::Shutdown()
 
 bool VirtualAudioDriverController::IsDriverInstalled() const
 {
-    return m_isDriverInstalled;
+#if defined(_WIN32)
+    return IsDeviceRegisteredViaSetupDi();
+#else
+    return true;
+#endif
 }
 
 VirtualAudioDriverStatus VirtualAudioDriverController::GetStatus() const
 {
     VirtualAudioDriverStatus status{};
-    status.isInstalled = m_isDriverInstalled;
-    status.isRenderEndpointPresent = m_isDriverInstalled;
-    status.isCaptureEndpointPresent = m_isDriverInstalled;
+    bool installed = IsDriverInstalled();
+    status.isInstalled = installed;
+    status.isRenderEndpointPresent = installed;
+    status.isCaptureEndpointPresent = installed;
     status.supportedSampleRatesCount = 5; // 44.1k, 48k, 88.2k, 96k, 192k
     status.supportedChannelsCount = 4;    // 1 (Mono), 2 (Stereo), 6 (5.1), 8 (7.1)
     std::snprintf(status.driverVersion, sizeof(status.driverVersion), "%s", "1.0.0.0");
@@ -115,6 +62,7 @@ VirtualAudioDriverStatus VirtualAudioDriverController::GetStatus() const
 std::vector<VirtualAudioEndpointInfo> VirtualAudioDriverController::EnumerateEndpoints() const
 {
     std::vector<VirtualAudioEndpointInfo> endpoints;
+    bool active = IsDriverInstalled();
 
     VirtualAudioEndpointInfo renderInfo{};
     renderInfo.deviceId = "MOONSHINE_AUDIO_RENDER_ENDPOINT";
@@ -123,7 +71,7 @@ std::vector<VirtualAudioEndpointInfo> VirtualAudioDriverController::EnumerateEnd
     renderInfo.defaultSampleRate = 48000;
     renderInfo.defaultChannels = 2;
     renderInfo.isDefault = false;
-    renderInfo.isActive = m_isDriverInstalled;
+    renderInfo.isActive = active;
     endpoints.push_back(renderInfo);
 
     VirtualAudioEndpointInfo captureInfo{};
@@ -133,7 +81,7 @@ std::vector<VirtualAudioEndpointInfo> VirtualAudioDriverController::EnumerateEnd
     captureInfo.defaultSampleRate = 48000;
     captureInfo.defaultChannels = 1;
     captureInfo.isDefault = false;
-    captureInfo.isActive = m_isDriverInstalled;
+    captureInfo.isActive = active;
     endpoints.push_back(captureInfo);
 
     return endpoints;
@@ -277,17 +225,11 @@ bool VirtualAudioDriverController::RestartDriver()
 bool VirtualAudioDriverController::IsDeviceRegisteredViaSetupDi() const
 {
 #if defined(_WIN32)
-    // Query the system for devices matching the Moonshine hardware ID.
-    // Uses SetupDiGetClassDevs with DIGCF_ALLCLASSES to enumerate all devices,
-    // then checks each device's hardware ID list for "ROOT\\MoonshineAudio".
-    // This detects whether the driver is installed even before CoreAudio
-    // enumerates the endpoints.
-
     HDEVINFO deviceInfoSet = SetupDiGetClassDevsW(
-        nullptr,             // All classes
-        L"ROOT",             // Enumerator filter
-        nullptr,             // hwndParent
-        DIGCF_ALLCLASSES     // All device classes
+        nullptr,
+        L"ROOT\\MoonshineAudio",
+        nullptr,
+        DIGCF_ALLCLASSES
     );
 
     if (deviceInfoSet == INVALID_HANDLE_VALUE) {
@@ -297,24 +239,7 @@ bool VirtualAudioDriverController::IsDeviceRegisteredViaSetupDi() const
     SP_DEVINFO_DATA devInfoData{};
     devInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
 
-    bool found = false;
-    for (DWORD i = 0; SetupDiEnumDeviceInfo(deviceInfoSet, i, &devInfoData); ++i) {
-        wchar_t hardwareId[256] = {};
-        if (SetupDiGetDeviceRegistryPropertyW(
-                deviceInfoSet,
-                &devInfoData,
-                SPDRP_HARDWAREID,
-                nullptr,
-                reinterpret_cast<PBYTE>(hardwareId),
-                sizeof(hardwareId),
-                nullptr)) {
-            if (wcsstr(hardwareId, L"MoonshineAudio") != nullptr ||
-                wcsstr(hardwareId, L"MSHNAUD") != nullptr) {
-                found = true;
-                break;
-            }
-        }
-    }
+    bool found = SetupDiEnumDeviceInfo(deviceInfoSet, 0, &devInfoData) != FALSE;
 
     SetupDiDestroyDeviceInfoList(deviceInfoSet);
     return found;

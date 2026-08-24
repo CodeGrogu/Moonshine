@@ -560,4 +560,269 @@ public class MoonshineRemoteHostControlClientTests
         result.TargetBitrateKbps.Should().Be(35000);
         result.PreferredCodec.Should().Be(MoonshineVideoCodec.Av1);
     }
+
+    [Fact]
+    public void ValidateProposedConfiguration_ValidPayload_ReturnsTrueAndSuccess()
+    {
+        var capabilities = new MoonshineHostCapabilitiesResponsePayload
+        {
+            SupportedVideoCodecs = (uint)(MoonshineCapabilities.Av1 | MoonshineCapabilities.Hevc | MoonshineCapabilities.H264),
+            SupportedAudioCodecs = (uint)MoonshineAudioCodec.Opus,
+            MaxEncodeWidth = 3840,
+            MaxEncodeHeight = 2160,
+            MaxEncodeFps = 240,
+            SupportsHdr10 = 1,
+            SupportsVirtualAudio = 1,
+            SupportsMicBackchannel = 1,
+            MaxBitrateKbps = 150000
+        };
+
+        var proposed = new MoonshineHostConfigurationPayload
+        {
+            ConfigVersion = 1,
+            DisplayWidth = 1920,
+            DisplayHeight = 1080,
+            RefreshRateHz = 60,
+            TargetBitrateKbps = 20000,
+            MaxBitrateKbps = 50000,
+            PreferredCodec = MoonshineVideoCodec.Hevc,
+            Hdr10Enabled = 1,
+            AudioChannels = 2,
+            AudioBitrateKbps = 128,
+            MicPassthroughEnabled = 1,
+            VirtualAudioDriverEnabled = 1
+        };
+
+        bool valid = MoonshineRemoteHostControlClient.ValidateProposedConfiguration(
+            in proposed,
+            in capabilities,
+            out MoonshineErrorCode errorCode,
+            out string? failureReason);
+
+        valid.Should().BeTrue();
+        errorCode.Should().Be(MoonshineErrorCode.Success);
+        failureReason.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(0, 1080)]
+    [InlineData(1920, 0)]
+    [InlineData(4000, 1080)]
+    [InlineData(1920, 3000)]
+    public void ValidateProposedConfiguration_InvalidDimensions_ReturnsInvalidConfigurationParameter(uint width, uint height)
+    {
+        var capabilities = new MoonshineHostCapabilitiesResponsePayload
+        {
+            SupportedVideoCodecs = (uint)MoonshineCapabilities.Hevc,
+            MaxEncodeWidth = 3840,
+            MaxEncodeHeight = 2160,
+            MaxEncodeFps = 120,
+            MaxBitrateKbps = 100000
+        };
+
+        var proposed = new MoonshineHostConfigurationPayload
+        {
+            DisplayWidth = width,
+            DisplayHeight = height,
+            RefreshRateHz = 60,
+            TargetBitrateKbps = 20000,
+            MaxBitrateKbps = 50000,
+            PreferredCodec = MoonshineVideoCodec.Hevc,
+            AudioChannels = 2,
+            AudioBitrateKbps = 128
+        };
+
+        bool valid = MoonshineRemoteHostControlClient.ValidateProposedConfiguration(
+            in proposed,
+            in capabilities,
+            out MoonshineErrorCode errorCode,
+            out string? failureReason);
+
+        valid.Should().BeFalse();
+        errorCode.Should().Be(MoonshineErrorCode.InvalidConfigurationParameter);
+        failureReason.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(240)]
+    public void ValidateProposedConfiguration_InvalidFps_ReturnsInvalidConfigurationParameter(uint fps)
+    {
+        var capabilities = new MoonshineHostCapabilitiesResponsePayload
+        {
+            SupportedVideoCodecs = (uint)MoonshineCapabilities.Hevc,
+            MaxEncodeWidth = 1920,
+            MaxEncodeHeight = 1080,
+            MaxEncodeFps = 120,
+            MaxBitrateKbps = 100000
+        };
+
+        var proposed = new MoonshineHostConfigurationPayload
+        {
+            DisplayWidth = 1920,
+            DisplayHeight = 1080,
+            RefreshRateHz = fps,
+            TargetBitrateKbps = 20000,
+            MaxBitrateKbps = 50000,
+            PreferredCodec = MoonshineVideoCodec.Hevc,
+            AudioChannels = 2,
+            AudioBitrateKbps = 128
+        };
+
+        bool valid = MoonshineRemoteHostControlClient.ValidateProposedConfiguration(
+            in proposed,
+            in capabilities,
+            out MoonshineErrorCode errorCode,
+            out string? failureReason);
+
+        valid.Should().BeFalse();
+        errorCode.Should().Be(MoonshineErrorCode.InvalidConfigurationParameter);
+        failureReason.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public void ValidateProposedConfiguration_TargetExceedsMaxBitrate_ReturnsInvalidConfigurationParameter()
+    {
+        var capabilities = new MoonshineHostCapabilitiesResponsePayload
+        {
+            SupportedVideoCodecs = (uint)MoonshineCapabilities.Hevc,
+            MaxEncodeWidth = 1920,
+            MaxEncodeHeight = 1080,
+            MaxEncodeFps = 60,
+            MaxBitrateKbps = 100000
+        };
+
+        var proposed = new MoonshineHostConfigurationPayload
+        {
+            DisplayWidth = 1920,
+            DisplayHeight = 1080,
+            RefreshRateHz = 60,
+            TargetBitrateKbps = 60000,
+            MaxBitrateKbps = 40000,
+            PreferredCodec = MoonshineVideoCodec.Hevc,
+            AudioChannels = 2,
+            AudioBitrateKbps = 128
+        };
+
+        bool valid = MoonshineRemoteHostControlClient.ValidateProposedConfiguration(
+            in proposed,
+            in capabilities,
+            out MoonshineErrorCode errorCode,
+            out string? failureReason);
+
+        valid.Should().BeFalse();
+        errorCode.Should().Be(MoonshineErrorCode.InvalidConfigurationParameter);
+        failureReason.Should().Contain("cannot exceed maximum bitrate");
+    }
+
+    [Fact]
+    public void ValidateProposedConfiguration_UnsupportedCodec_ReturnsUnsupportedCodec()
+    {
+        var capabilities = new MoonshineHostCapabilitiesResponsePayload
+        {
+            SupportedVideoCodecs = (uint)MoonshineCapabilities.H264,
+            MaxEncodeWidth = 1920,
+            MaxEncodeHeight = 1080,
+            MaxEncodeFps = 60,
+            MaxBitrateKbps = 100000
+        };
+
+        var proposed = new MoonshineHostConfigurationPayload
+        {
+            DisplayWidth = 1920,
+            DisplayHeight = 1080,
+            RefreshRateHz = 60,
+            TargetBitrateKbps = 20000,
+            MaxBitrateKbps = 50000,
+            PreferredCodec = MoonshineVideoCodec.Av1,
+            AudioChannels = 2,
+            AudioBitrateKbps = 128
+        };
+
+        bool valid = MoonshineRemoteHostControlClient.ValidateProposedConfiguration(
+            in proposed,
+            in capabilities,
+            out MoonshineErrorCode errorCode,
+            out string? failureReason);
+
+        valid.Should().BeFalse();
+        errorCode.Should().Be(MoonshineErrorCode.UnsupportedCodec);
+        failureReason.Should().Contain("not supported by host capabilities");
+    }
+
+    [Fact]
+    public void ValidateProposedConfiguration_UnsupportedHdr10_ReturnsInvalidConfigurationParameter()
+    {
+        var capabilities = new MoonshineHostCapabilitiesResponsePayload
+        {
+            SupportedVideoCodecs = (uint)MoonshineCapabilities.Hevc,
+            MaxEncodeWidth = 1920,
+            MaxEncodeHeight = 1080,
+            MaxEncodeFps = 60,
+            MaxBitrateKbps = 100000,
+            SupportsHdr10 = 0
+        };
+
+        var proposed = new MoonshineHostConfigurationPayload
+        {
+            DisplayWidth = 1920,
+            DisplayHeight = 1080,
+            RefreshRateHz = 60,
+            TargetBitrateKbps = 20000,
+            MaxBitrateKbps = 50000,
+            PreferredCodec = MoonshineVideoCodec.Hevc,
+            Hdr10Enabled = 1,
+            AudioChannels = 2,
+            AudioBitrateKbps = 128
+        };
+
+        bool valid = MoonshineRemoteHostControlClient.ValidateProposedConfiguration(
+            in proposed,
+            in capabilities,
+            out MoonshineErrorCode errorCode,
+            out string? failureReason);
+
+        valid.Should().BeFalse();
+        errorCode.Should().Be(MoonshineErrorCode.InvalidConfigurationParameter);
+        failureReason.Should().Contain("host hardware does not support HDR10 encoding");
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(4)]
+    [InlineData(7)]
+    public void ValidateProposedConfiguration_InvalidAudioChannels_ReturnsInvalidConfigurationParameter(byte channels)
+    {
+        var capabilities = new MoonshineHostCapabilitiesResponsePayload
+        {
+            SupportedVideoCodecs = (uint)MoonshineCapabilities.Hevc,
+            MaxEncodeWidth = 1920,
+            MaxEncodeHeight = 1080,
+            MaxEncodeFps = 60,
+            MaxBitrateKbps = 100000
+        };
+
+        var proposed = new MoonshineHostConfigurationPayload
+        {
+            DisplayWidth = 1920,
+            DisplayHeight = 1080,
+            RefreshRateHz = 60,
+            TargetBitrateKbps = 20000,
+            MaxBitrateKbps = 50000,
+            PreferredCodec = MoonshineVideoCodec.Hevc,
+            AudioChannels = channels,
+            AudioBitrateKbps = 128
+        };
+
+        bool valid = MoonshineRemoteHostControlClient.ValidateProposedConfiguration(
+            in proposed,
+            in capabilities,
+            out MoonshineErrorCode errorCode,
+            out string? failureReason);
+
+        valid.Should().BeFalse();
+        errorCode.Should().Be(MoonshineErrorCode.InvalidConfigurationParameter);
+        failureReason.Should().Contain("Audio channel count");
+    }
 }
+

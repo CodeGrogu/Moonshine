@@ -253,9 +253,16 @@ bool NvencVideoEncoder::query_capabilities(void* d3d_device, EncoderCaps& out_ca
 
 bool NvencVideoEncoder::query_codec_support(VideoCodec codec) {
 #if defined(_WIN32)
-    HMODULE hNvenc = LoadLibraryW(L"nvEncodeAPI64.dll");
-    if (!hNvenc) return false;
-    FreeLibrary(hNvenc);
+    static const bool s_supported = []() {
+        HMODULE hNvenc = LoadLibraryExW(L"nvEncodeAPI64.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+        if (!hNvenc) {
+            hNvenc = LoadLibraryW(L"nvEncodeAPI64.dll");
+        }
+        if (!hNvenc) return false;
+        FreeLibrary(hNvenc);
+        return true;
+    }();
+    if (!s_supported) return false;
     return codec == VideoCodec::H264 || codec == VideoCodec::Hevc ||
            codec == VideoCodec::HevcMain10 || codec == VideoCodec::Av1;
 #else

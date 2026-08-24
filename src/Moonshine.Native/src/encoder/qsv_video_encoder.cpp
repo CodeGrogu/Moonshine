@@ -171,12 +171,22 @@ bool QsvVideoEncoder::query_capabilities(void* d3d_device, EncoderCaps& out_caps
 
 bool QsvVideoEncoder::query_codec_support(VideoCodec codec) {
 #if defined(_WIN32)
-    HMODULE hVpl = LoadLibraryW(L"vpl.dll");
-    if (!hVpl) {
-        hVpl = LoadLibraryW(L"mfx64.dll");
-    }
-    if (!hVpl) return false;
-    FreeLibrary(hVpl);
+    static const bool s_supported = []() {
+        HMODULE hVpl = LoadLibraryExW(L"vpl.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+        if (!hVpl) {
+            hVpl = LoadLibraryW(L"vpl.dll");
+        }
+        if (!hVpl) {
+            hVpl = LoadLibraryExW(L"mfx64.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+        }
+        if (!hVpl) {
+            hVpl = LoadLibraryW(L"mfx64.dll");
+        }
+        if (!hVpl) return false;
+        FreeLibrary(hVpl);
+        return true;
+    }();
+    if (!s_supported) return false;
     return codec == VideoCodec::H264 || codec == VideoCodec::Hevc ||
            codec == VideoCodec::HevcMain10 || codec == VideoCodec::Av1;
 #else

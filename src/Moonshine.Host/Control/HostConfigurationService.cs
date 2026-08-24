@@ -1,7 +1,10 @@
 using Moonshine.Core.Security;
+using Moonshine.Host.Capture;
 using Moonshine.Protocol.Contracts;
 
 namespace Moonshine.Host.Control;
+
+using PhysicalAdapterInfo = DisplayAdapterInfo;
 
 /// <summary>
 /// Thread-safe host configuration management service.
@@ -10,7 +13,7 @@ namespace Moonshine.Host.Control;
 public sealed class HostConfigurationService
 {
     private readonly Lock _gate = new();
-    private readonly MoonshineHostCapabilitiesResponsePayload _capabilities;
+    private MoonshineHostCapabilitiesResponsePayload _capabilities;
     private MoonshineHostConfigurationPayload _currentConfig;
     private uint _configVersion;
 
@@ -21,9 +24,18 @@ public sealed class HostConfigurationService
     public event Action<MoonshineHostConfigurationPayload, uint>? ConfigurationApplied;
 
     /// <summary>
-    /// Gets the immutable host capabilities advertised by this host.
+    /// Gets the host capabilities advertised by this host.
     /// </summary>
-    public MoonshineHostCapabilitiesResponsePayload Capabilities => _capabilities;
+    public MoonshineHostCapabilitiesResponsePayload Capabilities
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _capabilities;
+            }
+        }
+    }
 
     /// <summary>
     /// Gets a thread-safe snapshot of the current active host configuration.
@@ -96,12 +108,19 @@ public sealed class HostConfigurationService
     };
 
     /// <summary>
+    /// Initialises a new instance of the <see cref="HostConfigurationService"/> class using live probed host capabilities.
+    /// </summary>
+    public HostConfigurationService() : this(HostCapabilityProbeEngine.ProbeLiveCapabilities())
+    {
+    }
+
+    /// <summary>
     /// Initialises a new instance of the <see cref="HostConfigurationService"/> class.
     /// </summary>
     /// <param name="capabilities">Optional host capabilities payload; if omitted, defaults are applied.</param>
     /// <param name="initialConfiguration">Optional initial configuration payload; if omitted, defaults are applied.</param>
     public HostConfigurationService(
-        MoonshineHostCapabilitiesResponsePayload? capabilities = null,
+        MoonshineHostCapabilitiesResponsePayload? capabilities,
         MoonshineHostConfigurationPayload? initialConfiguration = null)
     {
         MoonshineHostCapabilitiesResponsePayload caps = capabilities ?? DefaultCapabilities;
@@ -119,6 +138,23 @@ public sealed class HostConfigurationService
     }
 
     /// <summary>
+    /// Refreshes the advertised host capabilities by performing a live hardware and topology probe.
+    /// </summary>
+    /// <param name="topology">Optional display topology override.</param>
+    /// <param name="adapters">Optional physical adapters override.</param>
+    public void RefreshCapabilities(DisplayTopology? topology = null, IReadOnlyList<PhysicalAdapterInfo>? adapters = null)
+    {
+        MoonshineHostCapabilitiesResponsePayload probed = HostCapabilityProbeEngine.ProbeLiveCapabilities(topology, adapters);
+        probed.Reserved = 0;
+        probed.Reserved2 = 0;
+
+        lock (_gate)
+        {
+            _capabilities = probed;
+        }
+    }
+
+    /// <summary>
     /// Validates a proposed configuration against the advertised host capabilities and protocol constraints.
     /// </summary>
     /// <param name="proposed">The proposed configuration payload to validate.</param>
@@ -126,6 +162,12 @@ public sealed class HostConfigurationService
     /// <returns>A <see cref="MoonshineErrorCode"/> indicating success or the specific validation failure reason.</returns>
     public MoonshineErrorCode ValidateConfiguration(in MoonshineHostConfigurationPayload proposed, out string? errorMessage)
     {
+        MoonshineHostCapabilitiesResponsePayload caps;
+        lock (_gate)
+        {
+            caps = _capabilities;
+        }
+
         // 1. Dimensions validation
         if (proposed.DisplayWidth == 0 || proposed.DisplayHeight == 0)
         {
@@ -133,15 +175,15 @@ public sealed class HostConfigurationService
             return MoonshineErrorCode.InvalidConfigurationParameter;
         }
 
-        if (_capabilities.MaxEncodeWidth > 0 && proposed.DisplayWidth > _capabilities.MaxEncodeWidth)
+        if (caps.MaxEncodeWidth > 0 && proposed.DisplayWidth > caps.MaxEncodeWidth)
         {
-            errorMessage = $"Requested display width ({proposed.DisplayWidth}) exceeds maximum supported encode width ({_capabilities.MaxEncodeWidth}).";
+            errorMessage = $"Requested display width ({proposed.DisplayWidth}) exceeds maximum supported encode width ({caps.MaxEncodeWidth}).";
             return MoonshineErrorCode.InvalidConfigurationParameter;
         }
 
-        if (_capabilities.MaxEncodeHeight > 0 && proposed.DisplayHeight > _capabilities.MaxEncodeHeight)
+        if (caps.MaxEncodeHeight > 0 && proposed.DisplayHeight > caps.MaxEncodeHeight)
         {
-            errorMessage = $"Requested display height ({proposed.DisplayHeight}) exceeds maximum supported encode height ({_capabilities.MaxEncodeHeight}).";
+            errorMessage = $"Requested display height ({proposed.DisplayHeight}) exceeds maximum supported encode height ({caps.MaxEncodeHeight}).";
             return MoonshineErrorCode.InvalidConfigurationParameter;
         }
 
@@ -152,9 +194,9 @@ public sealed class HostConfigurationService
             return MoonshineErrorCode.InvalidConfigurationParameter;
         }
 
-        if (_capabilities.MaxEncodeFps > 0 && proposed.RefreshRateHz > _capabilities.MaxEncodeFps)
+        if (caps.MaxEncodeFps > 0 && proposed.RefreshRateHz > caps.MaxEncodeFps)
         {
-            errorMessage = $"Requested refresh rate ({proposed.RefreshRateHz} Hz) exceeds maximum supported encode frame rate ({_capabilities.MaxEncodeFps} fps).";
+            errorMessage = $"Requested refresh rate ({proposed.RefreshRateHz} Hz) exceeds maximum supported encode frame rate ({caps.MaxEncodeFps} fps).";
             return MoonshineErrorCode.InvalidConfigurationParameter;
         }
 
@@ -171,30 +213,30 @@ public sealed class HostConfigurationService
             return MoonshineErrorCode.InvalidConfigurationParameter;
         }
 
-        if (_capabilities.MaxBitrateKbps > 0)
+        if (caps.MaxBitrateKbps > 0)
         {
-            if (proposed.TargetBitrateKbps > _capabilities.MaxBitrateKbps)
+            if (proposed.TargetBitrateKbps > caps.MaxBitrateKbps)
             {
-                errorMessage = $"Target bitrate ({proposed.TargetBitrateKbps} kbps) exceeds maximum host bitrate capability ({_capabilities.MaxBitrateKbps} kbps).";
+                errorMessage = $"Target bitrate ({proposed.TargetBitrateKbps} kbps) exceeds maximum host bitrate capability ({caps.MaxBitrateKbps} kbps).";
                 return MoonshineErrorCode.InvalidConfigurationParameter;
             }
 
-            if (proposed.MaxBitrateKbps > _capabilities.MaxBitrateKbps)
+            if (proposed.MaxBitrateKbps > caps.MaxBitrateKbps)
             {
-                errorMessage = $"Maximum bitrate ({proposed.MaxBitrateKbps} kbps) exceeds maximum host bitrate capability ({_capabilities.MaxBitrateKbps} kbps).";
+                errorMessage = $"Maximum bitrate ({proposed.MaxBitrateKbps} kbps) exceeds maximum host bitrate capability ({caps.MaxBitrateKbps} kbps).";
                 return MoonshineErrorCode.InvalidConfigurationParameter;
             }
         }
 
         // 4. Video codec support validation
-        if (!IsCodecSupported(_capabilities.SupportedVideoCodecs, proposed.PreferredCodec))
+        if (!IsCodecSupported(caps.SupportedVideoCodecs, proposed.PreferredCodec))
         {
             errorMessage = $"Requested video codec ({proposed.PreferredCodec}) is not supported by host capabilities.";
             return MoonshineErrorCode.UnsupportedCodec;
         }
 
         // 5. HDR10 support validation
-        if (proposed.Hdr10Enabled != 0 && _capabilities.SupportsHdr10 == 0)
+        if (proposed.Hdr10Enabled != 0 && caps.SupportsHdr10 == 0)
         {
             errorMessage = "HDR10 mode is requested but host hardware does not support HDR10 encoding.";
             return MoonshineErrorCode.InvalidConfigurationParameter;
@@ -215,14 +257,14 @@ public sealed class HostConfigurationService
         }
 
         // 8. Microphone backchannel validation
-        if (proposed.MicPassthroughEnabled != 0 && _capabilities.SupportsMicBackchannel == 0)
+        if (proposed.MicPassthroughEnabled != 0 && caps.SupportsMicBackchannel == 0)
         {
             errorMessage = "Microphone passthrough backchannel is requested but host does not support microphone backchannel.";
             return MoonshineErrorCode.InvalidConfigurationParameter;
         }
 
         // 9. Virtual audio driver validation
-        if (proposed.VirtualAudioDriverEnabled != 0 && _capabilities.SupportsVirtualAudio == 0)
+        if (proposed.VirtualAudioDriverEnabled != 0 && caps.SupportsVirtualAudio == 0)
         {
             errorMessage = "Virtual audio driver is requested but host does not support virtual audio driver.";
             return MoonshineErrorCode.InvalidConfigurationParameter;

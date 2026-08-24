@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Moonshine.Core.Security;
+using Moonshine.Host.Capture;
 using Moonshine.Host.Control;
 using Moonshine.Protocol.Contracts;
 using Xunit;
@@ -11,7 +12,7 @@ public class HostConfigurationServiceTests
     [Fact]
     public void Constructor_DefaultInitialization_SetsCanonicalDefaults()
     {
-        var service = new HostConfigurationService();
+        var service = new HostConfigurationService(HostConfigurationService.DefaultCapabilities);
 
         service.ConfigVersion.Should().Be(1);
         service.Capabilities.MaxEncodeWidth.Should().Be(3840);
@@ -38,6 +39,18 @@ public class HostConfigurationServiceTests
         current.Reserved1.Should().Be(0);
         current.Reserved2.Should().Be(0);
         current.Reserved3.Should().Be(0);
+    }
+
+    [Fact]
+    public void Constructor_Parameterless_InitialisesWithProbedLiveCapabilities()
+    {
+        var service = new HostConfigurationService();
+
+        service.ConfigVersion.Should().Be(1);
+        service.Capabilities.MaxBitrateKbps.Should().Be(150000);
+        service.Capabilities.SupportedAudioCodecs.Should().Be((uint)MoonshineAudioCodec.Opus);
+        service.CurrentConfiguration.DisplayWidth.Should().BeGreaterThan(0);
+        service.CurrentConfiguration.DisplayHeight.Should().BeGreaterThan(0);
     }
 
     [Fact]
@@ -91,7 +104,7 @@ public class HostConfigurationServiceTests
     [Fact]
     public void TryApplyConfiguration_ValidMutation_IncrementsVersionAndDispatchesEvent()
     {
-        var service = new HostConfigurationService();
+        var service = new HostConfigurationService(HostConfigurationService.DefaultCapabilities);
         uint initialVersion = service.ConfigVersion;
 
         MoonshineHostConfigurationPayload proposed = service.CurrentConfiguration;
@@ -150,7 +163,7 @@ public class HostConfigurationServiceTests
     [Fact]
     public void TryApplyConfiguration_ControllerAuthorisation_IsPermitted()
     {
-        var service = new HostConfigurationService();
+        var service = new HostConfigurationService(HostConfigurationService.DefaultCapabilities);
         MoonshineHostConfigurationPayload proposed = service.CurrentConfiguration;
         proposed.RefreshRateHz = 144;
 
@@ -172,7 +185,7 @@ public class HostConfigurationServiceTests
     [InlineData(AuthorisationLevel.Viewer)]
     public void TryApplyConfiguration_InsufficientAuthorisation_RejectsAndRetainsState(AuthorisationLevel authLevel)
     {
-        var service = new HostConfigurationService();
+        var service = new HostConfigurationService(HostConfigurationService.DefaultCapabilities);
         MoonshineHostConfigurationPayload baseline = service.CurrentConfiguration;
 
         MoonshineHostConfigurationPayload proposed = baseline;
@@ -204,7 +217,7 @@ public class HostConfigurationServiceTests
     [Fact]
     public void TryApplyConfiguration_OutOfBoundsResolution_RejectsAtomically()
     {
-        var service = new HostConfigurationService();
+        var service = new HostConfigurationService(HostConfigurationService.DefaultCapabilities);
         MoonshineHostConfigurationPayload baseline = service.CurrentConfiguration;
 
         MoonshineHostConfigurationPayload proposed = baseline;
@@ -231,7 +244,7 @@ public class HostConfigurationServiceTests
     [Fact]
     public void TryApplyConfiguration_ZeroDimension_RejectsAtomically()
     {
-        var service = new HostConfigurationService();
+        var service = new HostConfigurationService(HostConfigurationService.DefaultCapabilities);
         MoonshineHostConfigurationPayload baseline = service.CurrentConfiguration;
 
         MoonshineHostConfigurationPayload proposed = baseline;
@@ -253,7 +266,7 @@ public class HostConfigurationServiceTests
     [Fact]
     public void TryApplyConfiguration_OutOfBoundsFps_RejectsAtomically()
     {
-        var service = new HostConfigurationService();
+        var service = new HostConfigurationService(HostConfigurationService.DefaultCapabilities);
         MoonshineHostConfigurationPayload baseline = service.CurrentConfiguration;
 
         MoonshineHostConfigurationPayload proposed = baseline;
@@ -277,7 +290,7 @@ public class HostConfigurationServiceTests
     [Fact]
     public void TryApplyConfiguration_OutOfBoundsBitrate_RejectsAtomically()
     {
-        var service = new HostConfigurationService();
+        var service = new HostConfigurationService(HostConfigurationService.DefaultCapabilities);
         MoonshineHostConfigurationPayload baseline = service.CurrentConfiguration;
 
         MoonshineHostConfigurationPayload proposed = baseline;
@@ -302,7 +315,7 @@ public class HostConfigurationServiceTests
     [Fact]
     public void TryApplyConfiguration_TargetBitrateExceedingMaxBitrate_RejectsAtomically()
     {
-        var service = new HostConfigurationService();
+        var service = new HostConfigurationService(HostConfigurationService.DefaultCapabilities);
         MoonshineHostConfigurationPayload baseline = service.CurrentConfiguration;
 
         MoonshineHostConfigurationPayload proposed = baseline;
@@ -405,7 +418,7 @@ public class HostConfigurationServiceTests
     [InlineData(9)]
     public void TryApplyConfiguration_InvalidAudioChannels_RejectsAtomically(byte invalidChannels)
     {
-        var service = new HostConfigurationService();
+        var service = new HostConfigurationService(HostConfigurationService.DefaultCapabilities);
         MoonshineHostConfigurationPayload baseline = service.CurrentConfiguration;
 
         MoonshineHostConfigurationPayload proposed = baseline;
@@ -432,7 +445,7 @@ public class HostConfigurationServiceTests
     [InlineData(8)]
     public void TryApplyConfiguration_ValidAudioChannels_AcceptedSuccessfully(byte validChannels)
     {
-        var service = new HostConfigurationService();
+        var service = new HostConfigurationService(HostConfigurationService.DefaultCapabilities);
 
         MoonshineHostConfigurationPayload proposed = service.CurrentConfiguration;
         proposed.AudioChannels = validChannels;
@@ -457,7 +470,7 @@ public class HostConfigurationServiceTests
     [InlineData(2000)]
     public void TryApplyConfiguration_InvalidAudioBitrate_RejectsAtomically(uint invalidBitrate)
     {
-        var service = new HostConfigurationService();
+        var service = new HostConfigurationService(HostConfigurationService.DefaultCapabilities);
         MoonshineHostConfigurationPayload baseline = service.CurrentConfiguration;
 
         MoonshineHostConfigurationPayload proposed = baseline;
@@ -551,7 +564,7 @@ public class HostConfigurationServiceTests
     [Fact]
     public void GetSanitizedConfiguration_AlwaysReturnsZeroedReservedFields()
     {
-        var service = new HostConfigurationService();
+        var service = new HostConfigurationService(HostConfigurationService.DefaultCapabilities);
 
         MoonshineHostConfigurationPayload proposed = service.CurrentConfiguration;
         proposed.DisplayWidth = 2560;
@@ -586,7 +599,7 @@ public class HostConfigurationServiceTests
     [Fact]
     public void SequentialValidUpdates_IncrementVersionMonotonically()
     {
-        var service = new HostConfigurationService();
+        var service = new HostConfigurationService(HostConfigurationService.DefaultCapabilities);
         uint v1 = service.ConfigVersion;
 
         MoonshineHostConfigurationPayload p1 = service.CurrentConfiguration;
@@ -602,5 +615,39 @@ public class HostConfigurationServiceTests
 
         uint v3 = service.ConfigVersion;
         v3.Should().Be(v2 + 1);
+    }
+
+    [Fact]
+    public void RefreshCapabilities_WithTopologyOverride_UpdatesCapabilitiesUnderLock()
+    {
+        var service = new HostConfigurationService(HostConfigurationService.DefaultCapabilities);
+        service.Capabilities.MaxEncodeWidth.Should().Be(3840);
+
+        var customDisplay = new DisplayOutputInfo(
+            DisplayIndex: 0,
+            AdapterIndex: 0,
+            Width: 1920,
+            Height: 1080,
+            RefreshRateNumerator: 120,
+            RefreshRateDenominator: 1,
+            Rotation: 0,
+            IsAttachedToDesktop: true,
+            IsHdr: true,
+            BitsPerColor: 10
+        );
+
+        var customTopology = new DisplayTopology(
+            Adapters: Array.Empty<DisplayAdapterInfo>(),
+            Displays: new[] { customDisplay },
+            PrimaryDisplay: customDisplay,
+            VirtualScreenBounds: new DesktopBounds(0, 0, 1920, 1080),
+            IsHeadless: false,
+            TimestampQpc: 0
+        );
+
+        service.RefreshCapabilities(customTopology);
+
+        service.Capabilities.SupportsHdr10.Should().Be(1);
+        service.Capabilities.MaxEncodeFps.Should().Be(120);
     }
 }

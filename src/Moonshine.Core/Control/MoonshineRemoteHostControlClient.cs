@@ -356,6 +356,161 @@ public sealed class MoonshineRemoteHostControlClient : IDisposable
     }
 
     /// <summary>
+    /// Performs client-side pre-flight validation of a proposed host configuration against advertised host capabilities.
+    /// </summary>
+    /// <param name="proposed">The proposed configuration settings payload to validate.</param>
+    /// <param name="capabilities">The advertised host capabilities payload to validate against.</param>
+    /// <param name="errorCode">When validation fails, receives the specific error code; otherwise <see cref="MoonshineErrorCode.Success"/>.</param>
+    /// <param name="failureReason">When validation fails, receives a descriptive explanation; otherwise null.</param>
+    /// <returns>True if the configuration is valid and compatible with the host capabilities; otherwise false.</returns>
+    public static bool ValidateProposedConfiguration(
+        in MoonshineHostConfigurationPayload proposed,
+        in MoonshineHostCapabilitiesResponsePayload capabilities,
+        out MoonshineErrorCode errorCode,
+        out string? failureReason)
+    {
+        // 1. Dimensions validation
+        if (proposed.DisplayWidth == 0 || proposed.DisplayHeight == 0)
+        {
+            errorCode = MoonshineErrorCode.InvalidConfigurationParameter;
+            failureReason = "Display dimensions must be greater than zero.";
+            return false;
+        }
+
+        if (capabilities.MaxEncodeWidth > 0 && proposed.DisplayWidth > capabilities.MaxEncodeWidth)
+        {
+            errorCode = MoonshineErrorCode.InvalidConfigurationParameter;
+            failureReason = $"Requested display width ({proposed.DisplayWidth}) exceeds maximum supported encode width ({capabilities.MaxEncodeWidth}).";
+            return false;
+        }
+
+        if (capabilities.MaxEncodeHeight > 0 && proposed.DisplayHeight > capabilities.MaxEncodeHeight)
+        {
+            errorCode = MoonshineErrorCode.InvalidConfigurationParameter;
+            failureReason = $"Requested display height ({proposed.DisplayHeight}) exceeds maximum supported encode height ({capabilities.MaxEncodeHeight}).";
+            return false;
+        }
+
+        // 2. Refresh rate validation
+        if (proposed.RefreshRateHz == 0)
+        {
+            errorCode = MoonshineErrorCode.InvalidConfigurationParameter;
+            failureReason = "Refresh rate must be greater than zero.";
+            return false;
+        }
+
+        if (capabilities.MaxEncodeFps > 0 && proposed.RefreshRateHz > capabilities.MaxEncodeFps)
+        {
+            errorCode = MoonshineErrorCode.InvalidConfigurationParameter;
+            failureReason = $"Requested refresh rate ({proposed.RefreshRateHz} Hz) exceeds maximum supported encode frame rate ({capabilities.MaxEncodeFps} fps).";
+            return false;
+        }
+
+        // 3. Bitrate validation
+        if (proposed.TargetBitrateKbps == 0 || proposed.MaxBitrateKbps == 0)
+        {
+            errorCode = MoonshineErrorCode.InvalidConfigurationParameter;
+            failureReason = "Target and maximum bitrates must be greater than zero.";
+            return false;
+        }
+
+        if (proposed.TargetBitrateKbps > proposed.MaxBitrateKbps)
+        {
+            errorCode = MoonshineErrorCode.InvalidConfigurationParameter;
+            failureReason = $"Target bitrate ({proposed.TargetBitrateKbps} kbps) cannot exceed maximum bitrate ({proposed.MaxBitrateKbps} kbps).";
+            return false;
+        }
+
+        if (capabilities.MaxBitrateKbps > 0)
+        {
+            if (proposed.TargetBitrateKbps > capabilities.MaxBitrateKbps)
+            {
+                errorCode = MoonshineErrorCode.InvalidConfigurationParameter;
+                failureReason = $"Target bitrate ({proposed.TargetBitrateKbps} kbps) exceeds maximum host bitrate capability ({capabilities.MaxBitrateKbps} kbps).";
+                return false;
+            }
+
+            if (proposed.MaxBitrateKbps > capabilities.MaxBitrateKbps)
+            {
+                errorCode = MoonshineErrorCode.InvalidConfigurationParameter;
+                failureReason = $"Maximum bitrate ({proposed.MaxBitrateKbps} kbps) exceeds maximum host bitrate capability ({capabilities.MaxBitrateKbps} kbps).";
+                return false;
+            }
+        }
+
+        // 4. Video codec support validation
+        if (!IsCodecSupported(capabilities.SupportedVideoCodecs, proposed.PreferredCodec))
+        {
+            errorCode = MoonshineErrorCode.UnsupportedCodec;
+            failureReason = $"Requested video codec ({proposed.PreferredCodec}) is not supported by host capabilities.";
+            return false;
+        }
+
+        // 5. HDR10 support validation
+        if (proposed.Hdr10Enabled != 0 && capabilities.SupportsHdr10 == 0)
+        {
+            errorCode = MoonshineErrorCode.InvalidConfigurationParameter;
+            failureReason = "HDR10 mode is requested but host hardware does not support HDR10 encoding.";
+            return false;
+        }
+
+        // 6. Audio channels validation (strictly 2, 6, or 8 channels)
+        if (proposed.AudioChannels is not (2 or 6 or 8))
+        {
+            errorCode = MoonshineErrorCode.InvalidConfigurationParameter;
+            failureReason = $"Audio channel count ({proposed.AudioChannels}) is invalid. Only 2, 6, or 8 channels are supported.";
+            return false;
+        }
+
+        // 7. Audio bitrate validation (32 kbps to 1024 kbps)
+        if (proposed.AudioBitrateKbps is < 32 or > 1024)
+        {
+            errorCode = MoonshineErrorCode.InvalidConfigurationParameter;
+            failureReason = $"Audio bitrate ({proposed.AudioBitrateKbps} kbps) is out of range. Allowed range is 32 to 1024 kbps.";
+            return false;
+        }
+
+        // 8. Microphone backchannel validation
+        if (proposed.MicPassthroughEnabled != 0 && capabilities.SupportsMicBackchannel == 0)
+        {
+            errorCode = MoonshineErrorCode.InvalidConfigurationParameter;
+            failureReason = "Microphone passthrough backchannel is requested but host does not support microphone backchannel.";
+            return false;
+        }
+
+        // 9. Virtual audio driver validation
+        if (proposed.VirtualAudioDriverEnabled != 0 && capabilities.SupportsVirtualAudio == 0)
+        {
+            errorCode = MoonshineErrorCode.InvalidConfigurationParameter;
+            failureReason = "Virtual audio driver is requested but host does not support virtual audio driver.";
+            return false;
+        }
+
+        errorCode = MoonshineErrorCode.Success;
+        failureReason = null;
+        return true;
+    }
+
+    private static bool IsCodecSupported(uint supportedVideoCodecsMask, MoonshineVideoCodec codec)
+    {
+        if (codec is MoonshineVideoCodec.Unknown or > MoonshineVideoCodec.H264)
+        {
+            return false;
+        }
+
+        uint capBit = codec switch
+        {
+            MoonshineVideoCodec.Av1 => (uint)MoonshineCapabilities.Av1,
+            MoonshineVideoCodec.Hevc => (uint)MoonshineCapabilities.Hevc,
+            MoonshineVideoCodec.H264 => (uint)MoonshineCapabilities.H264,
+            _ => 0
+        };
+
+        uint directBit = 1u << (int)codec;
+        return (supportedVideoCodecsMask & capBit) != 0 || (supportedVideoCodecsMask & directBit) != 0;
+    }
+
+    /// <summary>
     /// Disposes the control client and cancels any pending asynchronous requests.
     /// </summary>
     public void Dispose()
@@ -388,3 +543,4 @@ public sealed class MoonshineRemoteHostControlClient : IDisposable
         }
     }
 }
+
