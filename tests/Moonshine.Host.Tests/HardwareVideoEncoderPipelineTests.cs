@@ -175,7 +175,7 @@ public class HardwareVideoEncoderPipelineTests
         h264KeyResult.HasIdr.Should().BeTrue();
         h264KeyResult.HasRandomAccessPoint.Should().BeTrue();
 
-        // Inter-frame AU: Non-IDR P-slice (1)
+        // Inter-frame AU: Non-IDR P-slice (1) without SPS/PPS headers
         byte[] h264InterAu = [0x00, 0x00, 0x00, 0x01, 0x41, 0x9A, 0x24];
         var h264InterResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.H264, h264InterAu);
         h264InterResult.IsValid.Should().BeTrue();
@@ -183,7 +183,7 @@ public class HardwareVideoEncoderPipelineTests
         h264InterResult.HasCodecHeaders.Should().BeFalse();
         h264InterResult.HasRandomAccessMarker.Should().BeFalse();
         h264InterResult.ContainsFrameData.Should().BeTrue();
-        h264InterResult.IsCompleteAccessUnit.Should().BeTrue();
+        h264InterResult.IsCompleteAccessUnit.Should().BeFalse();
         h264InterResult.NaluCount.Should().Be(1);
 
         // Parameter sets only without slice (incomplete AU)
@@ -217,7 +217,7 @@ public class HardwareVideoEncoderPipelineTests
         hevcKeyResult.IsCompleteAccessUnit.Should().BeTrue();
         hevcKeyResult.NaluCount.Should().Be(4);
 
-        // Clean Random Access (CRA, 21): 0x2A >> 1 = 21
+        // Clean Random Access (CRA, 21): 0x2A >> 1 = 21 without VPS/SPS/PPS
         byte[] hevcCraAu = [0x00, 0x00, 0x00, 0x01, 0x2A, 0x01, 0x11, 0x22];
         var hevcCraResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.Hevc, hevcCraAu);
         hevcCraResult.IsValid.Should().BeTrue();
@@ -225,10 +225,10 @@ public class HardwareVideoEncoderPipelineTests
         hevcCraResult.HasCodecHeaders.Should().BeFalse();
         hevcCraResult.HasRandomAccessMarker.Should().BeTrue();
         hevcCraResult.ContainsFrameData.Should().BeTrue();
-        hevcCraResult.IsCompleteAccessUnit.Should().BeTrue();
+        hevcCraResult.IsCompleteAccessUnit.Should().BeFalse();
         hevcCraResult.NaluCount.Should().Be(1);
 
-        // Inter-frame TRAIL (1): 0x02 >> 1 = 1
+        // Inter-frame TRAIL (1): 0x02 >> 1 = 1 without VPS/SPS/PPS
         byte[] hevcTrailAu = [0x00, 0x00, 0x00, 0x01, 0x02, 0x01, 0xD0];
         var hevcTrailResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.HevcMain10, hevcTrailAu);
         hevcTrailResult.IsValid.Should().BeTrue();
@@ -236,7 +236,7 @@ public class HardwareVideoEncoderPipelineTests
         hevcTrailResult.HasCodecHeaders.Should().BeFalse();
         hevcTrailResult.HasRandomAccessMarker.Should().BeFalse();
         hevcTrailResult.ContainsFrameData.Should().BeTrue();
-        hevcTrailResult.IsCompleteAccessUnit.Should().BeTrue();
+        hevcTrailResult.IsCompleteAccessUnit.Should().BeFalse();
         hevcTrailResult.NaluCount.Should().Be(1);
 
         // Parameter sets only without slice (incomplete AU)
@@ -269,15 +269,15 @@ public class HardwareVideoEncoderPipelineTests
         av1KeyResult.IsCompleteAccessUnit.Should().BeTrue();
         av1KeyResult.NaluCount.Should().Be(2);
 
-        // Complete Inter-frame AU: Frame Header OBU (3)
+        // Standalone Frame Header OBU (3) without Tile Group -> ContainsFrameData = false, IsCompleteAccessUnit = false
         byte[] av1FrameHeaderAu = [0x1A, 0x02, 0x10, 0x20]; // OBU Type 3 (Frame Header), size 2
         var av1InterResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.Av1, av1FrameHeaderAu);
         av1InterResult.IsValid.Should().BeTrue();
         av1InterResult.HasStructurallyValidPayload.Should().BeTrue();
         av1InterResult.HasCodecHeaders.Should().BeFalse();
         av1InterResult.HasRandomAccessMarker.Should().BeFalse();
-        av1InterResult.ContainsFrameData.Should().BeTrue();
-        av1InterResult.IsCompleteAccessUnit.Should().BeTrue();
+        av1InterResult.ContainsFrameData.Should().BeFalse();
+        av1InterResult.IsCompleteAccessUnit.Should().BeFalse();
         av1InterResult.NaluCount.Should().Be(1);
 
         // Incomplete AU: Sequence Header OBU only (1)
@@ -416,8 +416,13 @@ public class HardwareVideoEncoderPipelineTests
         evidence.OutputReceived.Should().BeTrue();
         evidence.BitstreamStructurallyValid.Should().BeTrue();
         evidence.AccessUnitValid.Should().BeTrue();
+        evidence.DecoderAccepted.Should().BeFalse();
         evidence.FirstValidFrameId.Should().Be(expectedFrameId);
         evidence.LastValidFrameId.Should().Be(expectedFrameId + 5);
+
+        // 6. Verify decoder acceptance recording
+        correlatingPipeline.RecordDecoderAcceptance(expectedFrameId);
+        correlatingPipeline.Evidence.DecoderAccepted.Should().BeTrue();
     }
 
     private sealed class SyntheticCorrelatingEncoderPipeline : IVideoEncoderPipeline
@@ -437,6 +442,7 @@ public class HardwareVideoEncoderPipelineTests
         public double AverageEncodingLatencyMicroseconds => 150.0;
 
         private bool _frameSubmitted;
+        private bool _decoderAccepted;
         private ulong _firstValidFrameId;
         private ulong _lastValidFrameId;
         private bool _hasValidFrame;
@@ -449,13 +455,15 @@ public class HardwareVideoEncoderPipelineTests
             OutputReceived: HasProducedValidOutput,
             BitstreamStructurallyValid: HasProducedValidOutput,
             AccessUnitValid: HasProducedValidOutput,
-            DecoderAccepted: false,
+            DecoderAccepted: _decoderAccepted,
             FirstValidFrameId: _firstValidFrameId,
             LastValidFrameId: _lastValidFrameId
         );
 
         public bool TryEncodeFrame(
             IntPtr d3dTexture,
+            ulong frameId,
+            ulong timestampUs,
             bool forceIdr,
             out MoonshineEncodedPacketDesc desc,
             Span<byte> outBitstream,
@@ -480,13 +488,39 @@ public class HardwareVideoEncoderPipelineTests
             {
                 PayloadSize = (uint)bytesWritten,
                 IsKeyframe = (byte)(forceIdr ? 1 : 0),
-                FrameIndex = 0,
-                TimestampQpc = 0,
+                FrameIndex = frameId,
+                TimestampQpc = timestampUs > 0 ? (long)timestampUs : 0,
                 IsHeaderPacket = (byte)(forceIdr ? 1 : 0),
                 TemporalId = 0,
                 Reserved = 0
             };
+
+            if (bytesWritten > 0)
+            {
+                if (!_hasValidFrame)
+                {
+                    _firstValidFrameId = frameId;
+                    _hasValidFrame = true;
+                }
+                _lastValidFrameId = frameId;
+            }
+
             return true;
+        }
+
+        public bool TryEncodeFrame(
+            IntPtr d3dTexture,
+            bool forceIdr,
+            out MoonshineEncodedPacketDesc desc,
+            Span<byte> outBitstream,
+            out int bytesWritten)
+        {
+            return TryEncodeFrame(d3dTexture, 0, 0, forceIdr, out desc, outBitstream, out bytesWritten);
+        }
+
+        public void RecordDecoderAcceptance(ulong frameId)
+        {
+            _decoderAccepted = true;
         }
 
         public EncodeSubmissionResult SubmitFrame(
@@ -510,7 +544,7 @@ public class HardwareVideoEncoderPipelineTests
                 );
             }
 
-            if (!TryEncodeFrame(d3dTexture, forceIdr, out var desc, outBitstream, out bytesWritten))
+            if (!TryEncodeFrame(d3dTexture, frameId, timestampUs, forceIdr, out var desc, outBitstream, out bytesWritten))
             {
                 return new EncodeSubmissionResult(
                     Submitted: false,
@@ -520,22 +554,6 @@ public class HardwareVideoEncoderPipelineTests
                     PacketDesc: default,
                     Result: EncoderResult.EncoderFailure
                 );
-            }
-
-            desc.FrameIndex = frameId;
-            if (timestampUs > 0)
-            {
-                desc.TimestampQpc = (long)timestampUs;
-            }
-
-            if (bytesWritten > 0)
-            {
-                if (!_hasValidFrame)
-                {
-                    _firstValidFrameId = frameId;
-                    _hasValidFrame = true;
-                }
-                _lastValidFrameId = frameId;
             }
 
             return new EncodeSubmissionResult(

@@ -80,12 +80,14 @@ public class HostConfigurationProtocolIntegrationTests
 
         public bool TryEncodeFrame(
             IntPtr d3dTexture,
+            ulong frameId,
+            ulong timestampUs,
             bool forceIdr,
             out MoonshineEncodedPacketDesc desc,
             Span<byte> outBitstream,
             out int bytesWritten)
         {
-            uint idx = Interlocked.Increment(ref _frameIndex);
+            uint idx = frameId > 0 ? (uint)frameId : Interlocked.Increment(ref _frameIndex);
             int size = 1200;
             ReadOnlySpan<byte> naluHeader = forceIdr
                 ? stackalloc byte[] { 0x00, 0x00, 0x00, 0x01, 0x26, 0x01, 0xAF, 0xFE }
@@ -102,9 +104,23 @@ public class HostConfigurationProtocolIntegrationTests
                 IsHeaderPacket = 0,
                 TemporalId = 0,
                 Reserved = 0,
-                TimestampQpc = Stopwatch.GetTimestamp()
+                TimestampQpc = timestampUs > 0 ? (long)timestampUs : Stopwatch.GetTimestamp()
             };
             return true;
+        }
+
+        public bool TryEncodeFrame(
+            IntPtr d3dTexture,
+            bool forceIdr,
+            out MoonshineEncodedPacketDesc desc,
+            Span<byte> outBitstream,
+            out int bytesWritten)
+        {
+            return TryEncodeFrame(d3dTexture, 0, (ulong)Stopwatch.GetTimestamp(), forceIdr, out desc, outBitstream, out bytesWritten);
+        }
+
+        public void RecordDecoderAcceptance(ulong frameId)
+        {
         }
 
         public EncodeSubmissionResult SubmitFrame(
@@ -115,12 +131,7 @@ public class HostConfigurationProtocolIntegrationTests
             Span<byte> outBitstream,
             out int bytesWritten)
         {
-            TryEncodeFrame(d3dTexture, forceIdr, out var desc, outBitstream, out bytesWritten);
-            desc.FrameIndex = frameId;
-            if (timestampUs > 0)
-            {
-                desc.TimestampQpc = (long)timestampUs;
-            }
+            TryEncodeFrame(d3dTexture, frameId, timestampUs, forceIdr, out var desc, outBitstream, out bytesWritten);
             return new EncodeSubmissionResult(
                 Submitted: true,
                 OutputAvailable: true,

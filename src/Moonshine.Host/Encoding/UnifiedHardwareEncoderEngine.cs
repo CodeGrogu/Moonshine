@@ -109,6 +109,61 @@ public sealed class UnifiedHardwareEncoderEngine : IDisposable
         }
     }
 
+    public bool TryEncodeFrame(
+        IntPtr d3dTexture,
+        ulong frameId,
+        ulong timestampUs,
+        bool forceIdr,
+        out MoonshineEncodedPacketDesc desc,
+        Span<byte> outBitstream,
+        out int bytesWritten
+    )
+    {
+        lock (_lock)
+        {
+            if (_disposed || !_pipeline.IsActive)
+            {
+                desc = default;
+                bytesWritten = 0;
+                return false;
+            }
+
+            bool success = _pipeline.TryEncodeFrame(d3dTexture, frameId, timestampUs, forceIdr, out desc, outBitstream, out bytesWritten);
+            if (success)
+            {
+                Interlocked.Increment(ref _framesEncoded);
+                if (desc.IsKeyframe != 0)
+                {
+                    Interlocked.Increment(ref _keyframesEmitted);
+                }
+                Interlocked.Add(ref _bytesEmitted, bytesWritten);
+                if (bytesWritten > 0)
+                {
+                    var auResult = BitstreamValidator.ValidateAccessUnit(Codec, outBitstream[..bytesWritten]);
+                    if (auResult.IsValid && auResult.ContainsFrameData)
+                    {
+                        Volatile.Write(ref _hasProducedValidOutput, true);
+                    }
+                }
+                return true;
+            }
+
+            Interlocked.Increment(ref _encodingErrors);
+            return false;
+        }
+    }
+
+    public void RecordDecoderAcceptance(ulong frameId)
+    {
+        lock (_lock)
+        {
+            if (!_disposed && _pipeline.IsActive)
+            {
+                _pipeline.RecordDecoderAcceptance(frameId);
+            }
+        }
+    }
+
     public EncodeSubmissionResult SubmitFrame(
         IntPtr d3dTexture,
         ulong frameId,

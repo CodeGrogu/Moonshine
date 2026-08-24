@@ -35,6 +35,18 @@ public interface IVideoEncoderPipeline : IDisposable
         out int bytesWritten
     );
 
+    bool TryEncodeFrame(
+        IntPtr d3dTexture,
+        ulong frameId,
+        ulong timestampUs,
+        bool forceIdr,
+        out MoonshineEncodedPacketDesc desc,
+        Span<byte> outBitstream,
+        out int bytesWritten
+    );
+
+    void RecordDecoderAcceptance(ulong frameId);
+
     EncodeSubmissionResult SubmitFrame(
         IntPtr d3dTexture,
         ulong frameId,

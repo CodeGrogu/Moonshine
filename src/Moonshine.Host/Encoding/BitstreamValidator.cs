@@ -130,7 +130,7 @@ public static class BitstreamValidator
         bool hasCodecHeaders = hasSps || hasPps;
         bool hasRandomAccessMarker = hasIdr || hasSps;
         bool containsFrameData = hasIdr || hasNonIdr;
-        bool isCompleteAccessUnit = containsFrameData;
+        bool isCompleteAccessUnit = hasCodecHeaders && containsFrameData;
 
         return new AccessUnitValidationResult(
             IsValid: foundValidNalu,
@@ -202,7 +202,7 @@ public static class BitstreamValidator
         bool hasCodecHeaders = hasVps || hasSps || hasPps;
         bool hasRandomAccessMarker = hasIdr || hasCra;
         bool containsFrameData = hasIdr || hasCra || hasTrail;
-        bool isCompleteAccessUnit = containsFrameData;
+        bool isCompleteAccessUnit = hasCodecHeaders && containsFrameData;
 
         return new AccessUnitValidationResult(
             IsValid: foundValidNalu,
@@ -349,8 +349,8 @@ public static class BitstreamValidator
 
         bool hasCodecHeaders = hasSeqHeader;
         bool hasRandomAccessMarker = hasSeqHeader;
-        bool containsFrameData = hasFrame || hasFrameHeader || hasTileGroup;
-        bool isCompleteAccessUnit = containsFrameData;
+        bool containsFrameData = hasFrame || (hasFrameHeader && hasTileGroup);
+        bool isCompleteAccessUnit = hasCodecHeaders && containsFrameData;
 
         return new AccessUnitValidationResult(
             IsValid: foundValidObu,

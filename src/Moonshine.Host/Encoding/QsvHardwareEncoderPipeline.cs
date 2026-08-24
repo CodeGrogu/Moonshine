@@ -38,6 +38,7 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
     private bool _outputReceived;
     private bool _bitstreamStructurallyValid;
     private bool _accessUnitValid;
+    private bool _decoderAccepted;
     private ulong _firstValidFrameId;
     private ulong _lastValidFrameId;
     private bool _hasValidFrame;
@@ -65,7 +66,7 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
         OutputReceived: Volatile.Read(ref _outputReceived),
         BitstreamStructurallyValid: Volatile.Read(ref _bitstreamStructurallyValid),
         AccessUnitValid: Volatile.Read(ref _accessUnitValid),
-        DecoderAccepted: false,
+        DecoderAccepted: Volatile.Read(ref _decoderAccepted),
         FirstValidFrameId: Volatile.Read(ref _firstValidFrameId),
         LastValidFrameId: Volatile.Read(ref _lastValidFrameId)
     );
@@ -133,6 +134,8 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
 
     public unsafe bool TryEncodeFrame(
         IntPtr d3dTexture,
+        ulong frameId,
+        ulong timestampUs,
         bool forceIdr,
         out MoonshineEncodedPacketDesc desc,
         Span<byte> outBitstream,
@@ -170,6 +173,12 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
                         Interlocked.Increment(ref _framesEncoded);
                         Interlocked.Add(ref _totalEncodingTimeQpc, (ulong)elapsed);
 
+                        desc.FrameIndex = frameId;
+                        if (timestampUs > 0)
+                        {
+                            desc.TimestampQpc = (long)timestampUs;
+                        }
+
                         if (bytesWritten > 0)
                         {
                             Volatile.Write(ref _outputReceived, true);
@@ -189,7 +198,6 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
                             Volatile.Write(ref _accessUnitValid, true);
                             Volatile.Write(ref _hasProducedValidOutput, true);
 
-                            ulong frameId = desc.FrameIndex;
                             if (frameId != 0)
                             {
                                 if (!_hasValidFrame)
@@ -220,6 +228,25 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
         }
     }
 
+    public bool TryEncodeFrame(
+        IntPtr d3dTexture,
+        bool forceIdr,
+        out MoonshineEncodedPacketDesc desc,
+        Span<byte> outBitstream,
+        out int bytesWritten
+    )
+    {
+        ulong frameId = Interlocked.Increment(ref _submittedFrameCounter);
+        long ticks = System.Diagnostics.Stopwatch.GetTimestamp();
+        ulong timestampUs = (ulong)(ticks / System.Diagnostics.Stopwatch.Frequency * 1_000_000L + (ticks % System.Diagnostics.Stopwatch.Frequency) * 1_000_000L / System.Diagnostics.Stopwatch.Frequency);
+        return TryEncodeFrame(d3dTexture, frameId, timestampUs, forceIdr, out desc, outBitstream, out bytesWritten);
+    }
+
+    public void RecordDecoderAcceptance(ulong frameId)
+    {
+        Volatile.Write(ref _decoderAccepted, true);
+    }
+
     public EncodeSubmissionResult SubmitFrame(
         IntPtr d3dTexture,
         ulong frameId,
@@ -229,7 +256,6 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
         out int bytesWritten
     )
     {
-        Volatile.Write(ref _frameSubmitted, true);
         if (_disposed)
         {
             bytesWritten = 0;
@@ -256,7 +282,7 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
             );
         }
 
-        bool success = TryEncodeFrame(d3dTexture, forceIdr, out var desc, outBitstream, out bytesWritten);
+        bool success = TryEncodeFrame(d3dTexture, frameId, timestampUs, forceIdr, out var desc, outBitstream, out bytesWritten);
         if (!success)
         {
             return new EncodeSubmissionResult(
@@ -267,25 +293,6 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
                 PacketDesc: default,
                 Result: EncoderResult.EncoderFailure
             );
-        }
-
-        desc.FrameIndex = frameId;
-        if (timestampUs > 0)
-        {
-            desc.TimestampQpc = (long)timestampUs;
-        }
-
-        if (bytesWritten > 0)
-        {
-            lock (_lock)
-            {
-                if (!_hasValidFrame)
-                {
-                    Volatile.Write(ref _firstValidFrameId, frameId);
-                    _hasValidFrame = true;
-                }
-                Volatile.Write(ref _lastValidFrameId, frameId);
-            }
         }
 
         bool isKey = desc.IsKeyframe != 0;

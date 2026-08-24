@@ -128,6 +128,8 @@ public class CaptureSourceSessionHandoverTests
 
         public bool TryEncodeFrame(
             IntPtr d3dTexture,
+            ulong frameId,
+            ulong timestampUs,
             bool forceIdr,
             out MoonshineEncodedPacketDesc desc,
             Span<byte> outBitstream,
@@ -153,13 +155,27 @@ public class CaptureSourceSessionHandoverTests
             {
                 PayloadSize = (uint)bytesWritten,
                 IsKeyframe = (byte)(forceIdr ? 1 : 0),
-                FrameIndex = 0,
-                TimestampQpc = Stopwatch.GetTimestamp(),
+                FrameIndex = frameId,
+                TimestampQpc = timestampUs > 0 ? (long)timestampUs : Stopwatch.GetTimestamp(),
                 IsHeaderPacket = 0,
                 TemporalId = 0,
                 Reserved = 0
             };
             return true;
+        }
+
+        public bool TryEncodeFrame(
+            IntPtr d3dTexture,
+            bool forceIdr,
+            out MoonshineEncodedPacketDesc desc,
+            Span<byte> outBitstream,
+            out int bytesWritten)
+        {
+            return TryEncodeFrame(d3dTexture, 0, (ulong)Stopwatch.GetTimestamp(), forceIdr, out desc, outBitstream, out bytesWritten);
+        }
+
+        public void RecordDecoderAcceptance(ulong frameId)
+        {
         }
 
         public EncodeSubmissionResult SubmitFrame(
