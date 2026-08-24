@@ -11,7 +11,13 @@ QsvApi::~QsvApi() {
 }
 
 QsvApi::QsvApi(QsvApi&& other) noexcept
-    : MFXInitEx(other.MFXInitEx),
+    : MFXLoad(other.MFXLoad),
+      MFXUnload(other.MFXUnload),
+      MFXCreateConfig(other.MFXCreateConfig),
+      MFXSetConfigFilterProperty(other.MFXSetConfigFilterProperty),
+      MFXCreateSession(other.MFXCreateSession),
+      MFXDispReleaseImplDescription(other.MFXDispReleaseImplDescription),
+      MFXInitEx(other.MFXInitEx),
       MFXClose(other.MFXClose),
       MFXQueryVersion(other.MFXQueryVersion),
       MFXVideoCORE_SetHandle(other.MFXVideoCORE_SetHandle),
@@ -25,9 +31,17 @@ QsvApi::QsvApi(QsvApi&& other) noexcept
       MFXVideoENCODE_EncodeFrameAsync(other.MFXVideoENCODE_EncodeFrameAsync),
       _module(other._module),
       _version(other._version),
-      _loaded(other._loaded) {
+      _loaded(other._loaded),
+      _is_vpl(other._is_vpl) {
     other._module = nullptr;
     other._loaded = false;
+    other._is_vpl = false;
+    other.MFXLoad = nullptr;
+    other.MFXUnload = nullptr;
+    other.MFXCreateConfig = nullptr;
+    other.MFXSetConfigFilterProperty = nullptr;
+    other.MFXCreateSession = nullptr;
+    other.MFXDispReleaseImplDescription = nullptr;
     other.MFXInitEx = nullptr;
     other.MFXClose = nullptr;
     other.MFXQueryVersion = nullptr;
@@ -48,6 +62,13 @@ QsvApi& QsvApi::operator=(QsvApi&& other) noexcept {
         _module = other._module;
         _version = other._version;
         _loaded = other._loaded;
+        _is_vpl = other._is_vpl;
+        MFXLoad = other.MFXLoad;
+        MFXUnload = other.MFXUnload;
+        MFXCreateConfig = other.MFXCreateConfig;
+        MFXSetConfigFilterProperty = other.MFXSetConfigFilterProperty;
+        MFXCreateSession = other.MFXCreateSession;
+        MFXDispReleaseImplDescription = other.MFXDispReleaseImplDescription;
         MFXInitEx = other.MFXInitEx;
         MFXClose = other.MFXClose;
         MFXQueryVersion = other.MFXQueryVersion;
@@ -63,6 +84,13 @@ QsvApi& QsvApi::operator=(QsvApi&& other) noexcept {
 
         other._module = nullptr;
         other._loaded = false;
+        other._is_vpl = false;
+        other.MFXLoad = nullptr;
+        other.MFXUnload = nullptr;
+        other.MFXCreateConfig = nullptr;
+        other.MFXSetConfigFilterProperty = nullptr;
+        other.MFXCreateSession = nullptr;
+        other.MFXDispReleaseImplDescription = nullptr;
         other.MFXInitEx = nullptr;
         other.MFXClose = nullptr;
         other.MFXQueryVersion = nullptr;
@@ -116,6 +144,15 @@ bool QsvApi::load() {
         return false;
     }
 
+    // oneVPL 2.x modern dispatcher symbols
+    MFXLoad = reinterpret_cast<MFXLoad_Fn>(GetProcAddress(_module, "MFXLoad"));
+    MFXUnload = reinterpret_cast<MFXUnload_Fn>(GetProcAddress(_module, "MFXUnload"));
+    MFXCreateConfig = reinterpret_cast<MFXCreateConfig_Fn>(GetProcAddress(_module, "MFXCreateConfig"));
+    MFXSetConfigFilterProperty = reinterpret_cast<MFXSetConfigFilterProperty_Fn>(GetProcAddress(_module, "MFXSetConfigFilterProperty"));
+    MFXCreateSession = reinterpret_cast<MFXCreateSession_Fn>(GetProcAddress(_module, "MFXCreateSession"));
+    MFXDispReleaseImplDescription = reinterpret_cast<MFXDispReleaseImplDescription_Fn>(GetProcAddress(_module, "MFXDispReleaseImplDescription"));
+
+    // Legacy MSDK symbols
     MFXInitEx = reinterpret_cast<MFXInitEx_Fn>(GetProcAddress(_module, "MFXInitEx"));
     MFXClose = reinterpret_cast<MFXClose_Fn>(GetProcAddress(_module, "MFXClose"));
     MFXQueryVersion = reinterpret_cast<MFXQueryVersion_Fn>(GetProcAddress(_module, "MFXQueryVersion"));
@@ -130,7 +167,16 @@ bool QsvApi::load() {
     MFXVideoENCODE_GetVideoParam = reinterpret_cast<MFXVideoENCODE_GetVideoParam_Fn>(GetProcAddress(_module, "MFXVideoENCODE_GetVideoParam"));
     MFXVideoENCODE_EncodeFrameAsync = reinterpret_cast<MFXVideoENCODE_EncodeFrameAsync_Fn>(GetProcAddress(_module, "MFXVideoENCODE_EncodeFrameAsync"));
 
-    if (!MFXInitEx || !MFXClose || !MFXVideoENCODE_Init || !MFXVideoENCODE_EncodeFrameAsync || !MFXVideoCORE_SyncOperation) {
+    if (MFXLoad && MFXUnload && MFXCreateConfig && MFXSetConfigFilterProperty && MFXCreateSession) {
+        _is_vpl = true;
+    }
+
+    if (!_is_vpl && !MFXInitEx) {
+        unload();
+        return false;
+    }
+
+    if (!MFXClose || !MFXVideoENCODE_Init || !MFXVideoENCODE_EncodeFrameAsync || !MFXVideoCORE_SyncOperation) {
         unload();
         return false;
     }
@@ -151,6 +197,12 @@ void QsvApi::unload() {
 #else
     _module = nullptr;
 #endif
+    MFXLoad = nullptr;
+    MFXUnload = nullptr;
+    MFXCreateConfig = nullptr;
+    MFXSetConfigFilterProperty = nullptr;
+    MFXCreateSession = nullptr;
+    MFXDispReleaseImplDescription = nullptr;
     MFXInitEx = nullptr;
     MFXClose = nullptr;
     MFXQueryVersion = nullptr;
@@ -165,10 +217,15 @@ void QsvApi::unload() {
     MFXVideoENCODE_EncodeFrameAsync = nullptr;
     _version = {};
     _loaded = false;
+    _is_vpl = false;
 }
 
 bool QsvApi::is_loaded() const noexcept {
     return _loaded;
+}
+
+bool QsvApi::is_vpl() const noexcept {
+    return _is_vpl;
 }
 
 mfxVersion QsvApi::version() const noexcept {

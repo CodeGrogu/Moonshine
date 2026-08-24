@@ -5,7 +5,7 @@ namespace Moonshine.Host.Encoding;
 
 /// <summary>
 /// Dedicated Intel QuickSync / oneVPL Hardware Video Encoder Pipeline.
-/// Provides direct Direct3D 11/12 texture registration, low-power VDENC mode,
+/// Provides direct Direct3D 11 texture registration, low-power VDENC mode,
 /// CBR rate control, zero B-frames, and progressive intra-refresh slice encoding.
 /// </summary>
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "CA2216:DisposableTypesShouldDeclareFinalizer", Justification = "Finaliser deliberately omitted: managed disposal deterministically releases unmanaged Intel QuickSync hardware encoder resources via C-ABI.")]
@@ -18,8 +18,6 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
     public const ulong DecoderAcceptanceLagWindow = EncoderEvidencePolicy.DecoderAcceptanceLagWindow;
 
     private IntPtr _handle;
-    private readonly IntPtr _ownedD3dDevice;
-    private IntPtr _ownedD3dTexture;
     private readonly uint _width;
     private readonly uint _height;
     private uint _fps;
@@ -64,7 +62,21 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
     public bool IsHardwareAccelerated => _isHardwareAccelerated;
     public bool HasProducedValidOutput => Volatile.Read(ref _hasProducedValidOutput);
     public Type ImplementationType => GetType();
-    public EncoderRuntimeState RuntimeState => _disposed ? EncoderRuntimeState.Disposed : (_handle == IntPtr.Zero ? EncoderRuntimeState.Faulted : _runtimeState);
+    public EncoderRuntimeState RuntimeState
+    {
+        get
+        {
+            if (_disposed) return EncoderRuntimeState.Disposed;
+            if (_handle == IntPtr.Zero) return EncoderRuntimeState.Faulted;
+            int nativeState = MoonshineNativeMethods.EncoderGetState(_handle);
+            return nativeState switch
+            {
+                8 => EncoderRuntimeState.Faulted,
+                9 => EncoderRuntimeState.Disposed,
+                _ => _runtimeState
+            };
+        }
+    }
 
     public EncoderEvidence Evidence
     {
@@ -99,7 +111,7 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
         {
             ulong frames = Volatile.Read(ref _framesEncoded);
             ulong totalQpc = Volatile.Read(ref _totalEncodingTimeQpc);
-            return frames > 0 ? (double)totalQpc / frames * (1_000_000.0 / System.Diagnostics.Stopwatch.Frequency) : 0.0;
+            return frames > 0 ? (double)MoonshineMediaClock.TicksToMicroseconds((long)totalQpc) / frames : 0.0;
         }
     }
 
@@ -123,12 +135,6 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
         _codec = codec;
         _targetUsage = targetUsage;
         _lowPowerVdenc = lowPowerVdenc;
-
-        if (d3dDevice == IntPtr.Zero)
-        {
-            _ownedD3dDevice = MoonshineNativeMethods.D3D11CreateDevice(0x8086); // 0x8086 = Intel Vendor ID
-            d3dDevice = _ownedD3dDevice;
-        }
 
         var config = new MoonshineEncoderConfig
         {
@@ -177,16 +183,7 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
         lock (_lock)
         {
             Volatile.Write(ref _frameSubmitted, true);
-            if (_disposed || _handle == IntPtr.Zero) return false;
-
-            if (d3dTexture == IntPtr.Zero && _ownedD3dDevice != IntPtr.Zero)
-            {
-                if (_ownedD3dTexture == IntPtr.Zero)
-                {
-                    _ownedD3dTexture = MoonshineNativeMethods.D3D11CreateTexture(_ownedD3dDevice, _width, _height, 0);
-                }
-                d3dTexture = _ownedD3dTexture;
-            }
+            if (_disposed || _handle == IntPtr.Zero || d3dTexture == IntPtr.Zero) return false;
 
             _runtimeState = EncoderRuntimeState.Encoding;
             try
@@ -225,7 +222,7 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
                                 Volatile.Write(ref _bitstreamStructurallyValid, true);
                             }
 
-                            if (!auResult.IsValid || !auResult.ContainsFrameData)
+                            if (!auResult.IsCompleteAccessUnit || !auResult.ContainsFrameData)
                             {
                                 bytesWritten = 0;
                                 _runtimeState = EncoderRuntimeState.Ready;
@@ -274,8 +271,7 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
     )
     {
         ulong frameId = Interlocked.Increment(ref _submittedFrameCounter);
-        long ticks = System.Diagnostics.Stopwatch.GetTimestamp();
-        ulong timestampUs = (ulong)(ticks * 1_000_000.0 / System.Diagnostics.Stopwatch.Frequency);
+        ulong timestampUs = MoonshineMediaClock.GetCurrentTimestampMicroseconds();
         return TryEncodeFrame(d3dTexture, frameId, timestampUs, forceIdr, out desc, outBitstream, out bytesWritten);
     }
 
@@ -315,11 +311,11 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
                 KeyFrame: false,
                 BytesWritten: 0,
                 PacketDesc: default,
-                Result: EncoderResult.DeviceLost
+                Result: EncoderResult.NotAvailable
             );
         }
 
-        if (_handle == IntPtr.Zero)
+        if (_handle == IntPtr.Zero || d3dTexture == IntPtr.Zero)
         {
             bytesWritten = 0;
             return new EncodeSubmissionResult(
@@ -333,26 +329,13 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
         }
 
         bool success = TryEncodeFrame(d3dTexture, frameId, timestampUs, forceIdr, out var desc, outBitstream, out bytesWritten);
-        if (!success)
-        {
-            return new EncodeSubmissionResult(
-                Submitted: false,
-                OutputAvailable: false,
-                KeyFrame: false,
-                BytesWritten: 0,
-                PacketDesc: default,
-                Result: EncoderResult.EncoderFailure
-            );
-        }
-
-        bool isKey = desc.IsKeyframe != 0;
         return new EncodeSubmissionResult(
             Submitted: true,
-            OutputAvailable: bytesWritten > 0,
-            KeyFrame: isKey,
+            OutputAvailable: success && bytesWritten > 0,
+            KeyFrame: desc.IsKeyframe != 0,
             BytesWritten: bytesWritten,
             PacketDesc: desc,
-            Result: EncoderResult.Success
+            Result: success ? EncoderResult.Success : EncoderResult.EncoderFailure
         );
     }
 
@@ -364,58 +347,8 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
     )
     {
         ulong frameId = Interlocked.Increment(ref _submittedFrameCounter);
-        long ticks = System.Diagnostics.Stopwatch.GetTimestamp();
-        ulong timestampUs = (ulong)(ticks * 1_000_000.0 / System.Diagnostics.Stopwatch.Frequency);
+        ulong timestampUs = MoonshineMediaClock.GetCurrentTimestampMicroseconds();
         return SubmitFrame(d3dTexture, frameId, timestampUs, forceIdr, outBitstream, out bytesWritten);
-    }
-
-    public bool TryPollPacket(
-        Span<byte> outBitstream,
-        out MoonshineEncodedPacketDesc desc,
-        out int bytesWritten
-    )
-    {
-        desc = default;
-        bytesWritten = 0;
-        return false;
-    }
-
-    public bool Reconfigure(uint bitrateKbps, uint fps, uint peakBitrateKbps = 0)
-    {
-        lock (_lock)
-        {
-            if (_disposed || _handle == IntPtr.Zero) return false;
-
-            if (peakBitrateKbps == 0)
-            {
-                peakBitrateKbps = (uint)(bitrateKbps * 1.5);
-            }
-
-            var config = new MoonshineEncoderConfig
-            {
-                Width = _width,
-                Height = _height,
-                Fps = fps,
-                BitrateKbps = bitrateKbps,
-                PeakBitrateKbps = peakBitrateKbps,
-                Codec = (uint)_codec,
-                RcMode = 0,
-                GopLength = 0,
-                EnableIntraRefresh = (byte)(_intraRefreshEnabled ? 1 : 0),
-                EnableFillerData = 1
-            };
-
-            int res = MoonshineNativeMethods.EncoderReconfigure(_handle, in config);
-            if (res > 0)
-            {
-                Volatile.Write(ref _bitrateKbps, bitrateKbps);
-                Volatile.Write(ref _peakBitrateKbps, peakBitrateKbps);
-                Volatile.Write(ref _fps, fps);
-                return true;
-            }
-
-            return false;
-        }
     }
 
     public bool ReconfigureBitrate(uint bitrateKbps, uint peakBitrateKbps)
@@ -447,6 +380,27 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
             }
             return false;
         }
+    }
+
+    public bool TryPollPacket(
+        Span<byte> outBitstream,
+        out MoonshineEncodedPacketDesc desc,
+        out int bytesWritten
+    )
+    {
+        desc = default;
+        bytesWritten = 0;
+        return false;
+    }
+
+    public bool Reconfigure(uint bitrateKbps, uint fps, uint peakBitrateKbps = 0)
+    {
+        if (peakBitrateKbps == 0)
+        {
+            peakBitrateKbps = (uint)(bitrateKbps * 1.5);
+        }
+        Volatile.Write(ref _fps, fps);
+        return ReconfigureBitrate(bitrateKbps, peakBitrateKbps);
     }
 
     public bool ConfigureTuning(QsvTargetUsage targetUsage, bool lowPowerVdenc)
@@ -521,17 +475,6 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
             {
                 MoonshineNativeMethods.EncoderDestroy(_handle);
                 _handle = IntPtr.Zero;
-            }
-
-            if (_ownedD3dTexture != IntPtr.Zero)
-            {
-                MoonshineNativeMethods.D3D11DestroyTexture(_ownedD3dTexture);
-                _ownedD3dTexture = IntPtr.Zero;
-            }
-
-            if (_ownedD3dDevice != IntPtr.Zero)
-            {
-                MoonshineNativeMethods.D3D11DestroyDevice(_ownedD3dDevice);
             }
         }
     }

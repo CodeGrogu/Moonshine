@@ -47,6 +47,7 @@ public:
 private:
     QsvApi* _api{nullptr};
     void* _d3d_device{nullptr};
+    mfxLoader _loader{nullptr};
     mfxSession _session{nullptr};
     mfxVideoParam _params{};
     mfxExtCodingOption _ext_opt{};

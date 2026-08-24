@@ -21,6 +21,7 @@ QsvSession::~QsvSession() {
 QsvSession::QsvSession(QsvSession&& other) noexcept
     : _api(other._api),
       _d3d_device(other._d3d_device),
+      _loader(other._loader),
       _session(other._session),
       _params(other._params),
       _ext_opt(other._ext_opt),
@@ -35,6 +36,7 @@ QsvSession::QsvSession(QsvSession&& other) noexcept
       _is_configured(other._is_configured) {
     other._api = nullptr;
     other._d3d_device = nullptr;
+    other._loader = nullptr;
     other._session = nullptr;
     other._is_configured = false;
     _ext_buffers[0] = reinterpret_cast<mfxExtBuffer*>(&_ext_opt);
@@ -47,6 +49,7 @@ QsvSession& QsvSession::operator=(QsvSession&& other) noexcept {
         close();
         _api = other._api;
         _d3d_device = other._d3d_device;
+        _loader = other._loader;
         _session = other._session;
         _params = other._params;
         _ext_opt = other._ext_opt;
@@ -62,6 +65,7 @@ QsvSession& QsvSession::operator=(QsvSession&& other) noexcept {
 
         other._api = nullptr;
         other._d3d_device = nullptr;
+        other._loader = nullptr;
         other._session = nullptr;
         other._is_configured = false;
         _ext_buffers[0] = reinterpret_cast<mfxExtBuffer*>(&_ext_opt);
@@ -81,23 +85,59 @@ bool QsvSession::open(QsvApi& api, void* d3d_device) {
     _api = &api;
     _d3d_device = d3d_device;
 
-    mfxInitParam initPar{};
-    initPar.Implementation = MFX_IMPL_HARDWARE_ANY | MFX_IMPL_VIA_D3D11;
-    initPar.Version.Major = 1;
-    initPar.Version.Minor = 0;
-    initPar.GPUCopy = 1;
+    if (api.is_vpl() && api.MFXLoad && api.MFXCreateConfig && api.MFXCreateSession) {
+        // Modern oneVPL 2.x session initialization architecture
+        mfxLoader loader = api.MFXLoad();
+        if (loader) {
+            mfxConfig cfg = api.MFXCreateConfig(loader);
+            if (cfg && api.MFXSetConfigFilterProperty) {
+                mfxVariant var{};
+                var.Type = MFX_VARIANT_TYPE_U32;
+                var.Data.U32 = MFX_IMPL_TYPE_HARDWARE;
+                api.MFXSetConfigFilterProperty(cfg, reinterpret_cast<const uint8_t*>("mfxImplDescription.Impl"), var);
 
-    mfxStatus sts = _api->MFXInitEx(initPar, &_session);
-    if (sts != MFX_ERR_NONE || !_session) {
-        initPar.Implementation = MFX_IMPL_AUTO_ANY;
-        sts = _api->MFXInitEx(initPar, &_session);
-        if (sts != MFX_ERR_NONE || !_session) {
-            close();
-            return false;
+                mfxVariant accelVar{};
+                accelVar.Type = MFX_VARIANT_TYPE_U32;
+                accelVar.Data.U32 = MFX_IMPL_VIA_D3D11;
+                api.MFXSetConfigFilterProperty(cfg, reinterpret_cast<const uint8_t*>("mfxImplDescription.AccelerationMode"), accelVar);
+            }
+
+            mfxStatus sts = api.MFXCreateSession(loader, 0, &_session);
+            if (sts == MFX_ERR_NONE && _session) {
+                _loader = loader;
+            } else {
+                api.MFXUnload(loader);
+                _loader = nullptr;
+                _session = nullptr;
+            }
         }
     }
 
-    sts = _api->MFXVideoCORE_SetHandle(_session, MFX_HANDLE_D3D11_DEVICE, d3d_device);
+    if (!_session && api.MFXInitEx) {
+        // Fallback to legacy MSDK initialization if modern oneVPL session creation was unavailable
+        mfxInitParam initPar{};
+        initPar.Implementation = MFX_IMPL_HARDWARE_ANY | MFX_IMPL_VIA_D3D11;
+        initPar.Version.Major = 1;
+        initPar.Version.Minor = 0;
+        initPar.GPUCopy = 1;
+
+        mfxStatus sts = api.MFXInitEx(initPar, &_session);
+        if (sts != MFX_ERR_NONE || !_session) {
+            initPar.Implementation = MFX_IMPL_AUTO_ANY;
+            sts = api.MFXInitEx(initPar, &_session);
+            if (sts != MFX_ERR_NONE || !_session) {
+                close();
+                return false;
+            }
+        }
+    }
+
+    if (!_session) {
+        close();
+        return false;
+    }
+
+    mfxStatus sts = api.MFXVideoCORE_SetHandle(_session, MFX_HANDLE_D3D11_DEVICE, d3d_device);
     if (sts != MFX_ERR_NONE) {
         close();
         return false;
@@ -280,6 +320,10 @@ void QsvSession::close() {
         _api->MFXVideoENCODE_Close(_session);
         _api->MFXClose(_session);
         _session = nullptr;
+    }
+    if (_loader && _api && _api->MFXUnload) {
+        _api->MFXUnload(_loader);
+        _loader = nullptr;
     }
     _d3d_device = nullptr;
     _api = nullptr;

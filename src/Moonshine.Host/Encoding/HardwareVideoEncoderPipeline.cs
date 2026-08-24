@@ -24,6 +24,7 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
     private uint _peakBitrateKbps;
     private readonly VideoCodec _codec;
     private readonly EncoderVendor _vendor;
+    private readonly RateControlMode _rcMode;
     private bool _disposed;
     private readonly Lock _lock = new();
 
@@ -57,7 +58,21 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
     public bool IsHardwareAccelerated => _isHardwareAccelerated;
     public bool HasProducedValidOutput => Volatile.Read(ref _hasProducedValidOutput);
     public Type ImplementationType => GetType();
-    public EncoderRuntimeState RuntimeState => _disposed ? EncoderRuntimeState.Disposed : (_handle == IntPtr.Zero ? EncoderRuntimeState.Faulted : _runtimeState);
+    public EncoderRuntimeState RuntimeState
+    {
+        get
+        {
+            if (_disposed) return EncoderRuntimeState.Disposed;
+            if (_handle == IntPtr.Zero) return EncoderRuntimeState.Faulted;
+            int nativeState = MoonshineNativeMethods.EncoderGetState(_handle);
+            return nativeState switch
+            {
+                8 => EncoderRuntimeState.Faulted,
+                9 => EncoderRuntimeState.Disposed,
+                _ => _runtimeState
+            };
+        }
+    }
 
     public EncoderEvidence Evidence
     {
@@ -94,7 +109,7 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
         {
             ulong frames = Volatile.Read(ref _framesEncoded);
             ulong totalQpc = Volatile.Read(ref _totalEncodingTimeQpc);
-            return frames > 0 ? (double)totalQpc / frames * (1_000_000.0 / Stopwatch.Frequency) : 0.0;
+            return frames > 0 ? (double)MoonshineMediaClock.TicksToMicroseconds((long)totalQpc) / frames : 0.0;
         }
     }
 
@@ -116,6 +131,7 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
         _bitrateKbps = bitrateKbps;
         _peakBitrateKbps = peakBitrateKbps;
         _codec = codec;
+        _rcMode = rcMode;
         _vendor = vendor;
 
         var config = new MoonshineEncoderConfig
@@ -127,7 +143,7 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
             PeakBitrateKbps = peakBitrateKbps,
             Codec = (uint)codec,
             RcMode = (uint)rcMode,
-            GopLength = 0, // Infinite GOP for GameStream / Sunshine
+            GopLength = 0, // Infinite GOP for sub-frame streaming
             EnableIntraRefresh = 0,
             EnableFillerData = 1
         };
@@ -164,7 +180,7 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
         lock (_lock)
         {
             Volatile.Write(ref _frameSubmitted, true);
-            if (_disposed || _handle == IntPtr.Zero) return false;
+            if (_disposed || _handle == IntPtr.Zero || d3dTexture == IntPtr.Zero) return false;
 
             _runtimeState = EncoderRuntimeState.Encoding;
             try
@@ -202,7 +218,7 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
                                 Volatile.Write(ref _bitstreamStructurallyValid, true);
                             }
 
-                            if (!auResult.IsValid || !auResult.ContainsFrameData)
+                            if (!auResult.IsCompleteAccessUnit || !auResult.ContainsFrameData)
                             {
                                 bytesWritten = 0;
                                 Interlocked.Increment(ref _encodingErrorsCount);
@@ -257,8 +273,7 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
     )
     {
         ulong frameId = Interlocked.Increment(ref _submittedFrameCounter);
-        long ticks = Stopwatch.GetTimestamp();
-        ulong timestampUs = (ulong)(ticks / Stopwatch.Frequency * 1_000_000L + (ticks % Stopwatch.Frequency) * 1_000_000L / Stopwatch.Frequency);
+        ulong timestampUs = MoonshineMediaClock.GetCurrentTimestampMicroseconds();
         return TryEncodeFrame(d3dTexture, frameId, timestampUs, forceIdr, out desc, outBitstream, out bytesWritten);
     }
 

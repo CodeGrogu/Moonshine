@@ -368,7 +368,7 @@ public class HardwareVideoEncoderPipelineTests
         correlatingPipeline.IsActive.Should().BeTrue();
 
         var submission = correlatingPipeline.SubmitFrame(
-            d3dTexture: IntPtr.Zero,
+            d3dTexture: (IntPtr)0x1000,
             frameId: expectedFrameId,
             timestampUs: expectedTimestampUs,
             forceIdr: true,
@@ -393,7 +393,7 @@ public class HardwareVideoEncoderPipelineTests
             bool isKey = i == 3;
 
             var seqSubmission = correlatingPipeline.SubmitFrame(
-                d3dTexture: IntPtr.Zero,
+                d3dTexture: (IntPtr)0x1000,
                 frameId: seqFrameId,
                 timestampUs: seqTimestampUs,
                 forceIdr: isKey,
@@ -441,9 +441,10 @@ public class HardwareVideoEncoderPipelineTests
         Span<byte> buffer = stackalloc byte[1024];
 
         // 1. Initial state: 100 encoded + no decode -> DecoderAccepted == false, DecoderAcceptedLatestFrame == false, DecoderAcceptanceHealthy == false
+        IntPtr mockTex = (IntPtr)0x1000;
         for (ulong frameId = 1; frameId <= 100; frameId++)
         {
-            bool encoded = pipeline.TryEncodeFrame(IntPtr.Zero, frameId, frameId * 16666, frameId == 1, out _, buffer, out _);
+            bool encoded = pipeline.TryEncodeFrame(mockTex, frameId, frameId * 16666, frameId == 1, out _, buffer, out _);
             encoded.Should().BeTrue();
         }
 
@@ -470,9 +471,9 @@ public class HardwareVideoEncoderPipelineTests
         pipeline.Evidence.DecoderAccepted.Should().BeTrue();
 
         // 4. 102 encoded + 101 decoded -> DecoderAcceptedLatestFrame == false, DecoderAcceptanceHealthy == true (in-flight lag of 1 frame is healthy), DecoderAccepted == true
-        bool encoded101 = pipeline.TryEncodeFrame(IntPtr.Zero, 101, 101 * 16666, false, out _, buffer, out _);
+        bool encoded101 = pipeline.TryEncodeFrame(mockTex, 101, 101 * 16666, false, out _, buffer, out _);
         encoded101.Should().BeTrue();
-        bool encoded102 = pipeline.TryEncodeFrame(IntPtr.Zero, 102, 102 * 16666, false, out _, buffer, out _);
+        bool encoded102 = pipeline.TryEncodeFrame(mockTex, 102, 102 * 16666, false, out _, buffer, out _);
         encoded102.Should().BeTrue();
         pipeline.RecordDecoderAcceptance(101);
         pipeline.Evidence.LastValidFrameId.Should().Be(102);
@@ -484,7 +485,7 @@ public class HardwareVideoEncoderPipelineTests
         // 5. 104 encoded + 100 decoded -> lag is exactly DecoderAcceptanceLagWindow (4 frames) -> DecoderAcceptanceHealthy == true
         for (ulong frameId = 103; frameId <= 104; frameId++)
         {
-            bool encoded = pipeline.TryEncodeFrame(IntPtr.Zero, frameId, frameId * 16666, false, out _, buffer, out _);
+            bool encoded = pipeline.TryEncodeFrame(mockTex, frameId, frameId * 16666, false, out _, buffer, out _);
             encoded.Should().BeTrue();
         }
         pipeline.RecordDecoderAcceptance(100);
@@ -495,7 +496,7 @@ public class HardwareVideoEncoderPipelineTests
         pipeline.Evidence.DecoderAccepted.Should().BeTrue();
 
         // 6. 105 encoded + 100 decoded -> lag of 5 frames exceeds DecoderAcceptanceLagWindow (4 frames) -> DecoderAcceptanceHealthy == false
-        bool encoded105 = pipeline.TryEncodeFrame(IntPtr.Zero, 105, 105 * 16666, false, out _, buffer, out _);
+        bool encoded105 = pipeline.TryEncodeFrame(mockTex, 105, 105 * 16666, false, out _, buffer, out _);
         encoded105.Should().BeTrue();
         pipeline.RecordDecoderAcceptance(100);
         pipeline.Evidence.LastValidFrameId.Should().Be(105);
@@ -695,7 +696,7 @@ public class HardwareVideoEncoderPipelineTests
         pipeline.RuntimeState.Should().Be(EncoderRuntimeState.Ready);
 
         // Submit first frame
-        bool encoded = pipeline.TryEncodeFrame(IntPtr.Zero, 1, 16666, true, out _, buffer, out int written);
+        bool encoded = pipeline.TryEncodeFrame((IntPtr)0x1000, 1, 16666, true, out _, buffer, out int written);
         encoded.Should().BeTrue();
         written.Should().BeGreaterThan(0);
         pipeline.HasProducedValidOutput.Should().BeTrue();
@@ -736,30 +737,30 @@ public class HardwareVideoEncoderPipelineTests
         private bool _hasNativeHandle = true;
         private bool _hasProducedValidOutput;
         private bool _frameSubmitted;
-        private ulong _lastDecoderAcceptedFrameId;
         private ulong _firstValidFrameId;
         private ulong _lastValidFrameId;
+        private ulong _lastDecoderAcceptedFrameId;
         private bool _hasValidFrame;
-
-        public uint Width => 1920;
-        public uint Height => 1080;
-        public uint Fps => 60;
-        public uint BitrateKbps => 20000;
-        public VideoCodec Codec => VideoCodec.HevcMain10;
-        public EncoderVendor Vendor => EncoderVendor.Direct3D11Hardware;
-        public bool IsActive => _hasNativeHandle && !_disposed;
-        public EncoderImplementationKind ImplementationKind => EncoderImplementationKind.SyntheticTest;
-        public bool IsHardwareAccelerated => false;
-        public bool HasProducedValidOutput => _hasProducedValidOutput;
-        public Type ImplementationType => GetType();
-        public EncoderRuntimeState RuntimeState => _disposed ? EncoderRuntimeState.Disposed : (!_hasNativeHandle ? EncoderRuntimeState.Faulted : EncoderRuntimeState.Ready);
-        public double AverageEncodingLatencyMicroseconds => 150.0;
 
         public bool HasNativeHandle
         {
             get => _hasNativeHandle;
             set => _hasNativeHandle = value;
         }
+
+        public uint Width => 1920;
+        public uint Height => 1080;
+        public uint Fps => 60;
+        public uint BitrateKbps => 20000;
+        public VideoCodec Codec => VideoCodec.HevcMain10;
+        public EncoderVendor Vendor => EncoderVendor.Auto;
+        public bool IsActive => !_disposed && _hasNativeHandle;
+        public EncoderImplementationKind ImplementationKind => EncoderImplementationKind.HardwareAccelerated;
+        public bool IsHardwareAccelerated => true;
+        public bool HasProducedValidOutput => _hasProducedValidOutput;
+        public Type ImplementationType => typeof(SyntheticCorrelatingEncoderPipeline);
+        public EncoderRuntimeState RuntimeState => _disposed ? EncoderRuntimeState.Disposed : (!_hasNativeHandle ? EncoderRuntimeState.Faulted : EncoderRuntimeState.Ready);
+        public double AverageEncodingLatencyMicroseconds => 150.0;
 
         public EncoderEvidence Evidence
         {
@@ -772,7 +773,7 @@ public class HardwareVideoEncoderPipelineTests
 
                 return new EncoderEvidence(
                     ApiAvailable: _hasNativeHandle,
-                    HardwareSupported: IsHardwareAccelerated,
+                    HardwareSupported: true,
                     SessionInitialised: !_disposed && _hasNativeHandle,
                     FrameSubmitted: _frameSubmitted,
                     OutputReceived: _hasProducedValidOutput,
@@ -797,7 +798,7 @@ public class HardwareVideoEncoderPipelineTests
             Span<byte> outBitstream,
             out int bytesWritten)
         {
-            if (_disposed || !_hasNativeHandle)
+            if (_disposed || !_hasNativeHandle || d3dTexture == IntPtr.Zero)
             {
                 desc = default;
                 bytesWritten = 0;

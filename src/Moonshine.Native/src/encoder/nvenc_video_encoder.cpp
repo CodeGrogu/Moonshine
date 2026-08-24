@@ -125,29 +125,7 @@ bool NvencVideoEncoder::encode_frame(
     out_written_size = 0;
 
     if (_state == NvencLifecycleState::Faulted || _state == NvencLifecycleState::Disposed ||
-        !_initialized || !_impl || !_impl->session.is_open() || !out_bitstream || max_buffer_size == 0) {
-        return false;
-    }
-
-    if (!d3d_texture && _d3d_device) {
-        if (!_impl->internal_texture) {
-            auto* dev_tex = static_cast<ID3D11Device*>(_d3d_device);
-            D3D11_TEXTURE2D_DESC tex_init_desc{};
-            tex_init_desc.Width = _config.width;
-            tex_init_desc.Height = _config.height;
-            tex_init_desc.MipLevels = 1;
-            tex_init_desc.ArraySize = 1;
-            tex_init_desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-            tex_init_desc.SampleDesc.Count = 1;
-            tex_init_desc.SampleDesc.Quality = 0;
-            tex_init_desc.Usage = D3D11_USAGE_DEFAULT;
-            tex_init_desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-            dev_tex->CreateTexture2D(&tex_init_desc, nullptr, &_impl->internal_texture);
-        }
-        d3d_texture = _impl->internal_texture.Get();
-    }
-
-    if (!d3d_texture) {
+        !_initialized || !_impl || !_impl->session.is_open() || !d3d_texture || !out_bitstream || max_buffer_size == 0) {
         return false;
     }
 

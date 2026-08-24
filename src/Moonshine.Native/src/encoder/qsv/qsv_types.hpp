@@ -48,6 +48,8 @@ enum : int32_t {
 typedef uint32_t mfxIMPL;
 
 enum : uint32_t {
+    MFX_IMPL_TYPE_SOFTWARE              = 0x0001,
+    MFX_IMPL_TYPE_HARDWARE              = 0x0002,
     MFX_IMPL_AUTO                       = 0x0000,
     MFX_IMPL_SOFTWARE                   = 0x0001,
     MFX_IMPL_HARDWARE                   = 0x0002,
@@ -344,8 +346,59 @@ struct mfxExtCodingOption2 {
 
 typedef struct _mfxSession* mfxSession;
 typedef void* mfxSyncPoint;
+typedef void* mfxLoader;
+typedef void* mfxConfig;
 
-// MFX Function Prototypes
+enum mfxVariantType : uint16_t {
+    MFX_VARIANT_TYPE_UNSET = 0,
+    MFX_VARIANT_TYPE_U8    = 1,
+    MFX_VARIANT_TYPE_I8    = 2,
+    MFX_VARIANT_TYPE_U16   = 3,
+    MFX_VARIANT_TYPE_I16   = 4,
+    MFX_VARIANT_TYPE_U32   = 5,
+    MFX_VARIANT_TYPE_I32   = 6,
+    MFX_VARIANT_TYPE_U64   = 7,
+    MFX_VARIANT_TYPE_I64   = 8,
+    MFX_VARIANT_TYPE_F32   = 9,
+    MFX_VARIANT_TYPE_F64   = 10,
+    MFX_VARIANT_TYPE_PTR   = 11
+};
+
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4201)
+#endif
+#pragma pack(push, 8)
+struct mfxVariant {
+    mfxVariantType Type;
+    union {
+        uint8_t   U8;
+        int8_t    I8;
+        uint16_t  U16;
+        int16_t   I16;
+        uint32_t  U32;
+        int32_t   I32;
+        uint64_t  U64;
+        int64_t   I64;
+        float     F32;
+        double    F64;
+        void*     Ptr;
+    } Data;
+};
+#pragma pack(pop)
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
+
+// oneVPL 2.x Modern Dispatcher Prototypes
+typedef mfxLoader (WINAPI *MFXLoad_Fn)();
+typedef void (WINAPI *MFXUnload_Fn)(mfxLoader loader);
+typedef mfxConfig (WINAPI *MFXCreateConfig_Fn)(mfxLoader loader);
+typedef mfxStatus (WINAPI *MFXSetConfigFilterProperty_Fn)(mfxConfig config, const uint8_t* name, mfxVariant value);
+typedef mfxStatus (WINAPI *MFXCreateSession_Fn)(mfxLoader loader, uint32_t index, mfxSession* session);
+typedef mfxStatus (WINAPI *MFXDispReleaseImplDescription_Fn)(mfxLoader loader, void* implDesc);
+
+// Legacy MFX Function Prototypes
 typedef mfxStatus (WINAPI *MFXInitEx_Fn)(mfxInitParam par, mfxSession* session);
 typedef mfxStatus (WINAPI *MFXClose_Fn)(mfxSession session);
 typedef mfxStatus (WINAPI *MFXQueryVersion_Fn)(mfxSession session, mfxVersion* version);

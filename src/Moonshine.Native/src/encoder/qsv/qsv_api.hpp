@@ -18,9 +18,18 @@ public:
     bool load();
     void unload();
     [[nodiscard]] bool is_loaded() const noexcept;
+    [[nodiscard]] bool is_vpl() const noexcept;
     [[nodiscard]] mfxVersion version() const noexcept;
 
-    // Function pointers
+    // oneVPL 2.x Function pointers
+    MFXLoad_Fn MFXLoad{nullptr};
+    MFXUnload_Fn MFXUnload{nullptr};
+    MFXCreateConfig_Fn MFXCreateConfig{nullptr};
+    MFXSetConfigFilterProperty_Fn MFXSetConfigFilterProperty{nullptr};
+    MFXCreateSession_Fn MFXCreateSession{nullptr};
+    MFXDispReleaseImplDescription_Fn MFXDispReleaseImplDescription{nullptr};
+
+    // Core & Encoder Function pointers
     MFXInitEx_Fn MFXInitEx{nullptr};
     MFXClose_Fn MFXClose{nullptr};
     MFXQueryVersion_Fn MFXQueryVersion{nullptr};
@@ -43,6 +52,7 @@ private:
 #endif
     mfxVersion _version{};
     bool _loaded{false};
+    bool _is_vpl{false};
 };
 
 } // namespace moonshine::encoder::qsv

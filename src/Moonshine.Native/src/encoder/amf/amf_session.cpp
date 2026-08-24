@@ -1,14 +1,8 @@
 #include "encoder/amf/amf_session.hpp"
-#include <algorithm>
-#include <chrono>
 #include <cstring>
-
-#if defined(_WIN32)
-#include <d3d11.h>
-#include <dxgi.h>
-#include <wrl/client.h>
-using Microsoft::WRL::ComPtr;
-#endif
+#include <algorithm>
+#include <thread>
+#include <chrono>
 
 namespace moonshine::encoder::amf {
 
@@ -18,31 +12,34 @@ AmfSession::~AmfSession() {
     close();
 }
 
-AmfSession::AmfSession(AmfSession&& other) noexcept
-    : _api(other._api),
-      _d3d_device(other._d3d_device),
-      _context(other._context),
-      _encoder(other._encoder),
-      _config(other._config),
-      _preset(other._preset),
-      _usage(other._usage),
-      _intra_refresh_enabled(other._intra_refresh_enabled),
-      _intra_refresh_num_mbs_per_slot(other._intra_refresh_num_mbs_per_slot),
-      _is_configured(other._is_configured) {
+AmfSession::AmfSession(AmfSession&& other) noexcept {
+    std::lock_guard<std::mutex> lock(other._mutex);
+    _api = other._api;
+    _context = other._context;
+    _encoder = other._encoder;
+    _d3d_device = other._d3d_device;
+    _config = other._config;
+    _preset = other._preset;
+    _usage = other._usage;
+    _intra_refresh_enabled = other._intra_refresh_enabled;
+    _intra_refresh_num_mbs_per_slot = other._intra_refresh_num_mbs_per_slot;
+    _is_configured = other._is_configured;
+
     other._api = nullptr;
-    other._d3d_device = nullptr;
     other._context = nullptr;
     other._encoder = nullptr;
+    other._d3d_device = nullptr;
     other._is_configured = false;
 }
 
 AmfSession& AmfSession::operator=(AmfSession&& other) noexcept {
     if (this != &other) {
         close();
+        std::scoped_lock lock(_mutex, other._mutex);
         _api = other._api;
-        _d3d_device = other._d3d_device;
         _context = other._context;
         _encoder = other._encoder;
+        _d3d_device = other._d3d_device;
         _config = other._config;
         _preset = other._preset;
         _usage = other._usage;
@@ -51,9 +48,9 @@ AmfSession& AmfSession::operator=(AmfSession&& other) noexcept {
         _is_configured = other._is_configured;
 
         other._api = nullptr;
-        other._d3d_device = nullptr;
         other._context = nullptr;
         other._encoder = nullptr;
+        other._d3d_device = nullptr;
         other._is_configured = false;
     }
     return *this;
@@ -108,27 +105,35 @@ bool AmfSession::configure(const EncoderConfig& config) {
         return false;
     }
 
-    // Configure properties for ultra-low-latency real-time streaming
-    pEncoder->SetProperty(AMF_VIDEO_ENCODER_USAGE, make_int64_variant(static_cast<int64_t>(_usage)));
-    pEncoder->SetProperty(AMF_VIDEO_ENCODER_QUALITY_PRESET, make_int64_variant(static_cast<int64_t>(_preset)));
-    pEncoder->SetProperty(AMF_VIDEO_ENCODER_RATE_CONTROL_METHOD, make_int64_variant(config.rc_mode == 0 ? 0 : 1)); // 0: CBR, 1: VBR
-    pEncoder->SetProperty(AMF_VIDEO_ENCODER_TARGET_BITRATE, make_int64_variant(static_cast<int64_t>(config.bitrate_kbps) * 1000));
-    pEncoder->SetProperty(AMF_VIDEO_ENCODER_PEAK_BITRATE, make_int64_variant(static_cast<int64_t>(config.peak_bitrate_kbps) * 1000));
-    pEncoder->SetProperty(AMF_VIDEO_ENCODER_B_PIC_PATTERN, make_int64_variant(0)); // Zero B-frames for game streaming
-    pEncoder->SetProperty(AMF_VIDEO_ENCODER_FILLER_DATA_ENABLE, make_bool_variant(config.enable_filler_data != 0));
+    // Configure properties for ultra-low-latency real-time streaming with fail-closed checks
+    if (pEncoder->SetProperty(AMF_VIDEO_ENCODER_USAGE, make_int64_variant(static_cast<int64_t>(_usage))) != AMF_OK ||
+        pEncoder->SetProperty(AMF_VIDEO_ENCODER_QUALITY_PRESET, make_int64_variant(static_cast<int64_t>(_preset))) != AMF_OK ||
+        pEncoder->SetProperty(AMF_VIDEO_ENCODER_RATE_CONTROL_METHOD, make_int64_variant(config.rc_mode == 0 ? 0 : 1)) != AMF_OK ||
+        pEncoder->SetProperty(AMF_VIDEO_ENCODER_TARGET_BITRATE, make_int64_variant(static_cast<int64_t>(config.bitrate_kbps) * 1000)) != AMF_OK ||
+        pEncoder->SetProperty(AMF_VIDEO_ENCODER_PEAK_BITRATE, make_int64_variant(static_cast<int64_t>(config.peak_bitrate_kbps) * 1000)) != AMF_OK ||
+        pEncoder->SetProperty(AMF_VIDEO_ENCODER_B_PIC_PATTERN, make_int64_variant(0)) != AMF_OK ||
+        pEncoder->SetProperty(AMF_VIDEO_ENCODER_FILLER_DATA_ENABLE, make_bool_variant(config.enable_filler_data != 0)) != AMF_OK) {
+        pEncoder->Release();
+        return false;
+    }
 
     if (_intra_refresh_enabled && _intra_refresh_num_mbs_per_slot > 0) {
-        pEncoder->SetProperty(AMF_VIDEO_ENCODER_INTRA_REFRESH_NUM_MBS_PER_SLOT, make_int64_variant(_intra_refresh_num_mbs_per_slot));
+        if (pEncoder->SetProperty(AMF_VIDEO_ENCODER_INTRA_REFRESH_NUM_MBS_PER_SLOT, make_int64_variant(_intra_refresh_num_mbs_per_slot)) != AMF_OK) {
+            pEncoder->Release();
+            return false;
+        }
     }
 
     AMF_SURFACE_FORMAT surface_format = AMF_SURFACE_BGRA;
     if (video_codec == VideoCodec::HevcMain10) {
         surface_format = AMF_SURFACE_R10G10B10A2;
-    }
-
-    if (pEncoder->Init(surface_format, static_cast<amf_int32>(config.width), static_cast<amf_int32>(config.height)) != AMF_OK) {
-        // Fallback to BGRA format if R10G10B10A2 init failed
-        if (pEncoder->Init(AMF_SURFACE_BGRA, static_cast<amf_int32>(config.width), static_cast<amf_int32>(config.height)) != AMF_OK) {
+        // Strictly require 10-bit initialization without silent downgrade
+        if (pEncoder->Init(surface_format, static_cast<amf_int32>(config.width), static_cast<amf_int32>(config.height)) != AMF_OK) {
+            pEncoder->Release();
+            return false;
+        }
+    } else {
+        if (pEncoder->Init(surface_format, static_cast<amf_int32>(config.width), static_cast<amf_int32>(config.height)) != AMF_OK) {
             pEncoder->Release();
             return false;
         }
@@ -176,9 +181,22 @@ bool AmfSession::encode(
         return false;
     }
 
-    // Poll for encoded packet
+    // Bounded asynchronous polling for output packet
     AMFData* pData = nullptr;
-    AMF_RESULT query_res = _encoder->QueryOutput(&pData);
+    AMF_RESULT query_res = AMF_REPEAT;
+
+    for (int poll_attempt = 0; poll_attempt < 20; ++poll_attempt) {
+        query_res = _encoder->QueryOutput(&pData);
+        if (query_res == AMF_OK && pData) {
+            break;
+        }
+        if (query_res == AMF_EOF || query_res == AMF_INVALID_ARG) {
+            return false;
+        }
+        if (query_res == AMF_REPEAT) {
+            std::this_thread::yield();
+        }
+    }
 
     if (query_res == AMF_OK && pData) {
         if (pData->GetDataType() == AMF_DATA_BUFFER) {
@@ -199,7 +217,35 @@ bool AmfSession::encode(
                 out_desc.frame_index = frame_id;
                 out_desc.timestamp_qpc = static_cast<int64_t>(timestamp_us);
                 out_desc.payload_size = out_written_size;
-                out_desc.is_keyframe = force_idr ? 1 : (frame_id == 0 ? 1 : 0);
+
+                // Inspect bitstream NAL units to detect keyframe status authoritatively
+                bool is_keyframe = false;
+                const uint8_t* ptr = static_cast<const uint8_t*>(pNative);
+                for (size_t i = 0; i + 4 < buffer_size && i < 128; ++i) {
+                    if (ptr[i] == 0 && ptr[i+1] == 0 && ptr[i+2] == 1) {
+                        if (_config.codec == static_cast<uint32_t>(VideoCodec::H264)) {
+                            uint8_t nal_type = ptr[i+3] & 0x1F;
+                            if (nal_type == 5 || nal_type == 7) is_keyframe = true;
+                        } else {
+                            uint8_t nal_type = (ptr[i+3] >> 1) & 0x3F;
+                            if (nal_type == 19 || nal_type == 20 || nal_type == 32) is_keyframe = true;
+                        }
+                    } else if (ptr[i] == 0 && ptr[i+1] == 0 && ptr[i+2] == 0 && ptr[i+3] == 1) {
+                        if (_config.codec == static_cast<uint32_t>(VideoCodec::H264)) {
+                            uint8_t nal_type = ptr[i+4] & 0x1F;
+                            if (nal_type == 5 || nal_type == 7) is_keyframe = true;
+                        } else {
+                            uint8_t nal_type = (ptr[i+4] >> 1) & 0x3F;
+                            if (nal_type == 19 || nal_type == 20 || nal_type == 32) is_keyframe = true;
+                        }
+                    }
+                }
+
+                if (!is_keyframe && (force_idr || frame_id == 0)) {
+                    is_keyframe = true;
+                }
+
+                out_desc.is_keyframe = is_keyframe ? 1 : 0;
                 out_desc.is_header_packet = out_desc.is_keyframe;
                 out_desc.temporal_id = 0;
                 out_desc.reserved = 0;
@@ -219,8 +265,10 @@ bool AmfSession::reconfigure(const EncoderConfig& new_config) {
 
     std::lock_guard<std::mutex> lock(_mutex);
 
-    _encoder->SetProperty(AMF_VIDEO_ENCODER_TARGET_BITRATE, make_int64_variant(static_cast<int64_t>(new_config.bitrate_kbps) * 1000));
-    _encoder->SetProperty(AMF_VIDEO_ENCODER_PEAK_BITRATE, make_int64_variant(static_cast<int64_t>(new_config.peak_bitrate_kbps) * 1000));
+    if (_encoder->SetProperty(AMF_VIDEO_ENCODER_TARGET_BITRATE, make_int64_variant(static_cast<int64_t>(new_config.bitrate_kbps) * 1000)) != AMF_OK ||
+        _encoder->SetProperty(AMF_VIDEO_ENCODER_PEAK_BITRATE, make_int64_variant(static_cast<int64_t>(new_config.peak_bitrate_kbps) * 1000)) != AMF_OK) {
+        return false;
+    }
 
     if (new_config.width != _config.width || new_config.height != _config.height) {
         if (_encoder->ReInit(static_cast<amf_int32>(new_config.width), static_cast<amf_int32>(new_config.height)) != AMF_OK) {
@@ -263,13 +311,22 @@ const EncoderConfig& AmfSession::config() const noexcept {
 }
 
 void AmfSession::set_preset_and_usage(AmfQualityPreset preset, AmfUsage usage) noexcept {
+    std::lock_guard<std::mutex> lock(_mutex);
     _preset = preset;
     _usage = usage;
+    if (_encoder) {
+        _encoder->SetProperty(AMF_VIDEO_ENCODER_QUALITY_PRESET, make_int64_variant(static_cast<int64_t>(_preset)));
+        _encoder->SetProperty(AMF_VIDEO_ENCODER_USAGE, make_int64_variant(static_cast<int64_t>(_usage)));
+    }
 }
 
-void AmfSession::set_intra_refresh(bool enabled, uint32_t num_mbs_per_slot) noexcept {
-    _intra_refresh_enabled = enabled;
+void AmfSession::set_intra_refresh(bool enable, uint32_t num_mbs_per_slot) noexcept {
+    std::lock_guard<std::mutex> lock(_mutex);
+    _intra_refresh_enabled = enable;
     _intra_refresh_num_mbs_per_slot = num_mbs_per_slot;
+    if (_encoder && enable && num_mbs_per_slot > 0) {
+        _encoder->SetProperty(AMF_VIDEO_ENCODER_INTRA_REFRESH_NUM_MBS_PER_SLOT, make_int64_variant(num_mbs_per_slot));
+    }
 }
 
 } // namespace moonshine::encoder::amf
