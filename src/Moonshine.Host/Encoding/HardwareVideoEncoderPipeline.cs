@@ -151,6 +151,10 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
         _handle = MoonshineNativeMethods.EncoderCreate((uint)vendor, d3dDevice, in config);
         if (_handle != IntPtr.Zero)
         {
+            if (_vendor == EncoderVendor.Auto)
+            {
+                _vendor = (EncoderVendor)MoonshineNativeMethods.EncoderGetVendor(_handle);
+            }
             _implementationKind = EncoderImplementationKind.HardwareAccelerated;
             _isHardwareAccelerated = true;
             _runtimeState = EncoderRuntimeState.Ready;
@@ -218,7 +222,7 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
                                 Volatile.Write(ref _bitstreamStructurallyValid, true);
                             }
 
-                            if (!auResult.IsCompleteAccessUnit || !auResult.ContainsFrameData)
+                            if (!auResult.IsValid || !auResult.ContainsFrameData)
                             {
                                 bytesWritten = 0;
                                 Interlocked.Increment(ref _encodingErrorsCount);

@@ -1813,6 +1813,14 @@ MOONSHINE_API int32_t MOONSHINE_CONV moonshine_encoder_is_healthy(
     return encoder->is_healthy() ? 1 : 0;
 }
 
+MOONSHINE_API uint32_t MOONSHINE_CONV moonshine_encoder_get_vendor(
+    MoonshineEncoderHandle handle
+) {
+    if (!handle) return 0;
+    auto* encoder = static_cast<encoder::UnifiedVideoEncoder*>(handle);
+    return static_cast<uint32_t>(encoder->vendor());
+}
+
 // ============================================================================
 // Direct3D 11 Hardware Device & Texture Utility APIs
 // ============================================================================

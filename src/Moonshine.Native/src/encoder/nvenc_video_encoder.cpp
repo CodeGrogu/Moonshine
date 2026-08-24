@@ -175,14 +175,14 @@ bool NvencVideoEncoder::encode_frame(
 
     _state = NvencLifecycleState::ResourcesRegistered;
 
-    bool is_key = force_idr || _force_keyframe.exchange(false) || (_frame_counter == 0);
+    bool is_key = force_idr || _force_keyframe.load() || (_frame_counter.load() == 0);
 
     _state = NvencLifecycleState::Encoding;
 
     bool success = _impl->session.encode(
         registered_resource,
         is_key,
-        static_cast<uint32_t>(_frame_counter),
+        static_cast<uint32_t>(_frame_counter.load()),
         out_desc,
         out_bitstream,
         max_buffer_size,
@@ -190,6 +190,7 @@ bool NvencVideoEncoder::encode_frame(
     );
 
     if (success) {
+        _force_keyframe = false;
         _frame_counter++;
         _state = NvencLifecycleState::Ready;
     } else {

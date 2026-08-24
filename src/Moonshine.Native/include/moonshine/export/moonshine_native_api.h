@@ -929,6 +929,10 @@ MOONSHINE_API int32_t MOONSHINE_CONV moonshine_encoder_is_healthy(
     MoonshineEncoderHandle handle
 );
 
+MOONSHINE_API uint32_t MOONSHINE_CONV moonshine_encoder_get_vendor(
+    MoonshineEncoderHandle handle
+);
+
 // ============================================================================
 // Direct3D 11 Hardware Device & Texture Utility APIs
 // ============================================================================

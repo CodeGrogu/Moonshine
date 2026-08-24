@@ -843,6 +843,10 @@ public static unsafe partial class MoonshineNativeMethods
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int EncoderIsHealthy(IntPtr handle);
 
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_encoder_get_vendor")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial uint EncoderGetVendor(IntPtr handle);
+
     // ========================================================================
     // NVIDIA NVENC Dedicated Custom APIs
     // ========================================================================

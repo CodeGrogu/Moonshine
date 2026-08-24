@@ -211,7 +211,11 @@ public class MoonshineLanDiscoveryTests
         advertiser.Start();
         advertiser.Health.Should().BeOneOf(DiscoveryAdvertiserHealth.Active, DiscoveryAdvertiserHealth.Degraded);
 
-        await Task.Delay(150);
+        // Wait with bounded polling up to 1000ms for background announcement thread
+        for (int i = 0; i < 20 && advertiser.TotalAnnouncementsEmitted == 0; i++)
+        {
+            await Task.Delay(50);
+        }
         advertiser.TotalAnnouncementsEmitted.Should().BeGreaterThan(0);
     }
 

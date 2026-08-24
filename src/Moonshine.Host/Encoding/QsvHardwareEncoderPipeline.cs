@@ -222,7 +222,7 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
                                 Volatile.Write(ref _bitstreamStructurallyValid, true);
                             }
 
-                            if (!auResult.IsCompleteAccessUnit || !auResult.ContainsFrameData)
+                            if (!auResult.IsValid || !auResult.ContainsFrameData)
                             {
                                 bytesWritten = 0;
                                 _runtimeState = EncoderRuntimeState.Ready;
