@@ -159,7 +159,8 @@ public class BitstreamValidatorTests
             AccessUnitValid: true,
             DecoderAccepted: true,
             FirstValidFrameId: 100,
-            LastValidFrameId: 150
+            LastValidFrameId: 150,
+            LastDecoderAcceptedFrameId: 150
         );
 
         evidence.ApiAvailable.Should().BeTrue();
@@ -172,6 +173,7 @@ public class BitstreamValidatorTests
         evidence.DecoderAccepted.Should().BeTrue();
         evidence.FirstValidFrameId.Should().Be(100);
         evidence.LastValidFrameId.Should().Be(150);
+        evidence.LastDecoderAcceptedFrameId.Should().Be(150);
     }
 
     [Fact]

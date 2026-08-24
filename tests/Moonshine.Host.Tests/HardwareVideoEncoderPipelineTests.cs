@@ -46,6 +46,7 @@ public class HardwareVideoEncoderPipelineTests
         evidence.DecoderAccepted.Should().BeFalse();
         evidence.FirstValidFrameId.Should().Be(0);
         evidence.LastValidFrameId.Should().Be(0);
+        evidence.LastDecoderAcceptedFrameId.Should().Be(0);
     }
 
     [Fact]
@@ -419,10 +420,59 @@ public class HardwareVideoEncoderPipelineTests
         evidence.DecoderAccepted.Should().BeFalse();
         evidence.FirstValidFrameId.Should().Be(expectedFrameId);
         evidence.LastValidFrameId.Should().Be(expectedFrameId + 5);
+        evidence.LastDecoderAcceptedFrameId.Should().Be(0);
 
         // 6. Verify decoder acceptance recording
-        correlatingPipeline.RecordDecoderAcceptance(expectedFrameId);
+        correlatingPipeline.RecordDecoderAcceptance(expectedFrameId + 5);
         correlatingPipeline.Evidence.DecoderAccepted.Should().BeTrue();
+        correlatingPipeline.Evidence.LastDecoderAcceptedFrameId.Should().Be(expectedFrameId + 5);
+    }
+
+    [Fact]
+    public void HardwareVideoEncoderPipeline_DecoderAcceptance_CorrelatedToExactFrameId()
+    {
+        using var pipeline = new SyntheticCorrelatingEncoderPipeline();
+        Span<byte> buffer = stackalloc byte[1024];
+
+        // 1. Tests 100 encoded + no decode -> DecoderAccepted == false
+        for (ulong frameId = 1; frameId <= 100; frameId++)
+        {
+            bool encoded = pipeline.TryEncodeFrame(IntPtr.Zero, frameId, frameId * 16666, frameId == 1, out _, buffer, out _);
+            encoded.Should().BeTrue();
+        }
+
+        pipeline.Evidence.LastValidFrameId.Should().Be(100);
+        pipeline.Evidence.LastDecoderAcceptedFrameId.Should().Be(0);
+        pipeline.Evidence.DecoderAccepted.Should().BeFalse();
+
+        // 2. Tests 100 encoded + 101 decoded -> DecoderAccepted == false (mismatched frame ID)
+        pipeline.RecordDecoderAcceptance(101);
+        pipeline.Evidence.LastDecoderAcceptedFrameId.Should().Be(101);
+        pipeline.Evidence.LastValidFrameId.Should().Be(100);
+        pipeline.Evidence.DecoderAccepted.Should().BeFalse();
+
+        // 3. Tests 100 encoded + 100 decoded -> DecoderAccepted == true
+        pipeline.RecordDecoderAcceptance(100);
+        pipeline.Evidence.LastDecoderAcceptedFrameId.Should().Be(100);
+        pipeline.Evidence.LastValidFrameId.Should().Be(100);
+        pipeline.Evidence.DecoderAccepted.Should().BeTrue();
+
+        // 4. Tests 100 accepted, then 101 encoded without decode -> DecoderAccepted == false
+        bool encoded101 = pipeline.TryEncodeFrame(IntPtr.Zero, 101, 101 * 16666, false, out _, buffer, out _);
+        encoded101.Should().BeTrue();
+        pipeline.Evidence.LastValidFrameId.Should().Be(101);
+        pipeline.Evidence.LastDecoderAcceptedFrameId.Should().Be(100);
+        pipeline.Evidence.DecoderAccepted.Should().BeFalse();
+
+        // Decode frame 101 -> DecoderAccepted becomes true again
+        pipeline.RecordDecoderAcceptance(101);
+        pipeline.Evidence.DecoderAccepted.Should().BeTrue();
+
+        // 5. Tests dispose clears decoder acceptance evidence
+        pipeline.Dispose();
+        pipeline.Evidence.DecoderAccepted.Should().BeFalse();
+        pipeline.Evidence.LastDecoderAcceptedFrameId.Should().Be(0);
+        pipeline.Evidence.LastValidFrameId.Should().Be(0);
     }
 
     private sealed class SyntheticCorrelatingEncoderPipeline : IVideoEncoderPipeline
@@ -442,7 +492,7 @@ public class HardwareVideoEncoderPipelineTests
         public double AverageEncodingLatencyMicroseconds => 150.0;
 
         private bool _frameSubmitted;
-        private bool _decoderAccepted;
+        private ulong _lastDecoderAcceptedFrameId;
         private ulong _firstValidFrameId;
         private ulong _lastValidFrameId;
         private bool _hasValidFrame;
@@ -455,9 +505,10 @@ public class HardwareVideoEncoderPipelineTests
             OutputReceived: HasProducedValidOutput,
             BitstreamStructurallyValid: HasProducedValidOutput,
             AccessUnitValid: HasProducedValidOutput,
-            DecoderAccepted: _decoderAccepted,
+            DecoderAccepted: _lastDecoderAcceptedFrameId != 0 && _lastDecoderAcceptedFrameId == _lastValidFrameId,
             FirstValidFrameId: _firstValidFrameId,
-            LastValidFrameId: _lastValidFrameId
+            LastValidFrameId: _lastValidFrameId,
+            LastDecoderAcceptedFrameId: _lastDecoderAcceptedFrameId
         );
 
         public bool TryEncodeFrame(
@@ -520,7 +571,7 @@ public class HardwareVideoEncoderPipelineTests
 
         public void RecordDecoderAcceptance(ulong frameId)
         {
-            _decoderAccepted = true;
+            _lastDecoderAcceptedFrameId = frameId;
         }
 
         public EncodeSubmissionResult SubmitFrame(
@@ -584,6 +635,11 @@ public class HardwareVideoEncoderPipelineTests
 
         public bool Reconfigure(uint bitrateKbps, uint fps, uint peakBitrateKbps = 0) => true;
         public void RequestKeyframe() { }
-        public void Dispose() { IsActive = false; }
+        public void Dispose()
+        {
+            IsActive = false;
+            _lastDecoderAcceptedFrameId = 0;
+            _lastValidFrameId = 0;
+        }
     }
 }

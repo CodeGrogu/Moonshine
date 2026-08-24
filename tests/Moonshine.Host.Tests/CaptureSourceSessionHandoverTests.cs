@@ -97,6 +97,7 @@ public class CaptureSourceSessionHandoverTests
         public EncoderVendor Vendor => EncoderVendor.Direct3D11Hardware;
         public bool IsActive { get; set; } = true;
         public EncoderImplementationKind ImplementationKind { get; set; } = EncoderImplementationKind.SyntheticTest;
+        private ulong _lastDecoderAcceptedFrameId;
         public bool IsHardwareAccelerated { get; set; }
         public bool HasProducedValidOutput { get; set; } = true;
         public Type ImplementationType => GetType();
@@ -109,9 +110,10 @@ public class CaptureSourceSessionHandoverTests
             OutputReceived: HasProducedValidOutput,
             BitstreamStructurallyValid: HasProducedValidOutput,
             AccessUnitValid: HasProducedValidOutput,
-            DecoderAccepted: false,
+            DecoderAccepted: _lastDecoderAcceptedFrameId != 0 && _lastDecoderAcceptedFrameId == 1,
             FirstValidFrameId: 1,
-            LastValidFrameId: 1
+            LastValidFrameId: 1,
+            LastDecoderAcceptedFrameId: _lastDecoderAcceptedFrameId
         );
         public double AverageEncodingLatencyMicroseconds => 200.0;
 
@@ -176,6 +178,7 @@ public class CaptureSourceSessionHandoverTests
 
         public void RecordDecoderAcceptance(ulong frameId)
         {
+            _lastDecoderAcceptedFrameId = frameId;
         }
 
         public EncodeSubmissionResult SubmitFrame(

@@ -63,6 +63,7 @@ public class HostClientStreamingIntegrationTests
         public bool HasProducedValidOutput { get; set; } = true;
         public Type ImplementationType => GetType();
         public EncoderRuntimeState RuntimeState => EncoderRuntimeState.Ready;
+        private ulong _lastDecoderAcceptedFrameId;
         public EncoderEvidence Evidence => new(
             ApiAvailable: true,
             HardwareSupported: IsHardwareAccelerated,
@@ -71,9 +72,10 @@ public class HostClientStreamingIntegrationTests
             OutputReceived: HasProducedValidOutput,
             BitstreamStructurallyValid: HasProducedValidOutput,
             AccessUnitValid: HasProducedValidOutput,
-            DecoderAccepted: false,
+            DecoderAccepted: _lastDecoderAcceptedFrameId != 0 && _lastDecoderAcceptedFrameId == Math.Max(1, _frameIndex),
             FirstValidFrameId: 1,
-            LastValidFrameId: Math.Max(1, _frameIndex)
+            LastValidFrameId: Math.Max(1, _frameIndex),
+            LastDecoderAcceptedFrameId: _lastDecoderAcceptedFrameId
         );
         public double AverageEncodingLatencyMicroseconds => 200.0;
 
@@ -126,6 +128,7 @@ public class HostClientStreamingIntegrationTests
 
         public void RecordDecoderAcceptance(ulong frameId)
         {
+            _lastDecoderAcceptedFrameId = frameId;
         }
 
         public EncodeSubmissionResult SubmitFrame(

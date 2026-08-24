@@ -37,7 +37,7 @@ public sealed class AmfHardwareEncoderPipeline : IVideoEncoderPipeline
     private bool _outputReceived;
     private bool _bitstreamStructurallyValid;
     private bool _accessUnitValid;
-    private bool _decoderAccepted;
+    private ulong _lastDecoderAcceptedFrameId;
     private ulong _firstValidFrameId;
     private ulong _lastValidFrameId;
     private bool _hasValidFrame;
@@ -60,14 +60,16 @@ public sealed class AmfHardwareEncoderPipeline : IVideoEncoderPipeline
     public EncoderEvidence Evidence => new(
         ApiAvailable: _handle != IntPtr.Zero,
         HardwareSupported: _isHardwareAccelerated,
-        SessionInitialised: !_disposed && _handle != IntPtr.Zero,
+        SessionInitialised: _handle != IntPtr.Zero,
         FrameSubmitted: Volatile.Read(ref _frameSubmitted),
         OutputReceived: Volatile.Read(ref _outputReceived),
         BitstreamStructurallyValid: Volatile.Read(ref _bitstreamStructurallyValid),
         AccessUnitValid: Volatile.Read(ref _accessUnitValid),
-        DecoderAccepted: Volatile.Read(ref _decoderAccepted),
+        DecoderAccepted: Volatile.Read(ref _lastDecoderAcceptedFrameId) != 0 &&
+                         Volatile.Read(ref _lastDecoderAcceptedFrameId) == Volatile.Read(ref _lastValidFrameId),
         FirstValidFrameId: Volatile.Read(ref _firstValidFrameId),
-        LastValidFrameId: Volatile.Read(ref _lastValidFrameId)
+        LastValidFrameId: Volatile.Read(ref _lastValidFrameId),
+        LastDecoderAcceptedFrameId: Volatile.Read(ref _lastDecoderAcceptedFrameId)
     );
 
     public double AverageEncodingLatencyMicroseconds
@@ -243,7 +245,7 @@ public sealed class AmfHardwareEncoderPipeline : IVideoEncoderPipeline
 
     public void RecordDecoderAcceptance(ulong frameId)
     {
-        Volatile.Write(ref _decoderAccepted, true);
+        Volatile.Write(ref _lastDecoderAcceptedFrameId, frameId);
     }
 
     public EncodeSubmissionResult SubmitFrame(
@@ -429,6 +431,8 @@ public sealed class AmfHardwareEncoderPipeline : IVideoEncoderPipeline
             if (_disposed) return;
             _disposed = true;
             _runtimeState = EncoderRuntimeState.Disposed;
+            Volatile.Write(ref _lastDecoderAcceptedFrameId, 0);
+            Volatile.Write(ref _lastValidFrameId, 0);
 
             if (_handle != IntPtr.Zero)
             {
