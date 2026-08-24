@@ -575,9 +575,102 @@ public class HardwareVideoEncoderPipelineTests
     }
 
     [Fact]
+    public void EncoderEvidencePolicy_DefaultDecoderAcceptanceLagWindow_EqualsFourAndMatchesAlias()
+    {
+        EncoderEvidencePolicy.DefaultDecoderAcceptanceLagWindow.Should().Be(4);
+        EncoderEvidencePolicy.DecoderAcceptanceLagWindow.Should().Be(EncoderEvidencePolicy.DefaultDecoderAcceptanceLagWindow);
+    }
+
+    [Fact]
+    public void EncoderEvidencePolicy_CustomMaxAcceptableLagWindow_EvaluatesThresholdsCorrectly()
+    {
+        const ulong currentFrame = 100;
+
+        // Custom lag window = 2 (e.g. ultra-low-latency LAN profile)
+        const ulong tightLagWindow = 2;
+        EncoderEvidencePolicy.IsDecoderAcceptanceHealthy(
+            isDisposed: false,
+            hasHandle: true,
+            lastValidFrameId: currentFrame,
+            lastDecoderAcceptedFrameId: 100,
+            maxAcceptableLagWindow: tightLagWindow
+        ).Should().BeTrue("Zero lag is healthy under tight lag window");
+
+        EncoderEvidencePolicy.IsDecoderAcceptanceHealthy(
+            isDisposed: false,
+            hasHandle: true,
+            lastValidFrameId: currentFrame,
+            lastDecoderAcceptedFrameId: 99,
+            maxAcceptableLagWindow: tightLagWindow
+        ).Should().BeTrue("Lag of 1 frame is healthy when window is 2");
+
+        EncoderEvidencePolicy.IsDecoderAcceptanceHealthy(
+            isDisposed: false,
+            hasHandle: true,
+            lastValidFrameId: currentFrame,
+            lastDecoderAcceptedFrameId: 98,
+            maxAcceptableLagWindow: tightLagWindow
+        ).Should().BeTrue("Lag equal to window (2 frames) is healthy");
+
+        EncoderEvidencePolicy.IsDecoderAcceptanceHealthy(
+            isDisposed: false,
+            hasHandle: true,
+            lastValidFrameId: currentFrame,
+            lastDecoderAcceptedFrameId: 97,
+            maxAcceptableLagWindow: tightLagWindow
+        ).Should().BeFalse("Lag of 3 frames exceeds tight window of 2");
+
+        // Custom lag window = 8 (e.g. high-jitter WAN profile)
+        const ulong relaxedLagWindow = 8;
+        EncoderEvidencePolicy.IsDecoderAcceptanceHealthy(
+            isDisposed: false,
+            hasHandle: true,
+            lastValidFrameId: currentFrame,
+            lastDecoderAcceptedFrameId: 96,
+            maxAcceptableLagWindow: relaxedLagWindow
+        ).Should().BeTrue("Lag of 4 frames is healthy when window is 8");
+
+        EncoderEvidencePolicy.IsDecoderAcceptanceHealthy(
+            isDisposed: false,
+            hasHandle: true,
+            lastValidFrameId: currentFrame,
+            lastDecoderAcceptedFrameId: 92,
+            maxAcceptableLagWindow: relaxedLagWindow
+        ).Should().BeTrue("Lag equal to window (8 frames) is healthy");
+
+        EncoderEvidencePolicy.IsDecoderAcceptanceHealthy(
+            isDisposed: false,
+            hasHandle: true,
+            lastValidFrameId: currentFrame,
+            lastDecoderAcceptedFrameId: 91,
+            maxAcceptableLagWindow: relaxedLagWindow
+        ).Should().BeFalse("Lag of 9 frames exceeds relaxed window of 8");
+
+        // State invalidation overrides relaxed window: isDisposed = true -> false
+        EncoderEvidencePolicy.IsDecoderAcceptanceHealthy(
+            isDisposed: true,
+            hasHandle: true,
+            lastValidFrameId: currentFrame,
+            lastDecoderAcceptedFrameId: 92,
+            maxAcceptableLagWindow: relaxedLagWindow
+        ).Should().BeFalse("Disposed state must invalidate health even with relaxed lag window");
+
+        // State invalidation overrides relaxed window: hasHandle = false -> false
+        EncoderEvidencePolicy.IsDecoderAcceptanceHealthy(
+            isDisposed: false,
+            hasHandle: false,
+            lastValidFrameId: currentFrame,
+            lastDecoderAcceptedFrameId: 92,
+            maxAcceptableLagWindow: relaxedLagWindow
+        ).Should().BeFalse("Missing native handle must invalidate health even with relaxed lag window");
+    }
+
+    [Fact]
     public void HardwareVideoEncoderPipeline_DecoderAcceptanceLagWindow_MatchesDocumentedSpecification()
     {
+        EncoderEvidencePolicy.DefaultDecoderAcceptanceLagWindow.Should().Be(4);
         EncoderEvidencePolicy.DecoderAcceptanceLagWindow.Should().Be(4);
+        EncoderEvidencePolicy.DecoderAcceptanceLagWindow.Should().Be(EncoderEvidencePolicy.DefaultDecoderAcceptanceLagWindow);
         HardwareVideoEncoderPipeline.DecoderAcceptanceLagWindow.Should().Be(EncoderEvidencePolicy.DecoderAcceptanceLagWindow);
         NvencHardwareEncoderPipeline.DecoderAcceptanceLagWindow.Should().Be(EncoderEvidencePolicy.DecoderAcceptanceLagWindow);
         AmfHardwareEncoderPipeline.DecoderAcceptanceLagWindow.Should().Be(EncoderEvidencePolicy.DecoderAcceptanceLagWindow);
@@ -585,27 +678,88 @@ public class HardwareVideoEncoderPipelineTests
         UnifiedHardwareEncoderEngine.DecoderAcceptanceLagWindow.Should().Be(EncoderEvidencePolicy.DecoderAcceptanceLagWindow);
     }
 
+    [Fact]
+    public void SyntheticCorrelatingEncoderPipeline_IndependentFieldTracking_OperatesCorrectly()
+    {
+        using var pipeline = new SyntheticCorrelatingEncoderPipeline();
+        Span<byte> buffer = stackalloc byte[1024];
+
+        // Before producing any valid output
+        pipeline.HasProducedValidOutput.Should().BeFalse();
+        pipeline.Evidence.OutputReceived.Should().BeFalse();
+        pipeline.Evidence.BitstreamStructurallyValid.Should().BeFalse();
+        pipeline.Evidence.AccessUnitValid.Should().BeFalse();
+        pipeline.Evidence.ApiAvailable.Should().BeTrue();
+        pipeline.Evidence.SessionInitialised.Should().BeTrue();
+        pipeline.IsActive.Should().BeTrue();
+        pipeline.RuntimeState.Should().Be(EncoderRuntimeState.Ready);
+
+        // Submit first frame
+        bool encoded = pipeline.TryEncodeFrame(IntPtr.Zero, 1, 16666, true, out _, buffer, out int written);
+        encoded.Should().BeTrue();
+        written.Should().BeGreaterThan(0);
+        pipeline.HasProducedValidOutput.Should().BeTrue();
+        pipeline.Evidence.OutputReceived.Should().BeTrue();
+        pipeline.Evidence.BitstreamStructurallyValid.Should().BeTrue();
+        pipeline.Evidence.AccessUnitValid.Should().BeTrue();
+
+        // Simulate handle loss independently of disposal
+        pipeline.HasNativeHandle = false;
+        pipeline.IsActive.Should().BeFalse();
+        pipeline.RuntimeState.Should().Be(EncoderRuntimeState.Faulted);
+        pipeline.Evidence.ApiAvailable.Should().BeFalse();
+        pipeline.Evidence.SessionInitialised.Should().BeFalse();
+        pipeline.Evidence.DecoderAcceptanceHealthy.Should().BeFalse();
+
+        // Restore handle
+        pipeline.HasNativeHandle = true;
+        pipeline.IsActive.Should().BeTrue();
+        pipeline.RuntimeState.Should().Be(EncoderRuntimeState.Ready);
+        pipeline.Evidence.ApiAvailable.Should().BeTrue();
+        pipeline.Evidence.SessionInitialised.Should().BeTrue();
+
+        // Acknowledge frame 1
+        pipeline.RecordDecoderAcceptance(1);
+        pipeline.Evidence.DecoderAcceptanceHealthy.Should().BeTrue();
+
+        // Dispose pipeline
+        pipeline.Dispose();
+        pipeline.IsActive.Should().BeFalse();
+        pipeline.RuntimeState.Should().Be(EncoderRuntimeState.Disposed);
+        pipeline.Evidence.SessionInitialised.Should().BeFalse();
+        pipeline.Evidence.DecoderAcceptanceHealthy.Should().BeFalse();
+    }
+
     private sealed class SyntheticCorrelatingEncoderPipeline : IVideoEncoderPipeline
     {
+        private bool _disposed;
+        private bool _hasNativeHandle = true;
+        private bool _hasProducedValidOutput;
+        private bool _frameSubmitted;
+        private ulong _lastDecoderAcceptedFrameId;
+        private ulong _firstValidFrameId;
+        private ulong _lastValidFrameId;
+        private bool _hasValidFrame;
+
         public uint Width => 1920;
         public uint Height => 1080;
         public uint Fps => 60;
         public uint BitrateKbps => 20000;
         public VideoCodec Codec => VideoCodec.HevcMain10;
         public EncoderVendor Vendor => EncoderVendor.Direct3D11Hardware;
-        public bool IsActive { get; set; } = true;
+        public bool IsActive => _hasNativeHandle && !_disposed;
         public EncoderImplementationKind ImplementationKind => EncoderImplementationKind.SyntheticTest;
         public bool IsHardwareAccelerated => false;
-        public bool HasProducedValidOutput => true;
+        public bool HasProducedValidOutput => _hasProducedValidOutput;
         public Type ImplementationType => GetType();
-        public EncoderRuntimeState RuntimeState => IsActive ? EncoderRuntimeState.Ready : EncoderRuntimeState.Disposed;
+        public EncoderRuntimeState RuntimeState => _disposed ? EncoderRuntimeState.Disposed : (!_hasNativeHandle ? EncoderRuntimeState.Faulted : EncoderRuntimeState.Ready);
         public double AverageEncodingLatencyMicroseconds => 150.0;
 
-        private bool _frameSubmitted;
-        private ulong _lastDecoderAcceptedFrameId;
-        private ulong _firstValidFrameId;
-        private ulong _lastValidFrameId;
-        private bool _hasValidFrame;
+        public bool HasNativeHandle
+        {
+            get => _hasNativeHandle;
+            set => _hasNativeHandle = value;
+        }
 
         public EncoderEvidence Evidence
         {
@@ -614,16 +768,16 @@ public class HardwareVideoEncoderPipelineTests
                 ulong lastValid = _lastValidFrameId;
                 ulong lastAccepted = _lastDecoderAcceptedFrameId;
                 bool latestMatch = lastAccepted != 0 && lastAccepted == lastValid;
-                bool healthy = EncoderEvidencePolicy.IsDecoderAcceptanceHealthy(!IsActive, IsActive, lastValid, lastAccepted);
+                bool healthy = EncoderEvidencePolicy.IsDecoderAcceptanceHealthy(_disposed, _hasNativeHandle, lastValid, lastAccepted);
 
                 return new EncoderEvidence(
-                    ApiAvailable: true,
+                    ApiAvailable: _hasNativeHandle,
                     HardwareSupported: IsHardwareAccelerated,
-                    SessionInitialised: IsActive,
+                    SessionInitialised: !_disposed && _hasNativeHandle,
                     FrameSubmitted: _frameSubmitted,
-                    OutputReceived: HasProducedValidOutput,
-                    BitstreamStructurallyValid: HasProducedValidOutput,
-                    AccessUnitValid: HasProducedValidOutput,
+                    OutputReceived: _hasProducedValidOutput,
+                    BitstreamStructurallyValid: _hasProducedValidOutput,
+                    AccessUnitValid: _hasProducedValidOutput,
                     DecoderAccepted: healthy,
                     FirstValidFrameId: _firstValidFrameId,
                     LastValidFrameId: lastValid,
@@ -643,7 +797,7 @@ public class HardwareVideoEncoderPipelineTests
             Span<byte> outBitstream,
             out int bytesWritten)
         {
-            if (!IsActive)
+            if (_disposed || !_hasNativeHandle)
             {
                 desc = default;
                 bytesWritten = 0;
@@ -671,6 +825,7 @@ public class HardwareVideoEncoderPipelineTests
 
             if (bytesWritten > 0)
             {
+                _hasProducedValidOutput = true;
                 if (!_hasValidFrame)
                 {
                     _firstValidFrameId = frameId;
@@ -705,7 +860,7 @@ public class HardwareVideoEncoderPipelineTests
             Span<byte> outBitstream,
             out int bytesWritten)
         {
-            if (!IsActive)
+            if (_disposed || !_hasNativeHandle)
             {
                 bytesWritten = 0;
                 return new EncodeSubmissionResult(
@@ -760,7 +915,8 @@ public class HardwareVideoEncoderPipelineTests
         public void RequestKeyframe() { }
         public void Dispose()
         {
-            IsActive = false;
+            _disposed = true;
+            _hasNativeHandle = false;
             _lastDecoderAcceptedFrameId = 0;
             _lastValidFrameId = 0;
         }
