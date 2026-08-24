@@ -14,4 +14,5 @@ All architectural decisions, native SIMD pipelines, managed protocols, and engin
 - **Overseer Subagent Governance**: Overseer governs up to six specialized subagents (`researcher`, `implementer`, `adversary`, `test-writer`, `script-runner`, `specialist`). Work is mandatorily delegated to subagents.
 - **Script Timing & Polling Discipline**: Schedule timer checks between $\frac{1}{2} T$ and $3 \times T$ for scripts with estimated duration $T$, checking at most once, twice, or thrice.
 - **Verification Pipeline**: All changes must pass `scripts/verify_codebase.ps1` (environment probe, preflight sweep, physical artifact checks, 22 CTests, and 493 xUnit tests).
+- **Official Script Priority**: If an official script exists for any task or workflow (e.g. `scripts/verify_codebase.ps1`, `scripts/preflight.ps1`, `scripts/verify_environment.ps1`), always execute the official script directly and modify or extend it afterwards if additional behaviour or adjustments are required.
 
