@@ -27,6 +27,7 @@ public:
     [[nodiscard]] bool is_initialized() const noexcept override;
     [[nodiscard]] uint32_t get_state() const noexcept override;
     [[nodiscard]] bool is_healthy() const noexcept override;
+    [[nodiscard]] IVideoEncoder* active_encoder() noexcept { return _active_encoder.get(); }
 
     static bool query_capabilities(EncoderVendor vendor, void* d3d_device, EncoderCaps& out_caps);
     static std::unique_ptr<IVideoEncoder> create_encoder(EncoderVendor vendor);

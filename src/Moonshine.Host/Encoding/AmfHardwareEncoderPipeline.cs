@@ -18,6 +18,8 @@ public sealed class AmfHardwareEncoderPipeline : IVideoEncoderPipeline
     public const ulong DecoderAcceptanceLagWindow = EncoderEvidencePolicy.DecoderAcceptanceLagWindow;
 
     private IntPtr _handle;
+    private readonly IntPtr _ownedD3dDevice;
+    private IntPtr _ownedD3dTexture;
     private readonly uint _width;
     private readonly uint _height;
     private uint _fps;
@@ -121,6 +123,12 @@ public sealed class AmfHardwareEncoderPipeline : IVideoEncoderPipeline
         _preset = preset;
         _usage = usage;
 
+        if (d3dDevice == IntPtr.Zero)
+        {
+            _ownedD3dDevice = MoonshineNativeMethods.D3D11CreateDevice(0x1002); // 0x1002 = AMD Vendor ID
+            d3dDevice = _ownedD3dDevice;
+        }
+
         var config = new MoonshineEncoderConfig
         {
             Width = width,
@@ -169,6 +177,15 @@ public sealed class AmfHardwareEncoderPipeline : IVideoEncoderPipeline
         {
             Volatile.Write(ref _frameSubmitted, true);
             if (_disposed || _handle == IntPtr.Zero) return false;
+
+            if (d3dTexture == IntPtr.Zero && _ownedD3dDevice != IntPtr.Zero)
+            {
+                if (_ownedD3dTexture == IntPtr.Zero)
+                {
+                    _ownedD3dTexture = MoonshineNativeMethods.D3D11CreateTexture(_ownedD3dDevice, _width, _height, 0);
+                }
+                d3dTexture = _ownedD3dTexture;
+            }
 
             _runtimeState = EncoderRuntimeState.Encoding;
             try
@@ -456,6 +473,17 @@ public sealed class AmfHardwareEncoderPipeline : IVideoEncoderPipeline
             {
                 MoonshineNativeMethods.EncoderDestroy(_handle);
                 _handle = IntPtr.Zero;
+            }
+
+            if (_ownedD3dTexture != IntPtr.Zero)
+            {
+                MoonshineNativeMethods.D3D11DestroyTexture(_ownedD3dTexture);
+                _ownedD3dTexture = IntPtr.Zero;
+            }
+
+            if (_ownedD3dDevice != IntPtr.Zero)
+            {
+                MoonshineNativeMethods.D3D11DestroyDevice(_ownedD3dDevice);
             }
         }
     }

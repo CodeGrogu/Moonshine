@@ -68,8 +68,14 @@ add_test(NAME test_nvenc_conformance COMMAND test_nvenc_conformance)
 add_executable(test_amf_pipeline 
     test_amf_pipeline.cpp
 )
-target_link_libraries(test_amf_pipeline PRIVATE Moonshine.Native)
+target_link_libraries(test_amf_pipeline PRIVATE Moonshine.Native $<$<BOOL:${WIN32}>:d3d11 dxgi>)
 add_test(NAME test_amf_pipeline COMMAND test_amf_pipeline)
+
+add_executable(test_amf_conformance 
+    test_amf_conformance.cpp
+)
+target_link_libraries(test_amf_conformance PRIVATE Moonshine.Native $<$<BOOL:${WIN32}>:d3d11 dxgi>)
+add_test(NAME test_amf_conformance COMMAND test_amf_conformance)
 
 add_executable(test_qsv_pipeline 
     test_qsv_pipeline.cpp

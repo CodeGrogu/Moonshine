@@ -1949,8 +1949,14 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_nvenc_set_tuning(
     uint32_t tuning
 ) {
     if (!handle) return 0;
-    (void)preset;
-    (void)tuning;
+    auto* unified = static_cast<encoder::UnifiedVideoEncoder*>(handle);
+    auto* active = dynamic_cast<encoder::NvencVideoEncoder*>(unified->active_encoder());
+    if (active) {
+        return active->set_preset_and_tuning(
+            static_cast<encoder::NvencPreset>(preset),
+            static_cast<encoder::NvencTuning>(tuning)
+        ) ? 1 : 0;
+    }
     return 1;
 }
 
@@ -1961,9 +1967,11 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_nvenc_set_intra_refresh(
     uint32_t count
 ) {
     if (!handle) return 0;
-    (void)enable;
-    (void)period;
-    (void)count;
+    auto* unified = static_cast<encoder::UnifiedVideoEncoder*>(handle);
+    auto* active = dynamic_cast<encoder::NvencVideoEncoder*>(unified->active_encoder());
+    if (active) {
+        return active->set_intra_refresh(enable != 0, period, count) ? 1 : 0;
+    }
     return 1;
 }
 
@@ -1989,8 +1997,14 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_amf_set_tuning(
     uint32_t usage
 ) {
     if (!handle) return 0;
-    (void)preset;
-    (void)usage;
+    auto* unified = static_cast<encoder::UnifiedVideoEncoder*>(handle);
+    auto* active = dynamic_cast<encoder::AmfVideoEncoder*>(unified->active_encoder());
+    if (active) {
+        return active->set_preset_and_usage(
+            static_cast<encoder::AmfQualityPreset>(preset),
+            static_cast<encoder::AmfUsage>(usage)
+        ) ? 1 : 0;
+    }
     return 1;
 }
 
@@ -2000,8 +2014,11 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_amf_set_intra_refresh(
     uint32_t mbs_per_slot
 ) {
     if (!handle) return 0;
-    (void)enable;
-    (void)mbs_per_slot;
+    auto* unified = static_cast<encoder::UnifiedVideoEncoder*>(handle);
+    auto* active = dynamic_cast<encoder::AmfVideoEncoder*>(unified->active_encoder());
+    if (active) {
+        return active->set_intra_refresh(enable != 0, mbs_per_slot) ? 1 : 0;
+    }
     return 1;
 }
 

@@ -1,6 +1,6 @@
 # AMD AMF & Intel QuickSync Hardware Video Encoder Pipelines
 
-The **Moonshine Host AMF and QuickSync Video Encoding Pipelines** provide direct hardware-accelerated video encoding for AMD Radeon (VCN 1.0 to 5.0+) and Intel Arc / Iris Xe / Core Ultra (QuickSync / oneVPL) GPUs. They process Direct3D 11 / Direct3D 12 texture surfaces directly with sub-2.5ms encode latency for H.264, HEVC Main10 (HDR10), and AV1 Profile 0.
+The **Moonshine Host AMF and QuickSync Video Encoding Pipelines** provide direct hardware-accelerated video encoding for AMD Radeon (VCN 1.0 to 5.0+) and Intel Arc / Iris Xe / Core Ultra (QuickSync / oneVPL) GPUs. They process Direct3D 11 texture surfaces directly with ultra-low-latency CBR tuning for H.264, HEVC Main10 (HDR10), and AV1 Profile 0. <!-- PROVENANCE: STANDARDS.md Rule 9 verified via test_amf_pipeline and test_amf_conformance -->
 
 ---
 
@@ -8,14 +8,14 @@ The **Moonshine Host AMF and QuickSync Video Encoding Pipelines** provide direct
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│      Direct3D 11/12 Captured Desktop Texture / Frame       │
+│         Direct3D 11 Captured Desktop Texture / Frame       │
 │           (DXGI / WGC Desktop Duplication Surface)         │
 └─────────────────────────────┬──────────────────────────────┘
                               │
                               ▼
 ┌────────────────────────────────────────────────────────────┐
 │                  AMD AMF Direct Context                    │
-│    - AMFContext::InitDX11 / InitDX12 (Zero-copy surface)   │
+│    - AMFContext::InitDX11 (Zero-copy GPU texture surface)  │
 │    - AMFSurface creation from ID3D11Texture2D              │
 └─────────────────────────────┬──────────────────────────────┘
                               │

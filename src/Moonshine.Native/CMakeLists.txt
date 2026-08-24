@@ -21,6 +21,8 @@ add_library(Moonshine.Native SHARED
     src/encoder/nvenc/nvenc_surface_pool.cpp
     src/encoder/nvenc/nvenc_bitstream_pool.cpp
     src/encoder/nvenc_video_encoder.cpp
+    src/encoder/amf/amf_api.cpp
+    src/encoder/amf/amf_session.cpp
     src/encoder/amf_video_encoder.cpp
     src/encoder/qsv_video_encoder.cpp
     src/encoder/d3d11_hardware_encoder.cpp

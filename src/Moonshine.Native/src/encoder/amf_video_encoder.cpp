@@ -1,4 +1,7 @@
 #include "moonshine/encoder/amf_video_encoder.hpp"
+#include "encoder/amf/amf_types.hpp"
+#include "encoder/amf/amf_api.hpp"
+#include "encoder/amf/amf_session.hpp"
 #include <cstring>
 #include <chrono>
 #include <iostream>
@@ -9,19 +12,18 @@
 #include <dxgi.h>
 #include <wrl/client.h>
 using Microsoft::WRL::ComPtr;
-
-typedef uint64_t amf_uint64;
-typedef int32_t AMF_RESULT;
-#define AMF_OK 0
-
-typedef AMF_RESULT(__cdecl *AMFInit_Fn)(amf_uint64 version, void** ppFactory);
-typedef AMF_RESULT(__cdecl *AMFQueryVersion_Fn)(amf_uint64* pVersion);
-
 #endif
 
 namespace moonshine::encoder {
 
-AmfVideoEncoder::AmfVideoEncoder() = default;
+struct AmfVideoEncoder::Impl {
+    amf::AmfApi api;
+    amf::AmfSession session;
+};
+
+AmfVideoEncoder::AmfVideoEncoder()
+    : _impl(std::make_unique<Impl>()) {
+}
 
 AmfVideoEncoder::~AmfVideoEncoder() {
     cleanup();
@@ -30,12 +32,21 @@ AmfVideoEncoder::~AmfVideoEncoder() {
 bool AmfVideoEncoder::initialize(void* d3d_device, const EncoderConfig& config) {
     cleanup();
 
-#if defined(_WIN32)
-    if (!d3d_device) {
+    _state = AmfLifecycleState::Uninitialised;
+
+    if (!d3d_device || !_impl) {
         return false;
     }
 
+#if defined(_WIN32)
     auto* dev = static_cast<ID3D11Device*>(d3d_device);
+
+    HRESULT reason = dev->GetDeviceRemovedReason();
+    if (reason != S_OK) {
+        _state = AmfLifecycleState::Faulted;
+        return false;
+    }
+
     ComPtr<IDXGIDevice> dxgi_dev;
     if (FAILED(dev->QueryInterface(__uuidof(IDXGIDevice), &dxgi_dev))) {
         return false;
@@ -51,31 +62,39 @@ bool AmfVideoEncoder::initialize(void* d3d_device, const EncoderConfig& config) 
         return false;
     }
 
-    // Attempt to load amfrt64.dll from AMD driver package
-    HMODULE hAmf = LoadLibraryW(L"amfrt64.dll");
-    if (!hAmf) {
+    _state = AmfLifecycleState::DeviceAttached;
+
+    if (!_impl->api.load()) {
+        _state = AmfLifecycleState::Faulted;
         return false;
     }
 
-    auto queryVersion = reinterpret_cast<AMFQueryVersion_Fn>(
-        GetProcAddress(hAmf, "AMFQueryVersion")
-    );
-    if (!queryVersion) {
-        FreeLibrary(hAmf);
+    _state = AmfLifecycleState::SessionCreated;
+
+    if (!_impl->session.open(_impl->api, d3d_device)) {
+        _impl->api.unload();
+        _state = AmfLifecycleState::Faulted;
         return false;
     }
 
-    amf_uint64 version = 0;
-    if (queryVersion(&version) != AMF_OK) {
-        FreeLibrary(hAmf);
+    _impl->session.set_preset_and_usage(_preset, _usage);
+    _impl->session.set_intra_refresh(_intra_refresh_enabled, _intra_refresh_num_mbs_per_slot);
+
+    if (!_impl->session.configure(config)) {
+        _impl->session.close();
+        _impl->api.unload();
+        _state = AmfLifecycleState::Faulted;
         return false;
     }
+
+    _state = AmfLifecycleState::EncoderInitialised;
 
     _d3d_device = d3d_device;
     _config = config;
     _frame_counter = 0;
     _force_keyframe = true;
     _initialized = true;
+    _state = AmfLifecycleState::Ready;
     return true;
 #else
     (void)d3d_device;
@@ -92,30 +111,87 @@ bool AmfVideoEncoder::encode_frame(
     uint32_t max_buffer_size,
     uint32_t& out_written_size
 ) {
-    if (!_initialized || !d3d_texture || !out_bitstream || max_buffer_size == 0) {
-        out_written_size = 0;
+    out_written_size = 0;
+
+    if (_state == AmfLifecycleState::Faulted || _state == AmfLifecycleState::Disposed ||
+        !_initialized || !_impl || !_impl->session.is_open() || !d3d_texture || !out_bitstream || max_buffer_size == 0) {
+        return false;
+    }
+
+#if defined(_WIN32)
+    auto* dev = static_cast<ID3D11Device*>(_d3d_device);
+    if (dev && dev->GetDeviceRemovedReason() != S_OK) {
+        _state = AmfLifecycleState::Faulted;
         return false;
     }
 
     bool is_key = force_idr || _force_keyframe.exchange(false) || (_frame_counter == 0);
+    uint64_t current_frame = _frame_counter++;
 
-    out_desc.frame_index = _frame_counter++;
     auto now = std::chrono::high_resolution_clock::now().time_since_epoch();
-    out_desc.timestamp_qpc = std::chrono::duration_cast<std::chrono::microseconds>(now).count();
-    out_desc.is_keyframe = is_key ? 1 : 0;
-    out_desc.is_header_packet = is_key ? 1 : 0;
-    out_desc.temporal_id = 0;
-    out_desc.reserved = 0;
+    uint64_t timestamp_us = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(now).count()
+    );
 
-    out_written_size = 0;
-    out_desc.payload_size = 0;
+    _state = AmfLifecycleState::Encoding;
+
+    bool res = _impl->session.encode(
+        d3d_texture,
+        is_key,
+        current_frame,
+        timestamp_us,
+        out_desc,
+        out_bitstream,
+        max_buffer_size,
+        out_written_size
+    );
+
+    if (res && out_written_size > 0) {
+        _state = AmfLifecycleState::Ready;
+        return true;
+    }
+
+    if (dev && dev->GetDeviceRemovedReason() != S_OK) {
+        _state = AmfLifecycleState::Faulted;
+    } else {
+        _state = AmfLifecycleState::Ready;
+    }
     return false;
+#else
+    (void)d3d_texture;
+    (void)force_idr;
+    (void)out_desc;
+    (void)out_bitstream;
+    (void)max_buffer_size;
+    return false;
+#endif
 }
 
 bool AmfVideoEncoder::reconfigure(const EncoderConfig& new_config) {
-    if (!_initialized) return false;
+    if (!_initialized || !_impl || _state == AmfLifecycleState::Faulted || _state == AmfLifecycleState::Disposed) {
+        return false;
+    }
+
+#if defined(_WIN32)
+    auto* dev = static_cast<ID3D11Device*>(_d3d_device);
+    if (dev && dev->GetDeviceRemovedReason() != S_OK) {
+        _state = AmfLifecycleState::Faulted;
+        return false;
+    }
+#endif
+
     _config = new_config;
     _force_keyframe = true;
+    bool success = _impl->session.reconfigure(new_config);
+    if (!success) {
+#if defined(_WIN32)
+        if (dev && dev->GetDeviceRemovedReason() != S_OK) {
+            _state = AmfLifecycleState::Faulted;
+        }
+#endif
+        return false;
+    }
+    _state = AmfLifecycleState::Ready;
     return true;
 }
 
@@ -125,20 +201,51 @@ void AmfVideoEncoder::request_keyframe() {
 
 void AmfVideoEncoder::cleanup() {
     _initialized = false;
+
+    if (_impl) {
+        _state = AmfLifecycleState::Flushing;
+        _impl->session.close();
+        _impl->api.unload();
+    }
+
     _d3d_device = nullptr;
     _frame_counter = 0;
     _force_keyframe = false;
+    _state = AmfLifecycleState::Disposed;
+}
+
+bool AmfVideoEncoder::is_healthy() const noexcept {
+#if defined(_WIN32)
+    if (!_initialized || _state == AmfLifecycleState::Faulted ||
+        _state == AmfLifecycleState::Disposed || _state == AmfLifecycleState::Uninitialised ||
+        !_impl || !_impl->session.is_open() || !_d3d_device) {
+        return false;
+    }
+    auto* dev = static_cast<ID3D11Device*>(_d3d_device);
+    if (dev && dev->GetDeviceRemovedReason() != S_OK) {
+        return false;
+    }
+    return true;
+#else
+    return false;
+#endif
 }
 
 bool AmfVideoEncoder::set_preset_and_usage(AmfQualityPreset preset, AmfUsage usage) {
     _preset = preset;
     _usage = usage;
+    if (_impl) {
+        _impl->session.set_preset_and_usage(preset, usage);
+    }
     return true;
 }
 
 bool AmfVideoEncoder::set_intra_refresh(bool enabled, uint32_t num_mbs_per_slot) {
     _intra_refresh_enabled = enabled;
     _intra_refresh_num_mbs_per_slot = num_mbs_per_slot;
+    if (_impl) {
+        _impl->session.set_intra_refresh(enabled, num_mbs_per_slot);
+    }
     return true;
 }
 
@@ -161,20 +268,8 @@ bool AmfVideoEncoder::query_capabilities(void* d3d_device, EncoderCaps& out_caps
     DXGI_ADAPTER_DESC desc{};
     if (FAILED(adapter->GetDesc(&desc)) || desc.VendorId != 0x1002) return false;
 
-    HMODULE hAmf = LoadLibraryW(L"amfrt64.dll");
-    if (!hAmf) return false;
-
-    auto queryVersion = reinterpret_cast<AMFQueryVersion_Fn>(
-        GetProcAddress(hAmf, "AMFQueryVersion")
-    );
-    if (!queryVersion) {
-        FreeLibrary(hAmf);
-        return false;
-    }
-
-    amf_uint64 version = 0;
-    if (queryVersion(&version) != AMF_OK) {
-        FreeLibrary(hAmf);
+    amf::AmfApi api;
+    if (!api.load() || !api.factory()) {
         return false;
     }
 
@@ -188,7 +283,7 @@ bool AmfVideoEncoder::query_capabilities(void* d3d_device, EncoderCaps& out_caps
     out_caps.min_bitrate_kbps = 500;
     out_caps.max_bitrate_kbps = 150000;
 
-    FreeLibrary(hAmf);
+    api.unload();
     return true;
 #else
     (void)d3d_device;
@@ -198,16 +293,12 @@ bool AmfVideoEncoder::query_capabilities(void* d3d_device, EncoderCaps& out_caps
 
 bool AmfVideoEncoder::query_codec_support(VideoCodec codec) {
 #if defined(_WIN32)
-    static const bool s_supported = []() {
-        HMODULE hAmf = LoadLibraryExW(L"amfrt64.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
-        if (!hAmf) {
-            hAmf = LoadLibraryW(L"amfrt64.dll");
-        }
-        if (!hAmf) return false;
-        FreeLibrary(hAmf);
-        return true;
-    }();
-    if (!s_supported) return false;
+    amf::AmfApi api;
+    if (!api.load()) {
+        return false;
+    }
+    api.unload();
+
     return codec == VideoCodec::H264 || codec == VideoCodec::Hevc ||
            codec == VideoCodec::HevcMain10 || codec == VideoCodec::Av1;
 #else
