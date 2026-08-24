@@ -109,18 +109,26 @@ public sealed class MoonshineRemoteHostControlClient : IDisposable
 
         try
         {
-            byte[] buffer = new byte[MoonshineProtocolConstants.HeaderSize + 4];
+            uint payloadSize = _authenticator != null ? 36u : 4u;
+            byte[] buffer = new byte[MoonshineProtocolConstants.HeaderSize + (int)payloadSize];
             var header = new MoonshinePacketHeader(
                 Magic: MoonshineProtocolConstants.Magic,
                 Version: MoonshineProtocolConstants.Version10,
                 MessageType: MoonshineMessageType.GetHostCapabilities,
-                PayloadSize: 4,
+                PayloadSize: payloadSize,
                 SequenceNumber: seq,
                 SessionId: SessionId,
-                TimestampUs: (ulong)Stopwatch.GetTimestamp());
+                TimestampUs: (ulong)((Stopwatch.GetTimestamp() * 1_000_000L) / Stopwatch.Frequency));
 
             MoonshineProtocolCodec.TryWriteHeader(in header, buffer);
-            MoonshineProtocolCodec.TryWriteGetHostCapabilities(queryMask, buffer.AsSpan(MoonshineProtocolConstants.HeaderSize));
+            MoonshineProtocolCodec.TryWriteGetHostCapabilities(queryMask, buffer.AsSpan(MoonshineProtocolConstants.HeaderSize, 4));
+
+            if (_authenticator != null)
+            {
+                _authenticator.ComputeMessageAuthTag(
+                    buffer.AsSpan(0, MoonshineProtocolConstants.HeaderSize + 4),
+                    buffer.AsSpan(MoonshineProtocolConstants.HeaderSize + 4, 32));
+            }
 
             await SendPacketAsync(buffer, ct).ConfigureAwait(false);
 
@@ -166,18 +174,26 @@ public sealed class MoonshineRemoteHostControlClient : IDisposable
 
         try
         {
-            byte[] buffer = new byte[MoonshineProtocolConstants.HeaderSize + 4];
+            uint payloadSize = _authenticator != null ? 36u : 4u;
+            byte[] buffer = new byte[MoonshineProtocolConstants.HeaderSize + (int)payloadSize];
             var header = new MoonshinePacketHeader(
                 Magic: MoonshineProtocolConstants.Magic,
                 Version: MoonshineProtocolConstants.Version10,
                 MessageType: MoonshineMessageType.GetHostConfiguration,
-                PayloadSize: 4,
+                PayloadSize: payloadSize,
                 SequenceNumber: seq,
                 SessionId: SessionId,
-                TimestampUs: (ulong)Stopwatch.GetTimestamp());
+                TimestampUs: (ulong)((Stopwatch.GetTimestamp() * 1_000_000L) / Stopwatch.Frequency));
 
             MoonshineProtocolCodec.TryWriteHeader(in header, buffer);
-            MoonshineProtocolCodec.TryWriteGetHostConfiguration(queryScope, buffer.AsSpan(MoonshineProtocolConstants.HeaderSize));
+            MoonshineProtocolCodec.TryWriteGetHostConfiguration(queryScope, buffer.AsSpan(MoonshineProtocolConstants.HeaderSize, 4));
+
+            if (_authenticator != null)
+            {
+                _authenticator.ComputeMessageAuthTag(
+                    buffer.AsSpan(0, MoonshineProtocolConstants.HeaderSize + 4),
+                    buffer.AsSpan(MoonshineProtocolConstants.HeaderSize + 4, 32));
+            }
 
             await SendPacketAsync(buffer, ct).ConfigureAwait(false);
 
@@ -234,7 +250,7 @@ public sealed class MoonshineRemoteHostControlClient : IDisposable
                 PayloadSize: payloadSize,
                 SequenceNumber: seq,
                 SessionId: SessionId,
-                TimestampUs: (ulong)(Stopwatch.GetTimestamp() * 1_000_000.0 / Stopwatch.Frequency));
+                TimestampUs: (ulong)((Stopwatch.GetTimestamp() * 1_000_000L) / Stopwatch.Frequency));
 
             MoonshineProtocolCodec.TryWriteHeader(in header, buffer);
             MoonshineProtocolCodec.TryWriteHostConfiguration(in proposed, buffer.AsSpan(MoonshineProtocolConstants.HeaderSize, 48));
@@ -289,17 +305,6 @@ public sealed class MoonshineRemoteHostControlClient : IDisposable
                     {
                         tcs.TrySetResult(capabilities);
                     }
-                    else
-                    {
-                        foreach (var kvp in _pendingCapabilities)
-                        {
-                            if (_pendingCapabilities.TryRemove(kvp.Key, out var fallbackTcs))
-                            {
-                                fallbackTcs.TrySetResult(capabilities);
-                                break;
-                            }
-                        }
-                    }
                 }
                 break;
 
@@ -309,17 +314,6 @@ public sealed class MoonshineRemoteHostControlClient : IDisposable
                     if (_pendingConfiguration.TryRemove(header.SequenceNumber, out var tcs))
                     {
                         tcs.TrySetResult(config);
-                    }
-                    else
-                    {
-                        foreach (var kvp in _pendingConfiguration)
-                        {
-                            if (_pendingConfiguration.TryRemove(kvp.Key, out var fallbackTcs))
-                            {
-                                fallbackTcs.TrySetResult(config);
-                                break;
-                            }
-                        }
                     }
                 }
                 break;
@@ -331,17 +325,6 @@ public sealed class MoonshineRemoteHostControlClient : IDisposable
                     if (_pendingSetConfiguration.TryRemove(header.SequenceNumber, out var tcs))
                     {
                         tcs.TrySetResult(result);
-                    }
-                    else
-                    {
-                        foreach (var kvp in _pendingSetConfiguration)
-                        {
-                            if (_pendingSetConfiguration.TryRemove(kvp.Key, out var fallbackTcs))
-                            {
-                                fallbackTcs.TrySetResult(result);
-                                break;
-                            }
-                        }
                     }
                 }
                 break;

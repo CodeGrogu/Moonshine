@@ -726,7 +726,7 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                                     PayloadSize: 48,
                                     SequenceNumber: packetHeader.SequenceNumber,
                                     SessionId: _config.SessionId,
-                                    TimestampUs: (ulong)Stopwatch.GetTimestamp());
+                                    TimestampUs: (ulong)((Stopwatch.GetTimestamp() * 1_000_000L) / Stopwatch.Frequency));
 
                                 var respPayload = new MoonshineHelloResponsePayload
                                 {
@@ -777,7 +777,7 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                                     PayloadSize: 32,
                                     SequenceNumber: packetHeader.SequenceNumber,
                                     SessionId: _config.SessionId,
-                                    TimestampUs: (ulong)Stopwatch.GetTimestamp());
+                                    TimestampUs: (ulong)((Stopwatch.GetTimestamp() * 1_000_000L) / Stopwatch.Frequency));
 
                                 var respPayload = new MoonshineSessionSetupResponsePayload
                                 {
@@ -841,7 +841,7 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                                 PayloadSize: 0,
                                 SequenceNumber: packetHeader.SequenceNumber,
                                 SessionId: _config.SessionId,
-                                TimestampUs: (ulong)Stopwatch.GetTimestamp());
+                                TimestampUs: (ulong)((Stopwatch.GetTimestamp() * 1_000_000L) / Stopwatch.Frequency));
 
                             if (MoonshineProtocolCodec.TryWriteHeader(in ackHeader, ackBuffer))
                             {
@@ -860,6 +860,25 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                         {
                             if (MoonshineProtocolCodec.TryReadGetHostCapabilities(datagram[MoonshineProtocolConstants.HeaderSize..], out uint queryMask) == MoonshineErrorCode.Success)
                             {
+                                if (_authenticator != null)
+                                {
+                                    if (!_authenticator.ValidateIncomingSequence(packetHeader.SequenceNumber, packetHeader.TimestampUs, out _))
+                                    {
+                                        continue;
+                                    }
+
+                                    if (packetHeader.PayloadSize >= 36 && datagram.Length >= MoonshineProtocolConstants.HeaderSize + 36)
+                                    {
+                                        ReadOnlySpan<byte> signedContent = datagram[..(MoonshineProtocolConstants.HeaderSize + 4)];
+                                        ReadOnlySpan<byte> tag = datagram.Slice(MoonshineProtocolConstants.HeaderSize + 4, 32);
+
+                                        if (!_authenticator.VerifyMessageAuthTag(signedContent, tag))
+                                        {
+                                            continue;
+                                        }
+                                    }
+                                }
+
                                 var caps = _configurationService.Capabilities;
                                 byte[] respBuffer = new byte[MoonshineProtocolConstants.HeaderSize + 32];
                                 var respHeader = new MoonshinePacketHeader(
@@ -869,7 +888,7 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                                     PayloadSize: 32,
                                     SequenceNumber: packetHeader.SequenceNumber,
                                     SessionId: _config.SessionId,
-                                    TimestampUs: (ulong)Stopwatch.GetTimestamp());
+                                    TimestampUs: (ulong)((Stopwatch.GetTimestamp() * 1_000_000L) / Stopwatch.Frequency));
 
                                 MoonshineProtocolCodec.TryWriteHeader(in respHeader, respBuffer);
                                 MoonshineProtocolCodec.TryWriteHostCapabilitiesResponse(in caps, respBuffer.AsSpan(MoonshineProtocolConstants.HeaderSize));
@@ -887,6 +906,25 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                         {
                             if (MoonshineProtocolCodec.TryReadGetHostConfiguration(datagram[MoonshineProtocolConstants.HeaderSize..], out uint queryScope) == MoonshineErrorCode.Success)
                             {
+                                if (_authenticator != null)
+                                {
+                                    if (!_authenticator.ValidateIncomingSequence(packetHeader.SequenceNumber, packetHeader.TimestampUs, out _))
+                                    {
+                                        continue;
+                                    }
+
+                                    if (packetHeader.PayloadSize >= 36 && datagram.Length >= MoonshineProtocolConstants.HeaderSize + 36)
+                                    {
+                                        ReadOnlySpan<byte> signedContent = datagram[..(MoonshineProtocolConstants.HeaderSize + 4)];
+                                        ReadOnlySpan<byte> tag = datagram.Slice(MoonshineProtocolConstants.HeaderSize + 4, 32);
+
+                                        if (!_authenticator.VerifyMessageAuthTag(signedContent, tag))
+                                        {
+                                            continue;
+                                        }
+                                    }
+                                }
+
                                 var currentConfig = _configurationService.CurrentConfiguration;
                                 byte[] respBuffer = new byte[MoonshineProtocolConstants.HeaderSize + 48];
                                 var respHeader = new MoonshinePacketHeader(
@@ -896,7 +934,7 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                                     PayloadSize: 48,
                                     SequenceNumber: packetHeader.SequenceNumber,
                                     SessionId: _config.SessionId,
-                                    TimestampUs: (ulong)Stopwatch.GetTimestamp());
+                                    TimestampUs: (ulong)((Stopwatch.GetTimestamp() * 1_000_000L) / Stopwatch.Frequency));
 
                                 MoonshineProtocolCodec.TryWriteHeader(in respHeader, respBuffer);
                                 MoonshineProtocolCodec.TryWriteHostConfiguration(in currentConfig, respBuffer.AsSpan(MoonshineProtocolConstants.HeaderSize));
@@ -991,7 +1029,7 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                                         PayloadSize: 8,
                                         SequenceNumber: packetHeader.SequenceNumber,
                                         SessionId: _config.SessionId,
-                                        TimestampUs: (ulong)(Stopwatch.GetTimestamp() * 1_000_000.0 / Stopwatch.Frequency));
+                                        TimestampUs: (ulong)((Stopwatch.GetTimestamp() * 1_000_000L) / Stopwatch.Frequency));
 
                                     MoonshineProtocolCodec.TryWriteHeader(in changedHeader, changedBuffer);
                                     MoonshineProtocolCodec.TryWriteConfigurationChanged(in changedPayload, changedBuffer.AsSpan(MoonshineProtocolConstants.HeaderSize));
@@ -1081,7 +1119,7 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
             PayloadSize: 8,
             SequenceNumber: sequenceNumber,
             SessionId: _config.SessionId,
-            TimestampUs: (ulong)(Stopwatch.GetTimestamp() * 1_000_000.0 / Stopwatch.Frequency));
+            TimestampUs: (ulong)((Stopwatch.GetTimestamp() * 1_000_000L) / Stopwatch.Frequency));
 
         MoonshineProtocolCodec.TryWriteHeader(in respHeader, respBuffer);
         MoonshineProtocolCodec.TryWriteSetHostConfigurationResponse(in respPayload, respBuffer.AsSpan(MoonshineProtocolConstants.HeaderSize));
