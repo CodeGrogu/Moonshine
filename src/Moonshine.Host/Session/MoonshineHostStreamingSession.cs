@@ -131,6 +131,69 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
         LastError,
         _micUplinkService?.GetMetrics());
 
+    /// <summary>
+    /// Evaluates real-time live backend readiness across all host streaming subsystems.
+    /// ComponentReadiness.Operational is reported only when the backend is active and performing live streaming.
+    /// </summary>
+    public HostBackendReadiness GetLiveBackendReadiness()
+    {
+        bool anyEncoderSupported = (_encoderEngine != null && _encoderEngine.IsActive) ||
+                                  HostCapabilityProbeEngine.IsAnyHardwareEncoderSupported();
+
+        ComponentReadiness videoEncoder = _encoderEngine?.IsActive == true && IsStreaming
+            ? ComponentReadiness.Operational
+            : (anyEncoderSupported ? ComponentReadiness.Available : ComponentReadiness.Unsupported);
+
+        ComponentReadiness desktopCapture = _capturePipeline?.IsAvailable == true && IsStreaming
+            ? ComponentReadiness.Operational
+            : ComponentReadiness.Available;
+
+        ComponentReadiness audioLoopback = _audioPipeline?.IsStreaming == true && IsStreaming
+            ? ComponentReadiness.Operational
+            : ComponentReadiness.Available;
+
+        ComponentReadiness virtualAudioDriver = _audioPipeline?.IpcBridge?.IsConnected == true && IsStreaming
+            ? ComponentReadiness.Operational
+            : ComponentReadiness.Available;
+
+        ComponentReadiness microphoneBackchannel = _micUplinkService != null && IsStreaming
+            ? ComponentReadiness.Operational
+            : ComponentReadiness.Available;
+
+        DisplayTopology topology = _topologyWatcher?.CurrentTopology ?? DisplayManager.GetDisplayTopology();
+        var adapters = topology.Adapters.Count > 0 ? topology.Adapters : DisplayManager.GetPhysicalAdapters();
+
+        uint attachedDisplayCount = 0;
+        for (int i = 0; i < topology.Displays.Count; i++)
+        {
+            if (topology.Displays[i].IsAttachedToDesktop)
+            {
+                attachedDisplayCount++;
+            }
+        }
+
+        bool isHeadless = topology.IsHeadless || attachedDisplayCount == 0;
+
+        DisplayAdapterInfo? primaryGpu = null;
+        if (topology.PrimaryDisplay != null)
+        {
+            primaryGpu = HostCapabilityProbeEngine.FindAdapter(adapters, topology.PrimaryDisplay.AdapterIndex);
+        }
+        primaryGpu ??= HostCapabilityProbeEngine.FindPreferredAdapter(adapters);
+        string primaryGpuName = primaryGpu?.Description ?? string.Empty;
+
+        return new HostBackendReadiness(
+            VideoEncoder: videoEncoder,
+            DesktopCapture: desktopCapture,
+            AudioLoopback: audioLoopback,
+            VirtualAudioDriver: virtualAudioDriver,
+            MicrophoneBackchannel: microphoneBackchannel,
+            PrimaryGpuName: primaryGpuName,
+            AttachedDisplayCount: attachedDisplayCount,
+            IsHeadless: isHeadless
+        );
+    }
+
     public MoonshineHostStreamingSession(
         HostSessionConfig? config = null,
         IDesktopCapturePipeline? capturePipeline = null,

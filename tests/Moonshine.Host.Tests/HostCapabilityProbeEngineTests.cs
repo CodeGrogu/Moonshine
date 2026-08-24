@@ -3,6 +3,8 @@ using System.Net.NetworkInformation;
 using FluentAssertions;
 using Moonshine.Host.Capture;
 using Moonshine.Host.Control;
+using Moonshine.Host.Encoding;
+using Moonshine.Host.Session;
 using Moonshine.Protocol.Contracts;
 using Xunit;
 
@@ -76,7 +78,7 @@ public class HostCapabilityProbeEngineTests
     }
 
     [Fact]
-    public void ProbeBackendReadiness_WithAttachedDisplays_ReturnsOperationalCapture()
+    public void ProbeBackendReadiness_WithAttachedDisplays_ReturnsAvailableCapture()
     {
         var display = new DisplayOutputInfo(
             DisplayIndex: 0,
@@ -112,11 +114,62 @@ public class HostCapabilityProbeEngineTests
             topologyOverride: topology,
             adaptersOverride: new[] { adapter });
 
-        readiness.DesktopCapture.Should().Be(ComponentReadiness.Operational);
-        readiness.AudioLoopback.Should().Be(ComponentReadiness.Operational);
+        readiness.DesktopCapture.Should().Be(ComponentReadiness.Available);
+        readiness.AudioLoopback.Should().BeOneOf(ComponentReadiness.Available, ComponentReadiness.Unsupported);
         readiness.PrimaryGpuName.Should().Be("AMD Radeon RX 7900 XTX");
         readiness.AttachedDisplayCount.Should().Be(1);
         readiness.IsHeadless.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task HostStreamingSession_LiveBackendReadiness_ReportsOperationalWhenStreaming()
+    {
+        var capture = new HostStreamingSessionTests.TestDesktopCapturePipeline { IsAvailable = true };
+        var encoderPipeline = new HostStreamingSessionTests.TestVideoEncoderPipeline { IsActive = true };
+        using var encoder = new UnifiedHardwareEncoderEngine(encoderPipeline);
+
+        ushort basePort = (ushort)(60000 + Random.Shared.Next(0, 50) * 8);
+        var config = new HostSessionConfig
+        {
+            LocalVideoPort = basePort,
+            LocalAudioPort = (ushort)(basePort + 1),
+            LocalControlFeedbackPort = (ushort)(basePort + 2),
+            LocalMicPort = (ushort)(basePort + 3),
+            ClientVideoPort = (ushort)(basePort + 4),
+            ClientAudioPort = (ushort)(basePort + 5),
+            ClientControlFeedbackPort = (ushort)(basePort + 6),
+            EnableMicrophoneBackchannel = true
+        };
+
+        await using var session = new MoonshineHostStreamingSession(
+            config: config,
+            capturePipeline: capture,
+            encoderEngine: encoder);
+
+        // Before starting: live readiness must report Available or Unsupported, not Operational
+        HostBackendReadiness initialReadiness = session.GetLiveBackendReadiness();
+        initialReadiness.VideoEncoder.Should().Be(ComponentReadiness.Available);
+        initialReadiness.DesktopCapture.Should().Be(ComponentReadiness.Available);
+        initialReadiness.AudioLoopback.Should().Be(ComponentReadiness.Available);
+        initialReadiness.MicrophoneBackchannel.Should().Be(ComponentReadiness.Available);
+
+        await session.StartAsync();
+        session.IsStreaming.Should().BeTrue();
+
+        // While streaming: live readiness must report Operational across active pipelines
+        HostBackendReadiness liveReadiness = session.GetLiveBackendReadiness();
+        liveReadiness.VideoEncoder.Should().Be(ComponentReadiness.Operational);
+        liveReadiness.DesktopCapture.Should().Be(ComponentReadiness.Operational);
+        liveReadiness.AudioLoopback.Should().Be(ComponentReadiness.Operational);
+        liveReadiness.MicrophoneBackchannel.Should().Be(ComponentReadiness.Operational);
+
+        await session.StopAsync();
+        session.IsStreaming.Should().BeFalse();
+
+        // After stopping: live readiness transitions back from Operational
+        HostBackendReadiness stoppedReadiness = session.GetLiveBackendReadiness();
+        stoppedReadiness.DesktopCapture.Should().Be(ComponentReadiness.Available);
+        stoppedReadiness.AudioLoopback.Should().Be(ComponentReadiness.Available);
     }
 
     [Fact]

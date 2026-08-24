@@ -183,6 +183,24 @@ public static class HostCapabilityProbeEngine
     }
 
     /// <summary>
+    /// Checks whether any hardware video encoder (NVENC, AMF, QSV) is supported on the current host.
+    /// </summary>
+    public static bool IsAnyHardwareEncoderSupported()
+    {
+        bool nvencSupported = NvencHardwareEncoderPipeline.IsCodecSupported(VideoCodec.Av1) ||
+                              NvencHardwareEncoderPipeline.IsCodecSupported(VideoCodec.Hevc) ||
+                              NvencHardwareEncoderPipeline.IsCodecSupported(VideoCodec.H264);
+        bool amfSupported = AmfHardwareEncoderPipeline.IsCodecSupported(VideoCodec.Av1) ||
+                            AmfHardwareEncoderPipeline.IsCodecSupported(VideoCodec.Hevc) ||
+                            AmfHardwareEncoderPipeline.IsCodecSupported(VideoCodec.H264);
+        bool qsvSupported = QsvHardwareEncoderPipeline.IsCodecSupported(VideoCodec.Av1) ||
+                            QsvHardwareEncoderPipeline.IsCodecSupported(VideoCodec.Hevc) ||
+                            QsvHardwareEncoderPipeline.IsCodecSupported(VideoCodec.H264);
+
+        return nvencSupported || amfSupported || qsvSupported;
+    }
+
+    /// <summary>
     /// Probes comprehensive backend subsystem readiness states for diagnostic reporting.
     /// </summary>
     /// <param name="topologyOverride">Optional display topology override.</param>
@@ -197,19 +215,9 @@ public static class HostCapabilityProbeEngine
         DisplayTopology topology = topologyOverride ?? DisplayManager.GetDisplayTopology();
 
         // Video encoder readiness
-        bool nvencSupported = NvencHardwareEncoderPipeline.IsCodecSupported(VideoCodec.Av1) ||
-                              NvencHardwareEncoderPipeline.IsCodecSupported(VideoCodec.Hevc) ||
-                              NvencHardwareEncoderPipeline.IsCodecSupported(VideoCodec.H264);
-        bool amfSupported = AmfHardwareEncoderPipeline.IsCodecSupported(VideoCodec.Av1) ||
-                            AmfHardwareEncoderPipeline.IsCodecSupported(VideoCodec.Hevc) ||
-                            AmfHardwareEncoderPipeline.IsCodecSupported(VideoCodec.H264);
-        bool qsvSupported = QsvHardwareEncoderPipeline.IsCodecSupported(VideoCodec.Av1) ||
-                            QsvHardwareEncoderPipeline.IsCodecSupported(VideoCodec.Hevc) ||
-                            QsvHardwareEncoderPipeline.IsCodecSupported(VideoCodec.H264);
-
-        bool anyEncoderSupported = nvencSupported || amfSupported || qsvSupported;
+        bool anyEncoderSupported = IsAnyHardwareEncoderSupported();
         ComponentReadiness videoEncoder = anyEncoderSupported
-            ? ComponentReadiness.Operational
+            ? ComponentReadiness.Available
             : ComponentReadiness.Unsupported;
 
         // Desktop capture readiness
@@ -223,23 +231,13 @@ public static class HostCapabilityProbeEngine
         }
 
         bool isHeadless = topology.IsHeadless || attachedDisplayCount == 0;
-        ComponentReadiness desktopCapture;
-        if (!isHeadless && attachedDisplayCount > 0)
-        {
-            desktopCapture = ComponentReadiness.Operational;
-        }
-        else if (isHeadless && attachedDisplayCount == 0)
-        {
-            desktopCapture = ComponentReadiness.Unsupported;
-        }
-        else
-        {
-            desktopCapture = ComponentReadiness.Available;
-        }
+        ComponentReadiness desktopCapture = (!isHeadless && attachedDisplayCount > 0)
+            ? ComponentReadiness.Available
+            : ComponentReadiness.Unsupported;
 
         // Audio loopback readiness
         ComponentReadiness audioLoopback = HasActiveRenderEndpoint()
-            ? ComponentReadiness.Operational
+            ? ComponentReadiness.Available
             : ComponentReadiness.Unsupported;
 
         // Virtual audio driver readiness
@@ -254,15 +252,13 @@ public static class HostCapabilityProbeEngine
             audioDriverState = DriverInstallationState.Error;
         }
 
-        ComponentReadiness virtualAudio = audioDriverState switch
-        {
-            DriverInstallationState.EndpointsActive => ComponentReadiness.Operational,
-            DriverInstallationState.Installed => ComponentReadiness.Available,
-            DriverInstallationState.NotInstalled => ComponentReadiness.Unsupported,
-            _ => ComponentReadiness.Faulted
-        };
+        ComponentReadiness virtualAudio = (audioDriverState == DriverInstallationState.EndpointsActive)
+            ? ComponentReadiness.Available
+            : (audioDriverState == DriverInstallationState.Error ? ComponentReadiness.Faulted : ComponentReadiness.Unsupported);
 
-        ComponentReadiness micBackchannel = virtualAudio;
+        ComponentReadiness micBackchannel = (audioDriverState == DriverInstallationState.EndpointsActive)
+            ? ComponentReadiness.Available
+            : (audioDriverState == DriverInstallationState.Error ? ComponentReadiness.Faulted : ComponentReadiness.Unsupported);
 
         // Primary GPU identification
         DisplayAdapterInfo? primaryGpu = null;
@@ -285,8 +281,10 @@ public static class HostCapabilityProbeEngine
         );
     }
 
-    private static DisplayAdapterInfo? FindAdapter(IReadOnlyList<DisplayAdapterInfo> adapters, uint adapterIndex)
+    public static DisplayAdapterInfo? FindAdapter(IReadOnlyList<DisplayAdapterInfo> adapters, uint adapterIndex)
     {
+        ArgumentNullException.ThrowIfNull(adapters);
+
         for (int i = 0; i < adapters.Count; i++)
         {
             if (adapters[i].AdapterIndex == adapterIndex)
@@ -297,8 +295,10 @@ public static class HostCapabilityProbeEngine
         return null;
     }
 
-    private static DisplayAdapterInfo? FindPreferredAdapter(IReadOnlyList<DisplayAdapterInfo> adapters)
+    public static DisplayAdapterInfo? FindPreferredAdapter(IReadOnlyList<DisplayAdapterInfo> adapters)
     {
+        ArgumentNullException.ThrowIfNull(adapters);
+
         for (int i = 0; i < adapters.Count; i++)
         {
             if (adapters[i].IsHardware)

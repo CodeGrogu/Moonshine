@@ -22,7 +22,7 @@ namespace Moonshine.Host.Tests;
 
 public class HostStreamingSessionTests
 {
-    private sealed class TestDesktopCapturePipeline : IDesktopCapturePipeline
+    internal sealed class TestDesktopCapturePipeline : IDesktopCapturePipeline
     {
         public uint Width => 1920;
         public uint Height => 1080;
@@ -84,7 +84,7 @@ public class HostStreamingSessionTests
         }
     }
 
-    private sealed class TestVideoEncoderPipeline : IVideoEncoderPipeline
+    internal sealed class TestVideoEncoderPipeline : IVideoEncoderPipeline
     {
         public uint Width => 1920;
         public uint Height => 1080;

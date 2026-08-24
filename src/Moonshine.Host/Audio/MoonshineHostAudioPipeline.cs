@@ -93,6 +93,7 @@ public sealed class MoonshineHostAudioPipeline : IDisposable
     public uint Bitrate => _bitrate;
     public uint FrameDurationMs => _frameDurationMs;
     public bool IsRunning => Volatile.Read(ref _isRunning);
+    public bool IsStreaming => IsRunning;
     public VirtualAudioIpcBridgePipeline? IpcBridge => _ipcBridge;
 
     public HostAudioMetrics Metrics
