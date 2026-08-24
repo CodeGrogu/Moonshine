@@ -1,6 +1,6 @@
 # AMD AMF & Intel QuickSync Hardware Video Encoder Pipelines
 
-The **Moonshine Host AMF and QuickSync Video Encoding Pipelines** provide direct hardware-accelerated video encoding for AMD Radeon (VCN 1.0 to 5.0+) and Intel Arc / Iris Xe / Core Ultra (QuickSync / oneVPL) GPUs. They process Direct3D 11 texture surfaces directly with ultra-low-latency CBR tuning for H.264, HEVC Main10 (HDR10), and AV1 Profile 0. <!-- PROVENANCE: STANDARDS.md Rule 9 verified via test_amf_pipeline and test_amf_conformance -->
+The **Moonshine Host AMF and QuickSync Video Encoding Pipelines** provide direct hardware-accelerated video encoding for AMD Radeon (VCN 1.0 to 5.0+) and Intel Arc / Iris Xe / Core Ultra (QuickSync / oneVPL) GPUs. They process Direct3D 11 texture surfaces directly with ultra-low-latency CBR tuning for H.264, HEVC Main10 (HDR10), and AV1 Profile 0. <!-- PROVENANCE: STANDARDS.md Rule 9 verified via test_amf_pipeline, test_amf_conformance, test_qsv_pipeline, and test_qsv_conformance -->
 
 ---
 
@@ -51,7 +51,7 @@ The **Moonshine Host AMF and QuickSync Video Encoding Pipelines** provide direct
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│      Direct3D 11/12 Captured Desktop Texture / Frame       │
+│         Direct3D 11 Captured Desktop Texture / Frame       │
 │           (DXGI / WGC Desktop Duplication Surface)         │
 └─────────────────────────────┬──────────────────────────────┘
                               │
@@ -168,3 +168,18 @@ using var qsvPipeline = new QsvHardwareEncoderPipeline(
 
 qsvPipeline.ConfigureIntraRefresh(enable: true, cycleSize: 30, qpDelta: -2);
 ```
+
+---
+
+## 5. 9-Tier Matrix Conformance and Certification
+
+Both the AMD AMF and Intel QuickSync pipelines include complete 9-tier matrix conformance test suites (`test_amf_conformance.cpp` and `test_qsv_conformance.cpp`):
+1. **Defensive Error Handling**: Zero capacity buffers, null pointers, and double destruction protection.
+2. **Resolution Matrix**: 720p HD, 1080p FHD, 1440p QHD, and 4K UHD.
+3. **Codec Matrix**: H.264 / AVC, HEVC / H.265 Main10, and AV1 Profile 0.
+4. **Deep NALU Validation**: Start codes (3/4-byte), monotonic indexing, and microsecond timestamps across 10 sequential frames.
+5. **Direct3D 11 Video Decoder Hardware Loopback**: Complete encode-decode roundtrip validation.
+6. **Dynamic Keyframe & Bitrate Reconfiguration**: Mid-stream bitrate modifications and forced IDR injection.
+7. **Buffer Overrun Protection**: Canary byte validation (`0xAA`/`0xBB`) surrounding undersized buffers.
+8. **Rapid Start/Stop Cycles**: 10 consecutive create/encode/destroy cycles.
+9. **Multi-Instance Concurrency**: Dual simultaneous encoder sessions on shared Direct3D 11 devices.

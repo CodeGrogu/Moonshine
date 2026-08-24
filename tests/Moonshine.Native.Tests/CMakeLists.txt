@@ -80,8 +80,14 @@ add_test(NAME test_amf_conformance COMMAND test_amf_conformance)
 add_executable(test_qsv_pipeline 
     test_qsv_pipeline.cpp
 )
-target_link_libraries(test_qsv_pipeline PRIVATE Moonshine.Native)
+target_link_libraries(test_qsv_pipeline PRIVATE Moonshine.Native $<$<BOOL:${WIN32}>:d3d11 dxgi>)
 add_test(NAME test_qsv_pipeline COMMAND test_qsv_pipeline)
+
+add_executable(test_qsv_conformance 
+    test_qsv_conformance.cpp
+)
+target_link_libraries(test_qsv_conformance PRIVATE Moonshine.Native $<$<BOOL:${WIN32}>:d3d11 dxgi>)
+add_test(NAME test_qsv_conformance COMMAND test_qsv_conformance)
 
 add_executable(test_wasapi_capture 
     test_wasapi_capture.cpp

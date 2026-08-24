@@ -1,4 +1,7 @@
 #include "moonshine/encoder/qsv_video_encoder.hpp"
+#include "encoder/qsv/qsv_types.hpp"
+#include "encoder/qsv/qsv_api.hpp"
+#include "encoder/qsv/qsv_session.hpp"
 #include <cstring>
 #include <chrono>
 #include <iostream>
@@ -13,7 +16,14 @@ using Microsoft::WRL::ComPtr;
 
 namespace moonshine::encoder {
 
-QsvVideoEncoder::QsvVideoEncoder() = default;
+struct QsvVideoEncoder::Impl {
+    qsv::QsvApi api;
+    qsv::QsvSession session;
+};
+
+QsvVideoEncoder::QsvVideoEncoder()
+    : _impl(std::make_unique<Impl>()) {
+}
 
 QsvVideoEncoder::~QsvVideoEncoder() {
     cleanup();
@@ -22,12 +32,21 @@ QsvVideoEncoder::~QsvVideoEncoder() {
 bool QsvVideoEncoder::initialize(void* d3d_device, const EncoderConfig& config) {
     cleanup();
 
-#if defined(_WIN32)
-    if (!d3d_device) {
+    _state = QsvLifecycleState::Uninitialised;
+
+    if (!d3d_device || !_impl) {
         return false;
     }
 
+#if defined(_WIN32)
     auto* dev = static_cast<ID3D11Device*>(d3d_device);
+
+    HRESULT reason = dev->GetDeviceRemovedReason();
+    if (reason != S_OK) {
+        _state = QsvLifecycleState::Faulted;
+        return false;
+    }
+
     ComPtr<IDXGIDevice> dxgi_dev;
     if (FAILED(dev->QueryInterface(__uuidof(IDXGIDevice), &dxgi_dev))) {
         return false;
@@ -43,22 +62,36 @@ bool QsvVideoEncoder::initialize(void* d3d_device, const EncoderConfig& config) 
         return false;
     }
 
-    // Check for Intel oneVPL / Media SDK library
-    HMODULE hVpl = LoadLibraryW(L"vpl.dll");
-    if (!hVpl) {
-        hVpl = LoadLibraryW(L"mfx64.dll");
-    }
-    if (!hVpl) {
+    _state = QsvLifecycleState::DeviceAttached;
+
+    if (!_impl->api.load()) {
+        _state = QsvLifecycleState::Faulted;
         return false;
     }
 
-    FreeLibrary(hVpl);
+    if (!_impl->session.open(_impl->api, d3d_device)) {
+        _state = QsvLifecycleState::Faulted;
+        return false;
+    }
+
+    _state = QsvLifecycleState::SessionCreated;
+
+    _impl->session.set_target_usage(_usage, _low_power_vdenc);
+    _impl->session.set_intra_refresh(_intra_refresh_enabled, _intra_refresh_cycle_size, _intra_refresh_qp_delta);
+
+    if (!_impl->session.configure(config)) {
+        _state = QsvLifecycleState::Faulted;
+        return false;
+    }
+
+    _state = QsvLifecycleState::EncoderInitialised;
 
     _d3d_device = d3d_device;
     _config = config;
     _frame_counter = 0;
     _force_keyframe = true;
     _initialized = true;
+    _state = QsvLifecycleState::Ready;
     return true;
 #else
     (void)d3d_device;
@@ -75,31 +108,78 @@ bool QsvVideoEncoder::encode_frame(
     uint32_t max_buffer_size,
     uint32_t& out_written_size
 ) {
-    if (!_initialized || !d3d_texture || !out_bitstream || max_buffer_size == 0) {
-        out_written_size = 0;
+    out_written_size = 0;
+    std::memset(&out_desc, 0, sizeof(EncodedPacketDesc));
+
+    if (!_initialized || !_impl || !d3d_texture || !out_bitstream || max_buffer_size == 0) {
         return false;
     }
 
-    bool is_key = force_idr || _force_keyframe.exchange(false) || (_frame_counter == 0);
+#if defined(_WIN32)
+    if (_d3d_device) {
+        auto* dev = static_cast<ID3D11Device*>(_d3d_device);
+        if (dev->GetDeviceRemovedReason() != S_OK) {
+            _state = QsvLifecycleState::Faulted;
+            _initialized = false;
+            return false;
+        }
+    }
 
-    out_desc.frame_index = _frame_counter++;
+    _state = QsvLifecycleState::Encoding;
+
+    bool request_idr = force_idr || _force_keyframe.exchange(false) || (_frame_counter == 0);
+    uint64_t frame_id = _frame_counter++;
+
     auto now = std::chrono::high_resolution_clock::now().time_since_epoch();
-    out_desc.timestamp_qpc = std::chrono::duration_cast<std::chrono::microseconds>(now).count();
-    out_desc.is_keyframe = is_key ? 1 : 0;
-    out_desc.is_header_packet = is_key ? 1 : 0;
-    out_desc.temporal_id = 0;
-    out_desc.reserved = 0;
+    uint64_t timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(now).count();
 
-    out_written_size = 0;
-    out_desc.payload_size = 0;
+    bool ok = _impl->session.encode(
+        d3d_texture,
+        request_idr,
+        frame_id,
+        timestamp_us,
+        out_desc,
+        out_bitstream,
+        max_buffer_size,
+        out_written_size
+    );
+
+    if (!ok) {
+        _state = QsvLifecycleState::Faulted;
+        return false;
+    }
+
+    _state = QsvLifecycleState::Ready;
+    return true;
+#else
+    (void)d3d_texture; (void)force_idr; (void)out_desc; (void)out_bitstream; (void)max_buffer_size;
     return false;
+#endif
 }
 
 bool QsvVideoEncoder::reconfigure(const EncoderConfig& new_config) {
-    if (!_initialized) return false;
-    _config = new_config;
-    _force_keyframe = true;
-    return true;
+    if (!_initialized || !_impl) return false;
+
+#if defined(_WIN32)
+    if (_d3d_device) {
+        auto* dev = static_cast<ID3D11Device*>(_d3d_device);
+        if (dev->GetDeviceRemovedReason() != S_OK) {
+            _state = QsvLifecycleState::Faulted;
+            _initialized = false;
+            return false;
+        }
+    }
+
+    bool ok = _impl->session.reconfigure(new_config);
+    if (ok) {
+        _config = new_config;
+        _force_keyframe = true;
+    }
+    return ok;
+#else
+    (void)new_config;
+    return false;
+#endif
 }
 
 void QsvVideoEncoder::request_keyframe() {
@@ -107,15 +187,38 @@ void QsvVideoEncoder::request_keyframe() {
 }
 
 void QsvVideoEncoder::cleanup() {
+    if (_impl) {
+        _impl->session.close();
+        _impl->api.unload();
+    }
     _initialized = false;
     _d3d_device = nullptr;
     _frame_counter = 0;
     _force_keyframe = false;
+    _state = QsvLifecycleState::Disposed;
+}
+
+bool QsvVideoEncoder::is_healthy() const noexcept {
+    if (!_initialized || !_impl || _state == QsvLifecycleState::Faulted || _state == QsvLifecycleState::Disposed || _state == QsvLifecycleState::Uninitialised) {
+        return false;
+    }
+#if defined(_WIN32)
+    if (_d3d_device) {
+        auto* dev = static_cast<ID3D11Device*>(_d3d_device);
+        if (dev->GetDeviceRemovedReason() != S_OK) {
+            return false;
+        }
+    }
+#endif
+    return _impl->session.is_configured();
 }
 
 bool QsvVideoEncoder::set_target_usage(QsvTargetUsage usage, bool low_power_vdenc) {
     _usage = usage;
     _low_power_vdenc = low_power_vdenc;
+    if (_impl && _impl->session.is_open()) {
+        _impl->session.set_target_usage(usage, low_power_vdenc);
+    }
     return true;
 }
 
@@ -123,6 +226,9 @@ bool QsvVideoEncoder::set_intra_refresh(bool enabled, uint32_t cycle_size, int32
     _intra_refresh_enabled = enabled;
     _intra_refresh_cycle_size = cycle_size;
     _intra_refresh_qp_delta = qp_delta;
+    if (_impl && _impl->session.is_open()) {
+        _impl->session.set_intra_refresh(enabled, cycle_size, qp_delta);
+    }
     return true;
 }
 
@@ -145,11 +251,10 @@ bool QsvVideoEncoder::query_capabilities(void* d3d_device, EncoderCaps& out_caps
     DXGI_ADAPTER_DESC desc{};
     if (FAILED(adapter->GetDesc(&desc)) || desc.VendorId != 0x8086) return false;
 
-    HMODULE hVpl = LoadLibraryW(L"vpl.dll");
-    if (!hVpl) {
-        hVpl = LoadLibraryW(L"mfx64.dll");
+    qsv::QsvApi api;
+    if (!api.load()) {
+        return false;
     }
-    if (!hVpl) return false;
 
     out_caps.supported_codecs_mask = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3); // H264, HEVC, HEVC Main10, AV1
     out_caps.max_width = 7680;
@@ -161,7 +266,7 @@ bool QsvVideoEncoder::query_capabilities(void* d3d_device, EncoderCaps& out_caps
     out_caps.min_bitrate_kbps = 500;
     out_caps.max_bitrate_kbps = 150000;
 
-    FreeLibrary(hVpl);
+    api.unload();
     return true;
 #else
     (void)d3d_device;
@@ -171,22 +276,12 @@ bool QsvVideoEncoder::query_capabilities(void* d3d_device, EncoderCaps& out_caps
 
 bool QsvVideoEncoder::query_codec_support(VideoCodec codec) {
 #if defined(_WIN32)
-    static const bool s_supported = []() {
-        HMODULE hVpl = LoadLibraryExW(L"vpl.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
-        if (!hVpl) {
-            hVpl = LoadLibraryW(L"vpl.dll");
-        }
-        if (!hVpl) {
-            hVpl = LoadLibraryExW(L"mfx64.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
-        }
-        if (!hVpl) {
-            hVpl = LoadLibraryW(L"mfx64.dll");
-        }
-        if (!hVpl) return false;
-        FreeLibrary(hVpl);
-        return true;
-    }();
-    if (!s_supported) return false;
+    qsv::QsvApi api;
+    if (!api.load()) {
+        return false;
+    }
+    api.unload();
+
     return codec == VideoCodec::H264 || codec == VideoCodec::Hevc ||
            codec == VideoCodec::HevcMain10 || codec == VideoCodec::Av1;
 #else

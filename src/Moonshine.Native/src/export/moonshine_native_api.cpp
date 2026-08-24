@@ -2044,8 +2044,14 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_qsv_set_tuning(
     int low_power_vdenc
 ) {
     if (!handle) return 0;
-    (void)target_usage;
-    (void)low_power_vdenc;
+    auto* unified = static_cast<encoder::UnifiedVideoEncoder*>(handle);
+    auto* active = dynamic_cast<encoder::QsvVideoEncoder*>(unified->active_encoder());
+    if (active) {
+        return active->set_target_usage(
+            static_cast<encoder::QsvTargetUsage>(target_usage),
+            low_power_vdenc != 0
+        ) ? 1 : 0;
+    }
     return 1;
 }
 
@@ -2056,9 +2062,11 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_qsv_set_intra_refresh(
     int32_t qp_delta
 ) {
     if (!handle) return 0;
-    (void)enable;
-    (void)cycle_size;
-    (void)qp_delta;
+    auto* unified = static_cast<encoder::UnifiedVideoEncoder*>(handle);
+    auto* active = dynamic_cast<encoder::QsvVideoEncoder*>(unified->active_encoder());
+    if (active) {
+        return active->set_intra_refresh(enable != 0, cycle_size, qp_delta) ? 1 : 0;
+    }
     return 1;
 }
 
