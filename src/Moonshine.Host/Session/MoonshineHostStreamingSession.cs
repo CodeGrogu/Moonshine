@@ -135,30 +135,25 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
     /// Evaluates real-time live backend readiness across all host streaming subsystems.
     /// ComponentReadiness.Operational is reported only when the backend is active and performing live streaming.
     /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1031:DoNotCatchGeneralExceptionTypes", Justification = "Native virtual audio driver query may fail if PortCls or C-ABI runtime is not present.")]
     public HostBackendReadiness GetLiveBackendReadiness()
     {
         bool anyEncoderSupported = (_encoderEngine != null && _encoderEngine.IsActive) ||
                                   HostCapabilityProbeEngine.IsAnyHardwareEncoderSupported();
 
-        ComponentReadiness videoEncoder = _encoderEngine?.IsActive == true && IsStreaming
-            ? ComponentReadiness.Operational
-            : (anyEncoderSupported ? ComponentReadiness.Available : ComponentReadiness.Unsupported);
-
-        ComponentReadiness desktopCapture = _capturePipeline?.IsAvailable == true && IsStreaming
-            ? ComponentReadiness.Operational
-            : ComponentReadiness.Available;
-
-        ComponentReadiness audioLoopback = _audioPipeline?.IsStreaming == true && IsStreaming
-            ? ComponentReadiness.Operational
-            : ComponentReadiness.Available;
-
-        ComponentReadiness virtualAudioDriver = _audioPipeline?.IpcBridge?.IsConnected == true && IsStreaming
-            ? ComponentReadiness.Operational
-            : ComponentReadiness.Available;
-
-        ComponentReadiness microphoneBackchannel = _micUplinkService != null && IsStreaming
-            ? ComponentReadiness.Operational
-            : ComponentReadiness.Available;
+        ComponentReadiness videoEncoder;
+        if (State == HostSessionState.Faulted || (_encoderEngine?.IsActive == false && IsStreaming))
+        {
+            videoEncoder = ComponentReadiness.Faulted;
+        }
+        else if (_encoderEngine?.IsActive == true && IsStreaming)
+        {
+            videoEncoder = ComponentReadiness.Operational;
+        }
+        else
+        {
+            videoEncoder = anyEncoderSupported ? ComponentReadiness.Available : ComponentReadiness.Unsupported;
+        }
 
         DisplayTopology topology = _topologyWatcher?.CurrentTopology ?? DisplayManager.GetDisplayTopology();
         var adapters = topology.Adapters.Count > 0 ? topology.Adapters : DisplayManager.GetPhysicalAdapters();
@@ -173,6 +168,100 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
         }
 
         bool isHeadless = topology.IsHeadless || attachedDisplayCount == 0;
+
+        ComponentReadiness desktopCapture;
+        if (_capturePipeline?.IsAvailable == true && IsStreaming)
+        {
+            desktopCapture = ComponentReadiness.Operational;
+        }
+        else if (isHeadless && attachedDisplayCount == 0)
+        {
+            desktopCapture = ComponentReadiness.Unsupported;
+        }
+        else if (_capturePipeline == null && isHeadless)
+        {
+            desktopCapture = ComponentReadiness.Unsupported;
+        }
+        else if (!IsStreaming)
+        {
+            desktopCapture = (!isHeadless && attachedDisplayCount > 0)
+                ? ComponentReadiness.Available
+                : ComponentReadiness.Unsupported;
+        }
+        else
+        {
+            desktopCapture = ComponentReadiness.Faulted;
+        }
+
+        ComponentReadiness audioLoopback;
+        if (_config.AudioTopology == AudioChannelTopology.None)
+        {
+            audioLoopback = ComponentReadiness.Unsupported;
+        }
+        else if (_audioPipeline?.IsStreaming == true && IsStreaming)
+        {
+            audioLoopback = ComponentReadiness.Operational;
+        }
+        else if (!IsStreaming)
+        {
+            audioLoopback = HostCapabilityProbeEngine.HasActiveRenderEndpoint()
+                ? ComponentReadiness.Available
+                : ComponentReadiness.Unsupported;
+        }
+        else
+        {
+            audioLoopback = ComponentReadiness.Faulted;
+        }
+
+        DriverInstallationState audioDriverState;
+        try
+        {
+            using var driverService = new VirtualAudioDriverService();
+            audioDriverState = driverService.GetInstallationState();
+        }
+        // ALLOWED_EXCEPTION: Native virtual audio driver query may fail if PortCls or C-ABI runtime is not present.
+        catch (Exception)
+        {
+            audioDriverState = DriverInstallationState.Error;
+        }
+
+        ComponentReadiness virtualAudioDriver;
+        if (_audioPipeline?.IpcBridge?.IsConnected == true && IsStreaming)
+        {
+            virtualAudioDriver = ComponentReadiness.Operational;
+        }
+        else
+        {
+            virtualAudioDriver = audioDriverState switch
+            {
+                DriverInstallationState.EndpointsActive => ComponentReadiness.Available,
+                DriverInstallationState.Error => ComponentReadiness.Faulted,
+                _ => ComponentReadiness.Unsupported
+            };
+        }
+
+        ComponentReadiness microphoneBackchannel;
+        if (!_config.EnableMicrophoneBackchannel)
+        {
+            microphoneBackchannel = ComponentReadiness.Unsupported;
+        }
+        else if (_micUplinkService != null && _micUplinkService.IsRunning && _micUplinkService.IsInitialized && IsStreaming)
+        {
+            microphoneBackchannel = ComponentReadiness.Operational;
+        }
+        else if (!IsStreaming)
+        {
+            microphoneBackchannel = audioDriverState switch
+            {
+                DriverInstallationState.EndpointsActive => ComponentReadiness.Available,
+                DriverInstallationState.Error => ComponentReadiness.Faulted,
+                _ => ComponentReadiness.Unsupported
+            };
+        }
+        else
+        {
+            microphoneBackchannel = ComponentReadiness.Faulted;
+        }
 
         DisplayAdapterInfo? primaryGpu = null;
         if (topology.PrimaryDisplay != null)

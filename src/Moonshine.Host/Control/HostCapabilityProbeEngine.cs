@@ -309,8 +309,11 @@ public static class HostCapabilityProbeEngine
         return adapters.Count > 0 ? adapters[0] : null;
     }
 
+    /// <summary>
+    /// Checks whether an active Windows CoreAudio MMDevice render endpoint is present on the host system.
+    /// </summary>
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1031:DoNotCatchGeneralExceptionTypes", Justification = "CoreAudio COM activation may fail on headless environments or systems without audio devices.")]
-    private static bool HasActiveRenderEndpoint()
+    public static bool HasActiveRenderEndpoint()
     {
         if (!OperatingSystem.IsWindows())
         {

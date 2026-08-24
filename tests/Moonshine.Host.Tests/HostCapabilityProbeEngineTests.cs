@@ -149,9 +149,9 @@ public class HostCapabilityProbeEngineTests
         // Before starting: live readiness must report Available or Unsupported, not Operational
         HostBackendReadiness initialReadiness = session.GetLiveBackendReadiness();
         initialReadiness.VideoEncoder.Should().Be(ComponentReadiness.Available);
-        initialReadiness.DesktopCapture.Should().Be(ComponentReadiness.Available);
-        initialReadiness.AudioLoopback.Should().Be(ComponentReadiness.Available);
-        initialReadiness.MicrophoneBackchannel.Should().Be(ComponentReadiness.Available);
+        initialReadiness.DesktopCapture.Should().BeOneOf(ComponentReadiness.Available, ComponentReadiness.Unsupported);
+        initialReadiness.AudioLoopback.Should().BeOneOf(ComponentReadiness.Available, ComponentReadiness.Unsupported);
+        initialReadiness.MicrophoneBackchannel.Should().BeOneOf(ComponentReadiness.Available, ComponentReadiness.Unsupported);
 
         await session.StartAsync();
         session.IsStreaming.Should().BeTrue();
@@ -168,8 +168,8 @@ public class HostCapabilityProbeEngineTests
 
         // After stopping: live readiness transitions back from Operational
         HostBackendReadiness stoppedReadiness = session.GetLiveBackendReadiness();
-        stoppedReadiness.DesktopCapture.Should().Be(ComponentReadiness.Available);
-        stoppedReadiness.AudioLoopback.Should().Be(ComponentReadiness.Available);
+        stoppedReadiness.DesktopCapture.Should().BeOneOf(ComponentReadiness.Available, ComponentReadiness.Unsupported);
+        stoppedReadiness.AudioLoopback.Should().BeOneOf(ComponentReadiness.Available, ComponentReadiness.Unsupported);
     }
 
     [Fact]

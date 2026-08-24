@@ -7,6 +7,7 @@ using Moonshine.Core.Media;
 using Moonshine.Core.Network;
 using Moonshine.Host.Audio;
 using Moonshine.Host.Capture;
+using Moonshine.Host.Control;
 using Moonshine.Host.Encoding;
 using Moonshine.Host.Input;
 using Moonshine.Host.Session;
@@ -510,6 +511,349 @@ public class HostStreamingSessionTests
         session.Metrics.MicMetrics.Should().NotBeNull();
 
         await session.StopAsync();
+    }
+
+    internal sealed class TestDisplayTopologyWatcher : IDisplayTopologyWatcher
+    {
+        private DisplayTopology _currentTopology;
+
+#pragma warning disable CS0067
+        public event EventHandler<DisplayTopologyChangedEventArgs>? TopologyChanged;
+#pragma warning restore CS0067
+
+        public DisplayTopology CurrentTopology => Volatile.Read(ref _currentTopology);
+
+        public TestDisplayTopologyWatcher(DisplayTopology initialTopology)
+        {
+            _currentTopology = initialTopology;
+        }
+
+        public void SetTopology(DisplayTopology newTopology)
+        {
+            Volatile.Write(ref _currentTopology, newTopology);
+        }
+
+        public void Refresh()
+        {
+        }
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private static DisplayTopology CreateAttachedTopology()
+    {
+        var display = new DisplayOutputInfo(
+            DisplayIndex: 0,
+            AdapterIndex: 0,
+            Width: 1920,
+            Height: 1080,
+            RefreshRateNumerator: 60,
+            RefreshRateDenominator: 1,
+            Rotation: 0,
+            IsAttachedToDesktop: true,
+            IsHdr: false,
+            BitsPerColor: 8);
+
+        var adapter = new DisplayAdapterInfo(
+            AdapterIndex: 0,
+            AdapterLuid: 0x1000,
+            Description: "Test Video Adapter",
+            DedicatedVideoMemoryBytes: 8_000_000_000,
+            IsHardware: true);
+
+        return new DisplayTopology(
+            Adapters: new[] { adapter },
+            Displays: new[] { display },
+            PrimaryDisplay: display,
+            VirtualScreenBounds: new DesktopBounds(0, 0, 1920, 1080),
+            IsHeadless: false,
+            TimestampQpc: 0);
+    }
+
+    private static DisplayTopology CreateHeadlessTopology()
+    {
+        return new DisplayTopology(
+            Adapters: Array.Empty<DisplayAdapterInfo>(),
+            Displays: Array.Empty<DisplayOutputInfo>(),
+            PrimaryDisplay: null,
+            VirtualScreenBounds: DesktopBounds.Empty,
+            IsHeadless: true,
+            TimestampQpc: 0);
+    }
+
+    [Fact]
+    public async Task HostStreamingSession_GetLiveBackendReadiness_VideoEncoder_SemanticRules()
+    {
+        var capture = new TestDesktopCapturePipeline();
+        var encoderPipeline = new TestVideoEncoderPipeline { IsActive = true };
+        using var encoder = new UnifiedHardwareEncoderEngine(encoderPipeline);
+
+        ushort basePort = (ushort)(60200 + Random.Shared.Next(0, 50) * 8);
+        var config = new HostSessionConfig
+        {
+            LocalVideoPort = basePort,
+            LocalAudioPort = (ushort)(basePort + 1),
+            LocalControlFeedbackPort = (ushort)(basePort + 2),
+            ClientVideoPort = (ushort)(basePort + 3),
+            ClientAudioPort = (ushort)(basePort + 4),
+            ClientControlFeedbackPort = (ushort)(basePort + 5)
+        };
+
+        await using var session = new MoonshineHostStreamingSession(
+            config: config,
+            capturePipeline: capture,
+            encoderEngine: encoder);
+
+        // Not streaming: encoder is active, reports Available
+        session.GetLiveBackendReadiness().VideoEncoder.Should().Be(ComponentReadiness.Available);
+
+        await session.StartAsync();
+        session.IsStreaming.Should().BeTrue();
+
+        // Streaming: encoder active reports Operational
+        session.GetLiveBackendReadiness().VideoEncoder.Should().Be(ComponentReadiness.Operational);
+
+        // Encoder becomes inactive while streaming: reports Faulted
+        encoderPipeline.IsActive = false;
+        session.GetLiveBackendReadiness().VideoEncoder.Should().Be(ComponentReadiness.Faulted);
+
+        await session.StopAsync();
+    }
+
+    [Fact]
+    public async Task HostStreamingSession_GetLiveBackendReadiness_DesktopCapture_SemanticRules()
+    {
+        var capture = new TestDesktopCapturePipeline { IsAvailable = true };
+        var encoderPipeline = new TestVideoEncoderPipeline { IsActive = true };
+        using var encoder = new UnifiedHardwareEncoderEngine(encoderPipeline);
+
+        var headlessTopology = CreateHeadlessTopology();
+        var attachedTopology = CreateAttachedTopology();
+
+        using var headlessWatcher = new TestDisplayTopologyWatcher(headlessTopology);
+        using var attachedWatcher = new TestDisplayTopologyWatcher(attachedTopology);
+
+        ushort basePort = (ushort)(60600 + Random.Shared.Next(0, 50) * 8);
+        var config = new HostSessionConfig
+        {
+            LocalVideoPort = basePort,
+            LocalAudioPort = (ushort)(basePort + 1),
+            LocalControlFeedbackPort = (ushort)(basePort + 2),
+            ClientVideoPort = (ushort)(basePort + 3),
+            ClientAudioPort = (ushort)(basePort + 4),
+            ClientControlFeedbackPort = (ushort)(basePort + 5)
+        };
+
+        // 1. Headless before streaming reports Unsupported
+        await using (var headlessSession = new MoonshineHostStreamingSession(
+            config: config,
+            capturePipeline: capture,
+            encoderEngine: encoder,
+            topologyWatcher: headlessWatcher))
+        {
+            headlessSession.GetLiveBackendReadiness().DesktopCapture.Should().Be(ComponentReadiness.Unsupported);
+        }
+
+        // 2. Attached display before streaming reports Available
+        await using (var attachedSession = new MoonshineHostStreamingSession(
+            config: config,
+            capturePipeline: capture,
+            encoderEngine: encoder,
+            topologyWatcher: attachedWatcher))
+        {
+            attachedSession.GetLiveBackendReadiness().DesktopCapture.Should().Be(ComponentReadiness.Available);
+
+            await attachedSession.StartAsync();
+            attachedSession.IsStreaming.Should().BeTrue();
+
+            // 3. Streaming reports Operational
+            attachedSession.GetLiveBackendReadiness().DesktopCapture.Should().Be(ComponentReadiness.Operational);
+
+            await attachedSession.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task HostStreamingSession_GetLiveBackendReadiness_AudioLoopback_SemanticRules()
+    {
+        var capture = new TestDesktopCapturePipeline();
+        var encoderPipeline = new TestVideoEncoderPipeline();
+        using var encoder = new UnifiedHardwareEncoderEngine(encoderPipeline);
+
+        ushort basePort = (ushort)(61000 + Random.Shared.Next(0, 50) * 8);
+
+        // 1. AudioTopology.None always reports Unsupported
+        var disabledAudioConfig = new HostSessionConfig
+        {
+            AudioTopology = AudioChannelTopology.None,
+            LocalVideoPort = basePort,
+            LocalAudioPort = (ushort)(basePort + 1),
+            LocalControlFeedbackPort = (ushort)(basePort + 2),
+            ClientVideoPort = (ushort)(basePort + 3),
+            ClientAudioPort = (ushort)(basePort + 4),
+            ClientControlFeedbackPort = (ushort)(basePort + 5)
+        };
+
+        await using (var disabledSession = new MoonshineHostStreamingSession(
+            config: disabledAudioConfig,
+            capturePipeline: capture,
+            encoderEngine: encoder))
+        {
+            disabledSession.GetLiveBackendReadiness().AudioLoopback.Should().Be(ComponentReadiness.Unsupported);
+            await disabledSession.StartAsync();
+            disabledSession.GetLiveBackendReadiness().AudioLoopback.Should().Be(ComponentReadiness.Unsupported);
+            await disabledSession.StopAsync();
+        }
+
+        // 2. AudioTopology.Stereo reports Available/Unsupported when not streaming, Operational when streaming
+        ushort basePort2 = (ushort)(61400 + Random.Shared.Next(0, 50) * 8);
+        var enabledAudioConfig = new HostSessionConfig
+        {
+            AudioTopology = AudioChannelTopology.Stereo,
+            LocalVideoPort = basePort2,
+            LocalAudioPort = (ushort)(basePort2 + 1),
+            LocalControlFeedbackPort = (ushort)(basePort2 + 2),
+            ClientVideoPort = (ushort)(basePort2 + 3),
+            ClientAudioPort = (ushort)(basePort2 + 4),
+            ClientControlFeedbackPort = (ushort)(basePort2 + 5)
+        };
+
+        await using (var enabledSession = new MoonshineHostStreamingSession(
+            config: enabledAudioConfig,
+            capturePipeline: capture,
+            encoderEngine: encoder))
+        {
+            ComponentReadiness expectedNonStreaming = HostCapabilityProbeEngine.HasActiveRenderEndpoint()
+                ? ComponentReadiness.Available
+                : ComponentReadiness.Unsupported;
+            enabledSession.GetLiveBackendReadiness().AudioLoopback.Should().Be(expectedNonStreaming);
+
+            await enabledSession.StartAsync();
+            enabledSession.GetLiveBackendReadiness().AudioLoopback.Should().Be(ComponentReadiness.Operational);
+
+            await enabledSession.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task HostStreamingSession_GetLiveBackendReadiness_MicrophoneBackchannel_SemanticRules()
+    {
+        var capture = new TestDesktopCapturePipeline();
+        var encoderPipeline = new TestVideoEncoderPipeline();
+        using var encoder = new UnifiedHardwareEncoderEngine(encoderPipeline);
+
+        ushort basePort = (ushort)(61800 + Random.Shared.Next(0, 50) * 8);
+
+        // 1. EnableMicrophoneBackchannel = false reports Unsupported
+        var disabledMicConfig = new HostSessionConfig
+        {
+            EnableMicrophoneBackchannel = false,
+            LocalVideoPort = basePort,
+            LocalAudioPort = (ushort)(basePort + 1),
+            LocalControlFeedbackPort = (ushort)(basePort + 2),
+            ClientVideoPort = (ushort)(basePort + 3),
+            ClientAudioPort = (ushort)(basePort + 4),
+            ClientControlFeedbackPort = (ushort)(basePort + 5)
+        };
+
+        await using (var disabledSession = new MoonshineHostStreamingSession(
+            config: disabledMicConfig,
+            capturePipeline: capture,
+            encoderEngine: encoder))
+        {
+            disabledSession.GetLiveBackendReadiness().MicrophoneBackchannel.Should().Be(ComponentReadiness.Unsupported);
+            await disabledSession.StartAsync();
+            disabledSession.GetLiveBackendReadiness().MicrophoneBackchannel.Should().Be(ComponentReadiness.Unsupported);
+            await disabledSession.StopAsync();
+        }
+
+        // 2. EnableMicrophoneBackchannel = true reports Operational when streaming
+        ushort basePort2 = (ushort)(62200 + Random.Shared.Next(0, 50) * 8);
+        var enabledMicConfig = new HostSessionConfig
+        {
+            EnableMicrophoneBackchannel = true,
+            LocalVideoPort = basePort2,
+            LocalAudioPort = (ushort)(basePort2 + 1),
+            LocalControlFeedbackPort = (ushort)(basePort2 + 2),
+            LocalMicPort = (ushort)(basePort2 + 3),
+            ClientVideoPort = (ushort)(basePort2 + 4),
+            ClientAudioPort = (ushort)(basePort2 + 5),
+            ClientControlFeedbackPort = (ushort)(basePort2 + 6)
+        };
+
+        await using (var enabledSession = new MoonshineHostStreamingSession(
+            config: enabledMicConfig,
+            capturePipeline: capture,
+            encoderEngine: encoder))
+        {
+            await enabledSession.StartAsync();
+            enabledSession.GetLiveBackendReadiness().MicrophoneBackchannel.Should().Be(ComponentReadiness.Operational);
+            await enabledSession.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task HostStreamingSession_GetLiveBackendReadiness_VirtualAudioDriver_SemanticRules()
+    {
+        var capture = new TestDesktopCapturePipeline();
+        var encoderPipeline = new TestVideoEncoderPipeline();
+        using var encoder = new UnifiedHardwareEncoderEngine(encoderPipeline);
+
+        ushort basePort = (ushort)(62600 + Random.Shared.Next(0, 50) * 8);
+        var config = new HostSessionConfig
+        {
+            LocalVideoPort = basePort,
+            LocalAudioPort = (ushort)(basePort + 1),
+            LocalControlFeedbackPort = (ushort)(basePort + 2),
+            ClientVideoPort = (ushort)(basePort + 3),
+            ClientAudioPort = (ushort)(basePort + 4),
+            ClientControlFeedbackPort = (ushort)(basePort + 5)
+        };
+
+        await using var session = new MoonshineHostStreamingSession(
+            config: config,
+            capturePipeline: capture,
+            encoderEngine: encoder);
+
+        DriverInstallationState driverState;
+        try
+        {
+            using var driverService = new VirtualAudioDriverService();
+            driverState = driverService.GetInstallationState();
+        }
+        catch (Exception) // ALLOWED_EXCEPTION: Native virtual audio driver query may fail on test environments lacking PortCls driver runtime.
+        {
+            driverState = DriverInstallationState.Error;
+        }
+
+        ComponentReadiness expectedReadiness = driverState switch
+        {
+            DriverInstallationState.EndpointsActive => ComponentReadiness.Available,
+            DriverInstallationState.Error => ComponentReadiness.Faulted,
+            _ => ComponentReadiness.Unsupported
+        };
+
+        session.GetLiveBackendReadiness().VirtualAudioDriver.Should().Be(expectedReadiness);
+    }
+
+    [Fact]
+    public async Task HostStreamingSession_GetLiveBackendReadiness_FaultedState_ReportsFaultedVideoEncoder()
+    {
+        var capture = new TestDesktopCapturePipeline { IsAvailable = false };
+        var encoderPipeline = new TestVideoEncoderPipeline();
+        using var encoder = new UnifiedHardwareEncoderEngine(encoderPipeline);
+
+        await using var session = new MoonshineHostStreamingSession(
+            capturePipeline: capture,
+            encoderEngine: encoder);
+
+        Func<Task> act = async () => await session.StartAsync();
+        await act.Should().ThrowAsync<InvalidOperationException>();
+
+        session.State.Should().Be(HostSessionState.Faulted);
+        session.GetLiveBackendReadiness().VideoEncoder.Should().Be(ComponentReadiness.Faulted);
     }
 }
 
