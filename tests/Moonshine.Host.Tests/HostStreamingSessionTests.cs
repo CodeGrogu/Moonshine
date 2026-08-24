@@ -99,6 +99,18 @@ public class HostStreamingSessionTests
         public bool HasProducedValidOutput { get; set; } = true;
         public Type ImplementationType => GetType();
         public EncoderRuntimeState RuntimeState => IsActive ? EncoderRuntimeState.Ready : EncoderRuntimeState.Disposed;
+        public EncoderEvidence Evidence => new(
+            ApiAvailable: true,
+            HardwareSupported: IsHardwareAccelerated,
+            SessionInitialised: IsActive,
+            FrameSubmitted: true,
+            OutputReceived: HasProducedValidOutput,
+            BitstreamStructurallyValid: HasProducedValidOutput,
+            AccessUnitValid: HasProducedValidOutput,
+            DecoderAccepted: false,
+            FirstValidFrameId: 1,
+            LastValidFrameId: 1
+        );
         public double AverageEncodingLatencyMicroseconds => 250.0;
 
         public int ForceIdrCallCount { get; private set; }

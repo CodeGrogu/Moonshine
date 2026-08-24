@@ -31,6 +31,14 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
     private EncoderRuntimeState _runtimeState;
     private bool _hasProducedValidOutput;
 
+    private bool _frameSubmitted;
+    private bool _outputReceived;
+    private bool _bitstreamStructurallyValid;
+    private bool _accessUnitValid;
+    private ulong _firstValidFrameId;
+    private ulong _lastValidFrameId;
+    private bool _hasValidFrame;
+
     public uint Width => _width;
     public uint Height => _height;
     public uint Fps => Volatile.Read(ref _fps);
@@ -43,6 +51,19 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
     public bool HasProducedValidOutput => Volatile.Read(ref _hasProducedValidOutput);
     public Type ImplementationType => GetType();
     public EncoderRuntimeState RuntimeState => _disposed ? EncoderRuntimeState.Disposed : (_handle == IntPtr.Zero ? EncoderRuntimeState.Faulted : _runtimeState);
+
+    public EncoderEvidence Evidence => new(
+        ApiAvailable: _handle != IntPtr.Zero,
+        HardwareSupported: _isHardwareAccelerated,
+        SessionInitialised: !_disposed && _handle != IntPtr.Zero,
+        FrameSubmitted: Volatile.Read(ref _frameSubmitted),
+        OutputReceived: Volatile.Read(ref _outputReceived),
+        BitstreamStructurallyValid: Volatile.Read(ref _bitstreamStructurallyValid),
+        AccessUnitValid: Volatile.Read(ref _accessUnitValid),
+        DecoderAccepted: false,
+        FirstValidFrameId: Volatile.Read(ref _firstValidFrameId),
+        LastValidFrameId: Volatile.Read(ref _lastValidFrameId)
+    );
 
     public ulong FramesEncoded => Volatile.Read(ref _framesEncoded);
     public ulong EncodingErrorsCount => Volatile.Read(ref _encodingErrorsCount);
@@ -119,6 +140,7 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
 
         lock (_lock)
         {
+            Volatile.Write(ref _frameSubmitted, true);
             if (_disposed || _handle == IntPtr.Zero) return false;
 
             _runtimeState = EncoderRuntimeState.Encoding;
@@ -144,8 +166,14 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
 
                         if (bytesWritten > 0)
                         {
-                            bool valid = BitstreamValidator.ValidateBitstream(_codec, outBitstream[..bytesWritten], out bool isKeyframe);
-                            if (!valid)
+                            Volatile.Write(ref _outputReceived, true);
+                            var auResult = BitstreamValidator.ValidateAccessUnit(_codec, outBitstream[..bytesWritten]);
+                            if (auResult.HasStructurallyValidPayload)
+                            {
+                                Volatile.Write(ref _bitstreamStructurallyValid, true);
+                            }
+
+                            if (!auResult.IsValid || !auResult.ContainsFrameData)
                             {
                                 bytesWritten = 0;
                                 Interlocked.Increment(ref _encodingErrorsCount);
@@ -153,7 +181,21 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
                                 return false;
                             }
 
+                            Volatile.Write(ref _accessUnitValid, true);
                             Volatile.Write(ref _hasProducedValidOutput, true);
+
+                            ulong frameId = desc.FrameIndex;
+                            if (frameId != 0)
+                            {
+                                if (!_hasValidFrame)
+                                {
+                                    Volatile.Write(ref _firstValidFrameId, frameId);
+                                    _hasValidFrame = true;
+                                }
+                                Volatile.Write(ref _lastValidFrameId, frameId);
+                            }
+
+                            bool isKeyframe = auResult.HasCodecHeaders || auResult.HasRandomAccessMarker || auResult.HasParameterSets || auResult.HasIdr || auResult.HasRandomAccessPoint;
                             desc.IsKeyframe = (byte)(isKeyframe ? 1 : desc.IsKeyframe);
                             Interlocked.Increment(ref _framesEncoded);
                             _runtimeState = EncoderRuntimeState.Ready;
@@ -187,6 +229,7 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
         out int bytesWritten
     )
     {
+        Volatile.Write(ref _frameSubmitted, true);
         if (_disposed)
         {
             bytesWritten = 0;
@@ -232,6 +275,19 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
             desc.TimestampQpc = (long)timestampUs;
         }
 
+        if (bytesWritten > 0)
+        {
+            lock (_lock)
+            {
+                if (!_hasValidFrame)
+                {
+                    Volatile.Write(ref _firstValidFrameId, frameId);
+                    _hasValidFrame = true;
+                }
+                Volatile.Write(ref _lastValidFrameId, frameId);
+            }
+        }
+
         bool isKey = desc.IsKeyframe != 0;
         return new EncodeSubmissionResult(
             Submitted: true,
@@ -251,7 +307,8 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
     )
     {
         ulong frameId = Interlocked.Increment(ref _submittedFrameCounter);
-        ulong timestampUs = (ulong)(Stopwatch.GetTimestamp() * (1_000_000.0 / Stopwatch.Frequency));
+        long ticks = Stopwatch.GetTimestamp();
+        ulong timestampUs = (ulong)(ticks / Stopwatch.Frequency * 1_000_000L + (ticks % Stopwatch.Frequency) * 1_000_000L / Stopwatch.Frequency);
         return SubmitFrame(d3dTexture, frameId, timestampUs, forceIdr, outBitstream, out bytesWritten);
     }
 

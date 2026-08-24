@@ -63,6 +63,18 @@ public class HostClientStreamingIntegrationTests
         public bool HasProducedValidOutput { get; set; } = true;
         public Type ImplementationType => GetType();
         public EncoderRuntimeState RuntimeState => EncoderRuntimeState.Ready;
+        public EncoderEvidence Evidence => new(
+            ApiAvailable: true,
+            HardwareSupported: IsHardwareAccelerated,
+            SessionInitialised: IsActive,
+            FrameSubmitted: true,
+            OutputReceived: HasProducedValidOutput,
+            BitstreamStructurallyValid: HasProducedValidOutput,
+            AccessUnitValid: HasProducedValidOutput,
+            DecoderAccepted: false,
+            FirstValidFrameId: 1,
+            LastValidFrameId: Math.Max(1, _frameIndex)
+        );
         public double AverageEncodingLatencyMicroseconds => 200.0;
 
         private uint _frameIndex;

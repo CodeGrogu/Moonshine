@@ -102,4 +102,27 @@ public class AmfHardwareEncoderPipelineTests
         pipeline.TryEncodeFrame(IntPtr.Zero, false, out _, buffer, out _).Should().BeFalse();
         pipeline.IsActive.Should().BeFalse();
     }
+
+    [Fact]
+    public void AmfHardwareEncoderPipeline_Evidence_ExposesAuthoritativePipelineEvidence()
+    {
+        using var pipeline = new AmfHardwareEncoderPipeline(1920, 1080);
+        var evidence = pipeline.Evidence;
+        evidence.ApiAvailable.Should().BeTrue();
+        evidence.HardwareSupported.Should().BeTrue();
+        evidence.SessionInitialised.Should().BeTrue();
+        evidence.FrameSubmitted.Should().BeFalse();
+
+        Span<byte> buffer = stackalloc byte[1024 * 512];
+        bool ok = pipeline.TryEncodeFrame(IntPtr.Zero, true, out _, buffer, out int written);
+        ok.Should().BeTrue();
+        written.Should().BeGreaterThan(0);
+
+        var liveEvidence = pipeline.Evidence;
+        liveEvidence.FrameSubmitted.Should().BeTrue();
+        liveEvidence.OutputReceived.Should().BeTrue();
+        liveEvidence.BitstreamStructurallyValid.Should().BeTrue();
+        liveEvidence.AccessUnitValid.Should().BeTrue();
+    }
 }
+

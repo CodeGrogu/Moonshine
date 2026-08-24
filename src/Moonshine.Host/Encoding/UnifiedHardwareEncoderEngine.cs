@@ -30,6 +30,7 @@ public sealed class UnifiedHardwareEncoderEngine : IDisposable
     public bool HasProducedValidOutput => Volatile.Read(ref _hasProducedValidOutput) || _pipeline.HasProducedValidOutput;
     public Type ImplementationType => _pipeline.ImplementationType;
     public EncoderRuntimeState RuntimeState => _disposed ? EncoderRuntimeState.Disposed : _pipeline.RuntimeState;
+    public EncoderEvidence Evidence => _pipeline.Evidence;
 
     public long FramesEncoded => Interlocked.Read(ref _framesEncoded);
     public long KeyframesEmitted => Interlocked.Read(ref _keyframesEmitted);
@@ -92,9 +93,13 @@ public sealed class UnifiedHardwareEncoderEngine : IDisposable
                     Interlocked.Increment(ref _keyframesEmitted);
                 }
                 Interlocked.Add(ref _bytesEmitted, bytesWritten);
-                if (bytesWritten > 0 && BitstreamValidator.ValidateBitstream(Codec, outBitstream[..bytesWritten], out _))
+                if (bytesWritten > 0)
                 {
-                    Volatile.Write(ref _hasProducedValidOutput, true);
+                    var auResult = BitstreamValidator.ValidateAccessUnit(Codec, outBitstream[..bytesWritten]);
+                    if (auResult.IsValid && auResult.ContainsFrameData)
+                    {
+                        Volatile.Write(ref _hasProducedValidOutput, true);
+                    }
                 }
                 return true;
             }
@@ -137,9 +142,13 @@ public sealed class UnifiedHardwareEncoderEngine : IDisposable
                     Interlocked.Increment(ref _keyframesEmitted);
                 }
                 Interlocked.Add(ref _bytesEmitted, bytesWritten);
-                if (bytesWritten > 0 && BitstreamValidator.ValidateBitstream(Codec, outBitstream[..bytesWritten], out _))
+                if (bytesWritten > 0)
                 {
-                    Volatile.Write(ref _hasProducedValidOutput, true);
+                    var auResult = BitstreamValidator.ValidateAccessUnit(Codec, outBitstream[..bytesWritten]);
+                    if (auResult.IsValid && auResult.ContainsFrameData)
+                    {
+                        Volatile.Write(ref _hasProducedValidOutput, true);
+                    }
                 }
             }
             else if (!submission.Submitted || submission.Result != EncoderResult.Success)
@@ -182,9 +191,13 @@ public sealed class UnifiedHardwareEncoderEngine : IDisposable
                     Interlocked.Increment(ref _keyframesEmitted);
                 }
                 Interlocked.Add(ref _bytesEmitted, bytesWritten);
-                if (bytesWritten > 0 && BitstreamValidator.ValidateBitstream(Codec, outBitstream[..bytesWritten], out _))
+                if (bytesWritten > 0)
                 {
-                    Volatile.Write(ref _hasProducedValidOutput, true);
+                    var auResult = BitstreamValidator.ValidateAccessUnit(Codec, outBitstream[..bytesWritten]);
+                    if (auResult.IsValid && auResult.ContainsFrameData)
+                    {
+                        Volatile.Write(ref _hasProducedValidOutput, true);
+                    }
                 }
             }
             else if (!submission.Submitted || submission.Result != EncoderResult.Success)
@@ -220,7 +233,8 @@ public sealed class UnifiedHardwareEncoderEngine : IDisposable
                     Interlocked.Increment(ref _keyframesEmitted);
                 }
                 Interlocked.Add(ref _bytesEmitted, bytesWritten);
-                if (BitstreamValidator.ValidateBitstream(Codec, outBitstream[..bytesWritten], out _))
+                var auResult = BitstreamValidator.ValidateAccessUnit(Codec, outBitstream[..bytesWritten]);
+                if (auResult.IsValid && auResult.ContainsFrameData)
                 {
                     Volatile.Write(ref _hasProducedValidOutput, true);
                 }

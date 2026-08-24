@@ -8,11 +8,15 @@ namespace Moonshine.Host.Encoding;
 /// </summary>
 public readonly record struct AccessUnitValidationResult(
     bool IsValid,
-    bool HasParameterSets,
-    bool HasIdr,
-    bool HasRandomAccessPoint,
+    bool HasStructurallyValidPayload,
+    bool HasCodecHeaders,
+    bool HasRandomAccessMarker,
+    bool ContainsFrameData,
     bool IsCompleteAccessUnit,
-    int NaluCount
+    int NaluCount,
+    bool HasParameterSets = false,
+    bool HasIdr = false,
+    bool HasRandomAccessPoint = false
 );
 
 /// <summary>
@@ -29,7 +33,7 @@ public static class BitstreamValidator
         if (bitstream.Length < 4) return false;
 
         var result = ValidateAccessUnit(codec, bitstream);
-        isKeyframe = result.HasParameterSets || result.HasIdr || result.HasRandomAccessPoint;
+        isKeyframe = result.HasCodecHeaders || result.HasRandomAccessMarker || result.HasParameterSets || result.HasIdr || result.HasRandomAccessPoint;
         return result.IsValid;
     }
 
@@ -42,11 +46,15 @@ public static class BitstreamValidator
         {
             return new AccessUnitValidationResult(
                 IsValid: false,
+                HasStructurallyValidPayload: false,
+                HasCodecHeaders: false,
+                HasRandomAccessMarker: false,
+                ContainsFrameData: false,
+                IsCompleteAccessUnit: false,
+                NaluCount: 0,
                 HasParameterSets: false,
                 HasIdr: false,
-                HasRandomAccessPoint: false,
-                IsCompleteAccessUnit: false,
-                NaluCount: 0
+                HasRandomAccessPoint: false
             );
         }
 
@@ -57,11 +65,15 @@ public static class BitstreamValidator
             VideoCodec.Av1 => ValidateAv1AccessUnit(bitstream),
             _ => new AccessUnitValidationResult(
                 IsValid: bitstream.Length > 0,
+                HasStructurallyValidPayload: bitstream.Length > 0,
+                HasCodecHeaders: false,
+                HasRandomAccessMarker: false,
+                ContainsFrameData: bitstream.Length > 0,
+                IsCompleteAccessUnit: bitstream.Length > 0,
+                NaluCount: bitstream.Length > 0 ? 1 : 0,
                 HasParameterSets: false,
                 HasIdr: false,
-                HasRandomAccessPoint: false,
-                IsCompleteAccessUnit: bitstream.Length > 0,
-                NaluCount: bitstream.Length > 0 ? 1 : 0
+                HasRandomAccessPoint: false
             )
         };
     }
@@ -101,7 +113,7 @@ public static class BitstreamValidator
                     foundValidNalu = true;
                     naluCount++;
 
-                    // H.264 NAL Unit Types: 1 = Non-IDR Slice, 5 = IDR Slice, 7 = SPS, 8 = PPS
+                    // H.264 NAL Unit Types: 1 = Non-IDR Slice, 2..4 = Slice Partitions, 5 = IDR Slice, 7 = SPS, 8 = PPS
                     if (nalUnitType == 7) hasSps = true;
                     else if (nalUnitType == 8) hasPps = true;
                     else if (nalUnitType == 5) hasIdr = true;
@@ -115,17 +127,22 @@ public static class BitstreamValidator
             }
         }
 
-        bool hasParameterSets = hasSps || hasPps;
-        bool hasRandomAccessPoint = hasSps || hasIdr;
-        bool isCompleteAccessUnit = hasIdr || hasNonIdr;
+        bool hasCodecHeaders = hasSps || hasPps;
+        bool hasRandomAccessMarker = hasIdr || hasSps;
+        bool containsFrameData = hasIdr || hasNonIdr;
+        bool isCompleteAccessUnit = containsFrameData;
 
         return new AccessUnitValidationResult(
             IsValid: foundValidNalu,
-            HasParameterSets: hasParameterSets,
-            HasIdr: hasIdr,
-            HasRandomAccessPoint: hasRandomAccessPoint,
+            HasStructurallyValidPayload: foundValidNalu,
+            HasCodecHeaders: hasCodecHeaders,
+            HasRandomAccessMarker: hasRandomAccessMarker,
+            ContainsFrameData: containsFrameData,
             IsCompleteAccessUnit: isCompleteAccessUnit,
-            NaluCount: naluCount
+            NaluCount: naluCount,
+            HasParameterSets: hasCodecHeaders,
+            HasIdr: hasIdr,
+            HasRandomAccessPoint: hasRandomAccessMarker
         );
     }
 
@@ -166,7 +183,7 @@ public static class BitstreamValidator
                     foundValidNalu = true;
                     naluCount++;
 
-                    // HEVC NAL Unit Types: 0..3 = TRAIL, 19 = IDR_W_RADL, 20 = IDR_N_LP, 21 = CRA, 32 = VPS, 33 = SPS, 34 = PPS
+                    // HEVC NAL Unit Types: 0..3 = TRAIL, 4..9 = TSA/STSA/RADL/RASL, 19 = IDR_W_RADL, 20 = IDR_N_LP, 21 = CRA, 32 = VPS, 33 = SPS, 34 = PPS
                     if (nalUnitType == 32) hasVps = true;
                     else if (nalUnitType == 33) hasSps = true;
                     else if (nalUnitType == 34) hasPps = true;
@@ -182,17 +199,22 @@ public static class BitstreamValidator
             }
         }
 
-        bool hasParameterSets = hasVps || hasSps || hasPps;
-        bool hasRandomAccessPoint = hasIdr || hasCra;
-        bool isCompleteAccessUnit = hasIdr || hasCra || hasTrail;
+        bool hasCodecHeaders = hasVps || hasSps || hasPps;
+        bool hasRandomAccessMarker = hasIdr || hasCra;
+        bool containsFrameData = hasIdr || hasCra || hasTrail;
+        bool isCompleteAccessUnit = containsFrameData;
 
         return new AccessUnitValidationResult(
             IsValid: foundValidNalu,
-            HasParameterSets: hasParameterSets,
-            HasIdr: hasIdr,
-            HasRandomAccessPoint: hasRandomAccessPoint,
+            HasStructurallyValidPayload: foundValidNalu,
+            HasCodecHeaders: hasCodecHeaders,
+            HasRandomAccessMarker: hasRandomAccessMarker,
+            ContainsFrameData: containsFrameData,
             IsCompleteAccessUnit: isCompleteAccessUnit,
-            NaluCount: naluCount
+            NaluCount: naluCount,
+            HasParameterSets: hasCodecHeaders,
+            HasIdr: hasIdr,
+            HasRandomAccessPoint: hasRandomAccessMarker
         );
     }
 
@@ -202,11 +224,15 @@ public static class BitstreamValidator
         {
             return new AccessUnitValidationResult(
                 IsValid: false,
+                HasStructurallyValidPayload: false,
+                HasCodecHeaders: false,
+                HasRandomAccessMarker: false,
+                ContainsFrameData: false,
+                IsCompleteAccessUnit: false,
+                NaluCount: 0,
                 HasParameterSets: false,
                 HasIdr: false,
-                HasRandomAccessPoint: false,
-                IsCompleteAccessUnit: false,
-                NaluCount: 0
+                HasRandomAccessPoint: false
             );
         }
 
@@ -214,6 +240,7 @@ public static class BitstreamValidator
         bool foundValidObu = false;
         bool hasSeqHeader = false;
         bool hasFrameHeader = false;
+        bool hasTileGroup = false;
         bool hasFrame = false;
         int obuCount = 0;
 
@@ -225,11 +252,15 @@ public static class BitstreamValidator
             {
                 return new AccessUnitValidationResult(
                     IsValid: false,
+                    HasStructurallyValidPayload: false,
+                    HasCodecHeaders: false,
+                    HasRandomAccessMarker: false,
+                    ContainsFrameData: false,
+                    IsCompleteAccessUnit: false,
+                    NaluCount: obuCount,
                     HasParameterSets: false,
                     HasIdr: false,
-                    HasRandomAccessPoint: false,
-                    IsCompleteAccessUnit: false,
-                    NaluCount: obuCount
+                    HasRandomAccessPoint: false
                 );
             }
 
@@ -241,11 +272,15 @@ public static class BitstreamValidator
             {
                 return new AccessUnitValidationResult(
                     IsValid: false,
+                    HasStructurallyValidPayload: false,
+                    HasCodecHeaders: false,
+                    HasRandomAccessMarker: false,
+                    ContainsFrameData: false,
+                    IsCompleteAccessUnit: false,
+                    NaluCount: obuCount,
                     HasParameterSets: false,
                     HasIdr: false,
-                    HasRandomAccessPoint: false,
-                    IsCompleteAccessUnit: false,
-                    NaluCount: obuCount
+                    HasRandomAccessPoint: false
                 );
             }
 
@@ -259,6 +294,10 @@ public static class BitstreamValidator
             else if (obuType == 3) // Frame Header
             {
                 hasFrameHeader = true;
+            }
+            else if (obuType == 4) // Tile Group
+            {
+                hasTileGroup = true;
             }
             else if (obuType == 6) // Frame (Header + Tile Group)
             {
@@ -308,18 +347,22 @@ public static class BitstreamValidator
             }
         }
 
-        bool hasParameterSets = hasSeqHeader;
-        bool hasIdr = hasSeqHeader;
-        bool hasRandomAccessPoint = hasSeqHeader;
-        bool isCompleteAccessUnit = hasFrameHeader || hasFrame;
+        bool hasCodecHeaders = hasSeqHeader;
+        bool hasRandomAccessMarker = hasSeqHeader;
+        bool containsFrameData = hasFrame || hasFrameHeader || hasTileGroup;
+        bool isCompleteAccessUnit = containsFrameData;
 
         return new AccessUnitValidationResult(
             IsValid: foundValidObu,
-            HasParameterSets: hasParameterSets,
-            HasIdr: hasIdr,
-            HasRandomAccessPoint: hasRandomAccessPoint,
+            HasStructurallyValidPayload: foundValidObu,
+            HasCodecHeaders: hasCodecHeaders,
+            HasRandomAccessMarker: hasRandomAccessMarker,
+            ContainsFrameData: containsFrameData,
             IsCompleteAccessUnit: isCompleteAccessUnit,
-            NaluCount: obuCount
+            NaluCount: obuCount,
+            HasParameterSets: hasCodecHeaders,
+            HasIdr: hasSeqHeader,
+            HasRandomAccessPoint: hasRandomAccessMarker
         );
     }
 }

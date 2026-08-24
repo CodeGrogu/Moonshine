@@ -19,6 +19,7 @@ public interface IVideoEncoderPipeline : IDisposable
     bool HasProducedValidOutput { get; }
     Type ImplementationType { get; }
     EncoderRuntimeState RuntimeState { get; }
+    EncoderEvidence Evidence { get; }
 
     /// <summary>
     /// Gets the average synchronous execution time in microseconds spent inside the native encoder call.
