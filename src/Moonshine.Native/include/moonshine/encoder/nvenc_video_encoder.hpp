@@ -4,8 +4,12 @@
 #include <atomic>
 #include <vector>
 #include <cstdint>
+#include <memory>
 
 #if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -113,15 +117,11 @@ public:
     static bool query_codec_support(VideoCodec codec);
 
 private:
+    struct Impl;
+    std::unique_ptr<Impl> _impl;
     bool _initialized{false};
     EncoderConfig _config{};
     void* _d3d_device{nullptr};
-    void* _encoder_session{nullptr};
-    void* _bitstream_buffer{nullptr};
-    HMODULE _nvenc_module{nullptr};
-    NVENC_FN_LIST _nvenc_funcs{};
-    void* _registered_texture{nullptr};
-    void* _registered_resource{nullptr};
     NvencPreset _preset{NvencPreset::P1_UltraFast};
     NvencTuning _tuning{NvencTuning::UltraLowLatency};
     bool _intra_refresh_enabled{false};
@@ -129,7 +129,6 @@ private:
     uint32_t _intra_refresh_count{0};
     std::atomic<bool> _force_keyframe{true};
     uint64_t _frame_counter{0};
-    std::vector<uint8_t> _header_cache;
 };
 
 } // namespace moonshine::encoder

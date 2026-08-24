@@ -18,6 +18,7 @@ public interface IVideoEncoderPipeline : IDisposable
     bool IsHardwareAccelerated { get; }
     bool HasProducedValidOutput { get; }
     Type ImplementationType { get; }
+    EncoderRuntimeState RuntimeState { get; }
 
     /// <summary>
     /// Gets the average synchronous execution time in microseconds spent inside the native encoder call.
@@ -30,6 +31,19 @@ public interface IVideoEncoderPipeline : IDisposable
         bool forceIdr,
         out MoonshineEncodedPacketDesc desc,
         Span<byte> outBitstream,
+        out int bytesWritten
+    );
+
+    EncodeSubmissionResult SubmitFrame(
+        IntPtr d3dTexture,
+        bool forceIdr,
+        Span<byte> outBitstream,
+        out int bytesWritten
+    );
+
+    bool TryPollPacket(
+        Span<byte> outBitstream,
+        out MoonshineEncodedPacketDesc desc,
         out int bytesWritten
     );
 

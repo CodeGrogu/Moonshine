@@ -64,6 +64,7 @@ public class HostConfigurationSecurityAndStressTests
         public bool IsHardwareAccelerated { get; set; }
         public bool HasProducedValidOutput { get; set; } = true;
         public Type ImplementationType => GetType();
+        public EncoderRuntimeState RuntimeState => EncoderRuntimeState.Ready;
         public double AverageEncodingLatencyMicroseconds => 150.0;
 
         private uint _frameIndex;
@@ -77,7 +78,11 @@ public class HostConfigurationSecurityAndStressTests
         {
             uint idx = Interlocked.Increment(ref _frameIndex);
             int size = 1200;
-            outBitstream[..size].Fill(0xAA);
+            ReadOnlySpan<byte> naluHeader = forceIdr
+                ? stackalloc byte[] { 0x00, 0x00, 0x00, 0x01, 0x26, 0x01, 0xAF, 0xFE }
+                : stackalloc byte[] { 0x00, 0x00, 0x00, 0x01, 0x02, 0x01, 0xAF, 0xFE };
+            naluHeader.CopyTo(outBitstream);
+            outBitstream[naluHeader.Length..size].Fill(0xAA);
             bytesWritten = size;
 
             desc = new MoonshineEncodedPacketDesc
@@ -91,6 +96,33 @@ public class HostConfigurationSecurityAndStressTests
                 TimestampQpc = Stopwatch.GetTimestamp()
             };
             return true;
+        }
+
+        public EncodeSubmissionResult SubmitFrame(
+            IntPtr d3dTexture,
+            bool forceIdr,
+            Span<byte> outBitstream,
+            out int bytesWritten)
+        {
+            TryEncodeFrame(d3dTexture, forceIdr, out var desc, outBitstream, out bytesWritten);
+            return new EncodeSubmissionResult(
+                Submitted: true,
+                OutputAvailable: true,
+                KeyFrame: desc.IsKeyframe != 0,
+                BytesWritten: bytesWritten,
+                PacketDesc: desc,
+                Result: EncoderResult.Success
+            );
+        }
+
+        public bool TryPollPacket(
+            Span<byte> outBitstream,
+            out MoonshineEncodedPacketDesc desc,
+            out int bytesWritten)
+        {
+            desc = default;
+            bytesWritten = 0;
+            return false;
         }
 
         public bool Reconfigure(uint bitrateKbps, uint fps, uint peakBitrateKbps = 0)

@@ -16,6 +16,9 @@ add_library(Moonshine.Native SHARED
     src/capture/wgc_desktop_capture.cpp
     src/color/hdr_metadata_extractor.cpp
     src/color/d3d_color_converter.cpp
+    src/encoder/nvenc/nvenc_api.cpp
+    src/encoder/nvenc/nvenc_session.cpp
+    src/encoder/nvenc/nvenc_surface_pool.cpp
     src/encoder/nvenc_video_encoder.cpp
     src/encoder/amf_video_encoder.cpp
     src/encoder/qsv_video_encoder.cpp

@@ -18,7 +18,6 @@
   <ItemGroup>
     <!-- STUB: These tests asserted fabricated vendor encoder output; the retained unified-engine test verifies explicit unsupported behaviour. -->
     <Compile Remove="AmfHardwareEncoderPipelineTests.cs" />
-    <Compile Remove="HardwareVideoEncoderPipelineTests.cs" />
     <Compile Remove="NvencHardwareEncoderPipelineTests.cs" />
     <Compile Remove="QsvHardwareEncoderPipelineTests.cs" />
   </ItemGroup>

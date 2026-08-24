@@ -45,6 +45,21 @@ public class UnifiedHardwareEncoderEngineTests
         engine.Dispose();
         engine.Dispose();
         engine.IsActive.Should().BeFalse();
+        engine.RuntimeState.Should().Be(EncoderRuntimeState.Disposed);
+    }
+
+    [Fact]
+    public void UnifiedHardwareEncoderEngine_SubmitFrameAndPoll_WhenInactive_ReturnsExpected()
+    {
+        using var engine = new UnifiedHardwareEncoderEngine(1920, 1080);
+        Span<byte> buffer = stackalloc byte[256];
+        var result = engine.SubmitFrame(IntPtr.Zero, false, buffer, out int written);
+        result.Submitted.Should().BeFalse();
+        written.Should().Be(0);
+        result.Result.Should().Be(EncoderResult.NotAvailable);
+
+        bool polled = engine.TryPollPacket(buffer, out _, out _);
+        polled.Should().BeFalse();
     }
 
     [Fact]

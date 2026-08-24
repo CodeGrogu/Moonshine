@@ -14,6 +14,7 @@ public sealed class UnifiedHardwareEncoderEngine : IDisposable
     private long _keyframesEmitted;
     private long _bytesEmitted;
     private long _encodingErrors;
+    private bool _hasProducedValidOutput;
     private bool _disposed;
     private readonly Lock _lock = new();
 
@@ -26,8 +27,9 @@ public sealed class UnifiedHardwareEncoderEngine : IDisposable
     public bool IsActive => _pipeline.IsActive && !_disposed;
     public EncoderImplementationKind ImplementationKind => _pipeline.ImplementationKind;
     public bool IsHardwareAccelerated => _pipeline.IsHardwareAccelerated;
-    public bool HasProducedValidOutput => Interlocked.Read(ref _bytesEmitted) > 0 || _pipeline.HasProducedValidOutput;
+    public bool HasProducedValidOutput => Volatile.Read(ref _hasProducedValidOutput) || _pipeline.HasProducedValidOutput;
     public Type ImplementationType => _pipeline.ImplementationType;
+    public EncoderRuntimeState RuntimeState => _disposed ? EncoderRuntimeState.Disposed : _pipeline.RuntimeState;
 
     public long FramesEncoded => Interlocked.Read(ref _framesEncoded);
     public long KeyframesEmitted => Interlocked.Read(ref _keyframesEmitted);
@@ -90,11 +92,93 @@ public sealed class UnifiedHardwareEncoderEngine : IDisposable
                     Interlocked.Increment(ref _keyframesEmitted);
                 }
                 Interlocked.Add(ref _bytesEmitted, bytesWritten);
+                if (bytesWritten > 0 && BitstreamValidator.ValidateBitstream(Codec, outBitstream[..bytesWritten], out _))
+                {
+                    Volatile.Write(ref _hasProducedValidOutput, true);
+                }
                 return true;
             }
 
             Interlocked.Increment(ref _encodingErrors);
             return false;
+        }
+    }
+
+    public EncodeSubmissionResult SubmitFrame(
+        IntPtr d3dTexture,
+        bool forceIdr,
+        Span<byte> outBitstream,
+        out int bytesWritten
+    )
+    {
+        lock (_lock)
+        {
+            if (_disposed || !_pipeline.IsActive)
+            {
+                bytesWritten = 0;
+                return new EncodeSubmissionResult(
+                    Submitted: false,
+                    OutputAvailable: false,
+                    KeyFrame: false,
+                    BytesWritten: 0,
+                    PacketDesc: default,
+                    Result: _disposed ? EncoderResult.DeviceLost : EncoderResult.NotAvailable
+                );
+            }
+
+            var submission = _pipeline.SubmitFrame(d3dTexture, forceIdr, outBitstream, out bytesWritten);
+            if (submission.Submitted && submission.OutputAvailable)
+            {
+                Interlocked.Increment(ref _framesEncoded);
+                if (submission.KeyFrame)
+                {
+                    Interlocked.Increment(ref _keyframesEmitted);
+                }
+                Interlocked.Add(ref _bytesEmitted, bytesWritten);
+                if (bytesWritten > 0 && BitstreamValidator.ValidateBitstream(Codec, outBitstream[..bytesWritten], out _))
+                {
+                    Volatile.Write(ref _hasProducedValidOutput, true);
+                }
+            }
+            else if (!submission.Submitted || submission.Result != EncoderResult.Success)
+            {
+                Interlocked.Increment(ref _encodingErrors);
+            }
+
+            return submission;
+        }
+    }
+
+    public bool TryPollPacket(
+        Span<byte> outBitstream,
+        out MoonshineEncodedPacketDesc desc,
+        out int bytesWritten
+    )
+    {
+        lock (_lock)
+        {
+            if (_disposed || !_pipeline.IsActive)
+            {
+                desc = default;
+                bytesWritten = 0;
+                return false;
+            }
+
+            bool polled = _pipeline.TryPollPacket(outBitstream, out desc, out bytesWritten);
+            if (polled && bytesWritten > 0)
+            {
+                Interlocked.Increment(ref _framesEncoded);
+                if (desc.IsKeyframe != 0)
+                {
+                    Interlocked.Increment(ref _keyframesEmitted);
+                }
+                Interlocked.Add(ref _bytesEmitted, bytesWritten);
+                if (BitstreamValidator.ValidateBitstream(Codec, outBitstream[..bytesWritten], out _))
+                {
+                    Volatile.Write(ref _hasProducedValidOutput, true);
+                }
+            }
+            return polled;
         }
     }
 

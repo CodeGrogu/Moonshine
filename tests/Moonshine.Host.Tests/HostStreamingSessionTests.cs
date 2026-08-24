@@ -98,6 +98,7 @@ public class HostStreamingSessionTests
         public bool IsHardwareAccelerated { get; set; }
         public bool HasProducedValidOutput { get; set; } = true;
         public Type ImplementationType => GetType();
+        public EncoderRuntimeState RuntimeState => IsActive ? EncoderRuntimeState.Ready : EncoderRuntimeState.Disposed;
         public double AverageEncodingLatencyMicroseconds => 250.0;
 
         public int ForceIdrCallCount { get; private set; }
@@ -137,6 +138,44 @@ public class HostStreamingSessionTests
                 Reserved = 0
             };
             return true;
+        }
+
+        public EncodeSubmissionResult SubmitFrame(
+            IntPtr d3dTexture,
+            bool forceIdr,
+            Span<byte> outBitstream,
+            out int bytesWritten)
+        {
+            if (!TryEncodeFrame(d3dTexture, forceIdr, out var desc, outBitstream, out bytesWritten))
+            {
+                return new EncodeSubmissionResult(
+                    Submitted: false,
+                    OutputAvailable: false,
+                    KeyFrame: false,
+                    BytesWritten: 0,
+                    PacketDesc: default,
+                    Result: IsActive ? EncoderResult.EncoderFailure : EncoderResult.DeviceLost
+                );
+            }
+
+            return new EncodeSubmissionResult(
+                Submitted: true,
+                OutputAvailable: true,
+                KeyFrame: desc.IsKeyframe != 0,
+                BytesWritten: bytesWritten,
+                PacketDesc: desc,
+                Result: EncoderResult.Success
+            );
+        }
+
+        public bool TryPollPacket(
+            Span<byte> outBitstream,
+            out MoonshineEncodedPacketDesc desc,
+            out int bytesWritten)
+        {
+            desc = default;
+            bytesWritten = 0;
+            return false;
         }
 
         public bool Reconfigure(uint bitrateKbps, uint fps, uint peakBitrateKbps = 0)

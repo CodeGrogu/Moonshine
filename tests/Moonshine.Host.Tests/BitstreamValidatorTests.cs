@@ -1,0 +1,148 @@
+using FluentAssertions;
+using Moonshine.Host.Encoding;
+using Moonshine.Interop;
+using Xunit;
+
+namespace Moonshine.Host.Tests;
+
+public class BitstreamValidatorTests
+{
+    [Fact]
+    public void BitstreamValidator_H264Keyframe_ValidatesSuccessfully()
+    {
+        byte[] h264Sps = [0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0xC0, 0x28];
+        bool valid = BitstreamValidator.ValidateBitstream(VideoCodec.H264, h264Sps, out bool isKeyframe);
+        valid.Should().BeTrue();
+        isKeyframe.Should().BeTrue();
+
+        byte[] h264Idr = [0x00, 0x00, 0x01, 0x65, 0x88, 0x84, 0x00];
+        valid = BitstreamValidator.ValidateBitstream(VideoCodec.H264, h264Idr, out isKeyframe);
+        valid.Should().BeTrue();
+        isKeyframe.Should().BeTrue();
+    }
+
+    [Fact]
+    public void BitstreamValidator_H264InterFrame_ValidatesSuccessfully()
+    {
+        byte[] h264NonIdr = [0x00, 0x00, 0x00, 0x01, 0x41, 0x9A, 0x24];
+        bool valid = BitstreamValidator.ValidateBitstream(VideoCodec.H264, h264NonIdr, out bool isKeyframe);
+        valid.Should().BeTrue();
+        isKeyframe.Should().BeFalse();
+    }
+
+    [Fact]
+    public void BitstreamValidator_HevcKeyframe_ValidatesSuccessfully()
+    {
+        // 0x26 >> 1 = 19 (IDR_W_RADL)
+        byte[] hevcIdr = [0x00, 0x00, 0x00, 0x01, 0x26, 0x01, 0xAF, 0xFE];
+        bool valid = BitstreamValidator.ValidateBitstream(VideoCodec.HevcMain10, hevcIdr, out bool isKeyframe);
+        valid.Should().BeTrue();
+        isKeyframe.Should().BeTrue();
+
+        // 0x40 >> 1 = 32 (VPS)
+        byte[] hevcVps = [0x00, 0x00, 0x01, 0x40, 0x01, 0x0C, 0x01];
+        valid = BitstreamValidator.ValidateBitstream(VideoCodec.Hevc, hevcVps, out isKeyframe);
+        valid.Should().BeTrue();
+        isKeyframe.Should().BeTrue();
+    }
+
+    [Fact]
+    public void BitstreamValidator_HevcInterFrame_ValidatesSuccessfully()
+    {
+        // 0x02 >> 1 = 1 (TRAIL_R)
+        byte[] hevcTrail = [0x00, 0x00, 0x00, 0x01, 0x02, 0x01, 0xD0];
+        bool valid = BitstreamValidator.ValidateBitstream(VideoCodec.HevcMain10, hevcTrail, out bool isKeyframe);
+        valid.Should().BeTrue();
+        isKeyframe.Should().BeFalse();
+    }
+
+    [Fact]
+    public void BitstreamValidator_Av1Obu_ValidatesSuccessfully()
+    {
+        // OBU Sequence Header: obu_type = 1 -> (1 << 3) = 0x08 | 0x02 = 0x0A
+        byte[] av1SeqHeader = [0x0A, 0x0A, 0x00, 0x00];
+        bool valid = BitstreamValidator.ValidateBitstream(VideoCodec.Av1, av1SeqHeader, out bool isKeyframe);
+        valid.Should().BeTrue();
+        isKeyframe.Should().BeTrue();
+
+        // OBU Frame: obu_type = 6 -> (6 << 3) = 0x30 | 0x02 = 0x32
+        byte[] av1Frame = [0x32, 0x10, 0x20, 0x30];
+        valid = BitstreamValidator.ValidateBitstream(VideoCodec.Av1, av1Frame, out isKeyframe);
+        valid.Should().BeTrue();
+        isKeyframe.Should().BeFalse();
+    }
+
+    [Fact]
+    public void BitstreamValidator_InvalidBitstream_ReturnsFalse()
+    {
+        byte[] tooShort = [0x00, 0x00];
+        BitstreamValidator.ValidateBitstream(VideoCodec.H264, tooShort, out _).Should().BeFalse();
+        BitstreamValidator.ValidateBitstream(VideoCodec.Hevc, tooShort, out _).Should().BeFalse();
+        BitstreamValidator.ValidateBitstream(VideoCodec.Av1, tooShort, out _).Should().BeFalse();
+
+        byte[] invalidGarbage = [0xFF, 0xEE, 0xDD, 0xCC, 0xBB, 0xAA];
+        BitstreamValidator.ValidateBitstream(VideoCodec.H264, invalidGarbage, out _).Should().BeFalse();
+        BitstreamValidator.ValidateBitstream(VideoCodec.Hevc, invalidGarbage, out _).Should().BeFalse();
+        BitstreamValidator.ValidateBitstream(VideoCodec.Av1, invalidGarbage, out _).Should().BeFalse();
+
+        // AV1 with forbidden bit set (bit 7 = 1)
+        byte[] av1ForbiddenBit = [0x8A, 0x0A, 0x00, 0x00];
+        BitstreamValidator.ValidateBitstream(VideoCodec.Av1, av1ForbiddenBit, out _).Should().BeFalse();
+
+        // AV1 with invalid obu_type 0
+        byte[] av1InvalidType0 = [0x02, 0x01, 0x00, 0x00];
+        BitstreamValidator.ValidateBitstream(VideoCodec.Av1, av1InvalidType0, out _).Should().BeFalse();
+
+        // AV1 with invalid obu_type 9
+        byte[] av1InvalidType9 = [0x48, 0x01, 0x00, 0x00];
+        BitstreamValidator.ValidateBitstream(VideoCodec.Av1, av1InvalidType9, out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void EncoderRuntimeState_EnumValues_MatchExpected()
+    {
+        ((int)EncoderRuntimeState.Uninitialised).Should().Be(0);
+        ((int)EncoderRuntimeState.Initialising).Should().Be(1);
+        ((int)EncoderRuntimeState.Ready).Should().Be(2);
+        ((int)EncoderRuntimeState.Encoding).Should().Be(3);
+        ((int)EncoderRuntimeState.Faulted).Should().Be(4);
+        ((int)EncoderRuntimeState.Disposed).Should().Be(5);
+    }
+
+    [Fact]
+    public void EncoderResult_EnumValues_MatchExpected()
+    {
+        ((int)EncoderResult.Success).Should().Be(0);
+        ((int)EncoderResult.NotAvailable).Should().Be(1);
+        ((int)EncoderResult.UnsupportedCodec).Should().Be(2);
+        ((int)EncoderResult.UnsupportedFormat).Should().Be(3);
+        ((int)EncoderResult.InvalidConfiguration).Should().Be(4);
+        ((int)EncoderResult.DeviceLost).Should().Be(5);
+        ((int)EncoderResult.ResourceFailure).Should().Be(6);
+        ((int)EncoderResult.EncoderFailure).Should().Be(7);
+        ((int)EncoderResult.OutputUnavailable).Should().Be(8);
+        ((int)EncoderResult.OutputInvalid).Should().Be(9);
+        ((int)EncoderResult.Timeout).Should().Be(10);
+    }
+
+    [Fact]
+    public void EncodeSubmissionResult_Instantiation_SetsProperties()
+    {
+        var desc = new MoonshineEncodedPacketDesc { FrameIndex = 1, PayloadSize = 100 };
+        var submission = new EncodeSubmissionResult(
+            Submitted: true,
+            OutputAvailable: true,
+            KeyFrame: true,
+            BytesWritten: 100,
+            PacketDesc: desc,
+            Result: EncoderResult.Success
+        );
+
+        submission.Submitted.Should().BeTrue();
+        submission.OutputAvailable.Should().BeTrue();
+        submission.KeyFrame.Should().BeTrue();
+        submission.BytesWritten.Should().Be(100);
+        submission.PacketDesc.FrameIndex.Should().Be(1);
+        submission.Result.Should().Be(EncoderResult.Success);
+    }
+}

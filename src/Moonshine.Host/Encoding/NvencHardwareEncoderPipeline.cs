@@ -30,6 +30,8 @@ public sealed class NvencHardwareEncoderPipeline : IVideoEncoderPipeline
 
     private readonly EncoderImplementationKind _implementationKind;
     private readonly bool _isHardwareAccelerated;
+    private EncoderRuntimeState _runtimeState;
+    private bool _hasProducedValidOutput;
 
     public uint Width => _width;
     public uint Height => _height;
@@ -42,8 +44,9 @@ public sealed class NvencHardwareEncoderPipeline : IVideoEncoderPipeline
     public bool IsActive => _handle != IntPtr.Zero && !_disposed;
     public EncoderImplementationKind ImplementationKind => _implementationKind;
     public bool IsHardwareAccelerated => _isHardwareAccelerated;
-    public bool HasProducedValidOutput => Volatile.Read(ref _framesEncoded) > 0;
+    public bool HasProducedValidOutput => Volatile.Read(ref _hasProducedValidOutput);
     public Type ImplementationType => GetType();
+    public EncoderRuntimeState RuntimeState => _disposed ? EncoderRuntimeState.Disposed : (_handle == IntPtr.Zero ? EncoderRuntimeState.Faulted : _runtimeState);
     public double AverageEncodingLatencyMicroseconds
     {
         get
@@ -94,12 +97,14 @@ public sealed class NvencHardwareEncoderPipeline : IVideoEncoderPipeline
         {
             _implementationKind = EncoderImplementationKind.HardwareAccelerated;
             _isHardwareAccelerated = true;
+            _runtimeState = EncoderRuntimeState.Ready;
             _ = MoonshineNativeMethods.NvencSetTuning(_handle, (uint)preset, (uint)tuning);
         }
         else
         {
             _implementationKind = EncoderImplementationKind.Unimplemented;
             _isHardwareAccelerated = false;
+            _runtimeState = EncoderRuntimeState.Faulted;
         }
     }
 
@@ -119,30 +124,128 @@ public sealed class NvencHardwareEncoderPipeline : IVideoEncoderPipeline
         {
             if (_disposed || _handle == IntPtr.Zero) return false;
 
-            fixed (byte* bufferPtr = outBitstream)
+            _runtimeState = EncoderRuntimeState.Encoding;
+            try
             {
-                int res = MoonshineNativeMethods.EncoderEncodeFrame(
-                    _handle,
-                    d3dTexture,
-                    forceIdr ? 1 : 0,
-                    out desc,
-                    bufferPtr,
-                    (uint)outBitstream.Length,
-                    out uint written
-                );
-
-                if (res > 0)
+                fixed (byte* bufferPtr = outBitstream)
                 {
-                    bytesWritten = (int)written;
-                    long elapsed = System.Diagnostics.Stopwatch.GetTimestamp() - startQpc;
-                    Interlocked.Increment(ref _framesEncoded);
-                    Interlocked.Add(ref _totalEncodingTimeQpc, (ulong)elapsed);
-                    return true;
-                }
+                    int res = MoonshineNativeMethods.EncoderEncodeFrame(
+                        _handle,
+                        d3dTexture,
+                        forceIdr ? 1 : 0,
+                        out desc,
+                        bufferPtr,
+                        (uint)outBitstream.Length,
+                        out uint written
+                    );
 
-                return false;
+                    if (res > 0)
+                    {
+                        bytesWritten = (int)written;
+                        long elapsed = System.Diagnostics.Stopwatch.GetTimestamp() - startQpc;
+                        Interlocked.Increment(ref _framesEncoded);
+                        Interlocked.Add(ref _totalEncodingTimeQpc, (ulong)elapsed);
+                        if (bytesWritten > 0 && BitstreamValidator.ValidateBitstream(_codec, outBitstream[..bytesWritten], out _))
+                        {
+                            Volatile.Write(ref _hasProducedValidOutput, true);
+                        }
+
+                        _runtimeState = EncoderRuntimeState.Ready;
+                        return true;
+                    }
+
+                    _runtimeState = EncoderRuntimeState.Ready;
+                    return false;
+                }
+            }
+            catch
+            {
+                _runtimeState = EncoderRuntimeState.Faulted;
+                throw;
             }
         }
+    }
+
+    public EncodeSubmissionResult SubmitFrame(
+        IntPtr d3dTexture,
+        bool forceIdr,
+        Span<byte> outBitstream,
+        out int bytesWritten
+    )
+    {
+        if (_disposed)
+        {
+            bytesWritten = 0;
+            return new EncodeSubmissionResult(
+                Submitted: false,
+                OutputAvailable: false,
+                KeyFrame: false,
+                BytesWritten: 0,
+                PacketDesc: default,
+                Result: EncoderResult.DeviceLost
+            );
+        }
+
+        if (_handle == IntPtr.Zero)
+        {
+            bytesWritten = 0;
+            return new EncodeSubmissionResult(
+                Submitted: false,
+                OutputAvailable: false,
+                KeyFrame: false,
+                BytesWritten: 0,
+                PacketDesc: default,
+                Result: EncoderResult.NotAvailable
+            );
+        }
+
+        bool success = TryEncodeFrame(d3dTexture, forceIdr, out var desc, outBitstream, out bytesWritten);
+        if (!success)
+        {
+            return new EncodeSubmissionResult(
+                Submitted: false,
+                OutputAvailable: false,
+                KeyFrame: false,
+                BytesWritten: 0,
+                PacketDesc: default,
+                Result: EncoderResult.EncoderFailure
+            );
+        }
+
+        bool isKey = desc.IsKeyframe != 0;
+        bool isBitstreamKey = false;
+        bool valid = bytesWritten > 0 && BitstreamValidator.ValidateBitstream(_codec, outBitstream[..bytesWritten], out isBitstreamKey);
+        if (valid)
+        {
+            return new EncodeSubmissionResult(
+                Submitted: true,
+                OutputAvailable: true,
+                KeyFrame: isKey || isBitstreamKey,
+                BytesWritten: bytesWritten,
+                PacketDesc: desc,
+                Result: EncoderResult.Success
+            );
+        }
+
+        return new EncodeSubmissionResult(
+            Submitted: true,
+            OutputAvailable: false,
+            KeyFrame: false,
+            BytesWritten: 0,
+            PacketDesc: desc,
+            Result: EncoderResult.OutputInvalid
+        );
+    }
+
+    public bool TryPollPacket(
+        Span<byte> outBitstream,
+        out MoonshineEncodedPacketDesc desc,
+        out int bytesWritten
+    )
+    {
+        desc = default;
+        bytesWritten = 0;
+        return false;
     }
 
     public bool Reconfigure(uint bitrateKbps, uint fps, uint peakBitrateKbps = 0)
@@ -245,6 +348,7 @@ public sealed class NvencHardwareEncoderPipeline : IVideoEncoderPipeline
         {
             if (_disposed) return;
             _disposed = true;
+            _runtimeState = EncoderRuntimeState.Disposed;
 
             if (_handle != IntPtr.Zero)
             {
