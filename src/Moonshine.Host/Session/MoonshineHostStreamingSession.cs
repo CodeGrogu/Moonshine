@@ -862,20 +862,22 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                             {
                                 if (_authenticator != null)
                                 {
+                                    if (packetHeader.PayloadSize != 36 || datagram.Length < MoonshineProtocolConstants.HeaderSize + 36)
+                                    {
+                                        continue;
+                                    }
+
                                     if (!_authenticator.ValidateIncomingSequence(packetHeader.SequenceNumber, packetHeader.TimestampUs, out _))
                                     {
                                         continue;
                                     }
 
-                                    if (packetHeader.PayloadSize >= 36 && datagram.Length >= MoonshineProtocolConstants.HeaderSize + 36)
-                                    {
-                                        ReadOnlySpan<byte> signedContent = datagram[..(MoonshineProtocolConstants.HeaderSize + 4)];
-                                        ReadOnlySpan<byte> tag = datagram.Slice(MoonshineProtocolConstants.HeaderSize + 4, 32);
+                                    ReadOnlySpan<byte> signedContent = datagram[..(MoonshineProtocolConstants.HeaderSize + 4)];
+                                    ReadOnlySpan<byte> tag = datagram.Slice(MoonshineProtocolConstants.HeaderSize + 4, 32);
 
-                                        if (!_authenticator.VerifyMessageAuthTag(signedContent, tag))
-                                        {
-                                            continue;
-                                        }
+                                    if (!_authenticator.VerifyMessageAuthTag(signedContent, tag))
+                                    {
+                                        continue;
                                     }
                                 }
 
@@ -908,20 +910,22 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                             {
                                 if (_authenticator != null)
                                 {
+                                    if (packetHeader.PayloadSize != 36 || datagram.Length < MoonshineProtocolConstants.HeaderSize + 36)
+                                    {
+                                        continue;
+                                    }
+
                                     if (!_authenticator.ValidateIncomingSequence(packetHeader.SequenceNumber, packetHeader.TimestampUs, out _))
                                     {
                                         continue;
                                     }
 
-                                    if (packetHeader.PayloadSize >= 36 && datagram.Length >= MoonshineProtocolConstants.HeaderSize + 36)
-                                    {
-                                        ReadOnlySpan<byte> signedContent = datagram[..(MoonshineProtocolConstants.HeaderSize + 4)];
-                                        ReadOnlySpan<byte> tag = datagram.Slice(MoonshineProtocolConstants.HeaderSize + 4, 32);
+                                    ReadOnlySpan<byte> signedContent = datagram[..(MoonshineProtocolConstants.HeaderSize + 4)];
+                                    ReadOnlySpan<byte> tag = datagram.Slice(MoonshineProtocolConstants.HeaderSize + 4, 32);
 
-                                        if (!_authenticator.VerifyMessageAuthTag(signedContent, tag))
-                                        {
-                                            continue;
-                                        }
+                                    if (!_authenticator.VerifyMessageAuthTag(signedContent, tag))
+                                    {
+                                        continue;
                                     }
                                 }
 
@@ -954,6 +958,12 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                             {
                                 if (_authenticator != null)
                                 {
+                                    if (packetHeader.PayloadSize != 80 || datagram.Length < MoonshineProtocolConstants.HeaderSize + 80)
+                                    {
+                                        SendSetConfigurationResponse(result.RemoteEndPoint, packetHeader.SequenceNumber, MoonshineErrorCode.AuthenticationFailed, _configurationService.ConfigVersion);
+                                        continue;
+                                    }
+
                                     if (!_authenticator.ValidateIncomingSequence(packetHeader.SequenceNumber, packetHeader.TimestampUs, out var status))
                                     {
                                         MoonshineErrorCode seqErr = status switch
@@ -967,16 +977,13 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                                         continue;
                                     }
 
-                                    if (packetHeader.PayloadSize >= 80 && datagram.Length >= MoonshineProtocolConstants.HeaderSize + 80)
-                                    {
-                                        ReadOnlySpan<byte> signedContent = datagram[..(MoonshineProtocolConstants.HeaderSize + 48)];
-                                        ReadOnlySpan<byte> tag = datagram.Slice(MoonshineProtocolConstants.HeaderSize + 48, 32);
+                                    ReadOnlySpan<byte> signedContent = datagram[..(MoonshineProtocolConstants.HeaderSize + 48)];
+                                    ReadOnlySpan<byte> tag = datagram.Slice(MoonshineProtocolConstants.HeaderSize + 48, 32);
 
-                                        if (!_authenticator.VerifyMessageAuthTag(signedContent, tag))
-                                        {
-                                            SendSetConfigurationResponse(result.RemoteEndPoint, packetHeader.SequenceNumber, MoonshineErrorCode.AuthenticationFailed, _configurationService.ConfigVersion);
-                                            continue;
-                                        }
+                                    if (!_authenticator.VerifyMessageAuthTag(signedContent, tag))
+                                    {
+                                        SendSetConfigurationResponse(result.RemoteEndPoint, packetHeader.SequenceNumber, MoonshineErrorCode.AuthenticationFailed, _configurationService.ConfigVersion);
+                                        continue;
                                     }
                                 }
 

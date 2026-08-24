@@ -940,4 +940,217 @@ public class HostConfigurationSecurityAndStressTests
         MoonshineMessageType? tamperedCfgRespType = await TrySendAndReceiveAsync(tamperedCfgPacket, 200);
         tamperedCfgRespType.Should().BeNull();
     }
+
+    [Fact]
+    public async Task HostCapabilities_WithAuthenticator_UnsignedQueryIsRejected()
+    {
+        ulong sessionId = 0x11223344AABBCCDDUL;
+        byte[] hmacKey = new byte[32];
+        for (int i = 0; i < 32; i++) hmacKey[i] = (byte)(i + 3);
+
+        var hostAuthenticator = new MoonshineSessionAuthenticator(hmacKey);
+
+        var hostConfig = new HostSessionConfig
+        {
+            SessionId = sessionId,
+            StreamId = 1,
+            Width = 1920,
+            Height = 1080,
+            Fps = 60,
+            BitrateKbps = 20000,
+            LocalVideoPort = 0,
+            LocalAudioPort = 0,
+            LocalControlFeedbackPort = 0,
+            EnableMicrophoneBackchannel = false
+        };
+
+        using var mockCapture = new MockDesktopCapturePipeline();
+        using var mockEncoder = new MockVideoEncoderPipeline();
+        var encoderEngine = new UnifiedHardwareEncoderEngine(mockEncoder);
+
+        await using var hostSession = new MoonshineHostStreamingSession(
+            config: hostConfig,
+            capturePipeline: mockCapture,
+            encoderEngine: encoderEngine,
+            authenticator: hostAuthenticator);
+
+        await hostSession.StartAsync();
+
+        using var clientSocket = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.InterNetwork, System.Net.Sockets.SocketType.Dgram, System.Net.Sockets.ProtocolType.Udp);
+        clientSocket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+        var hostControlEp = new IPEndPoint(IPAddress.Loopback, hostSession.BoundLocalControlPort);
+
+        // Unsigned 4-byte GetHostCapabilities packet
+        byte[] unsignedPacket = new byte[MoonshineProtocolConstants.HeaderSize + 4];
+        var header = new MoonshinePacketHeader(
+            Magic: MoonshineProtocolConstants.Magic,
+            Version: MoonshineProtocolConstants.Version10,
+            MessageType: MoonshineMessageType.GetHostCapabilities,
+            PayloadSize: 4,
+            SequenceNumber: 1,
+            SessionId: sessionId,
+            TimestampUs: (ulong)((Stopwatch.GetTimestamp() * 1_000_000L) / Stopwatch.Frequency));
+
+        MoonshineProtocolCodec.TryWriteHeader(in header, unsignedPacket);
+        MoonshineProtocolCodec.TryWriteGetHostCapabilities(0, unsignedPacket.AsSpan(MoonshineProtocolConstants.HeaderSize, 4));
+
+        await clientSocket.SendToAsync(unsignedPacket, System.Net.Sockets.SocketFlags.None, hostControlEp);
+
+        byte[] resp = new byte[128];
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(250));
+
+        var receiveFunc = async () =>
+        {
+            await clientSocket.ReceiveFromAsync(resp.AsMemory(), System.Net.Sockets.SocketFlags.None, hostControlEp, cts.Token);
+        };
+
+        await receiveFunc.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task HostConfiguration_WithAuthenticator_UnsignedQueryIsRejected()
+    {
+        ulong sessionId = 0x22334455BBCCDDEEUL;
+        byte[] hmacKey = new byte[32];
+        for (int i = 0; i < 32; i++) hmacKey[i] = (byte)(i + 5);
+
+        var hostAuthenticator = new MoonshineSessionAuthenticator(hmacKey);
+
+        var hostConfig = new HostSessionConfig
+        {
+            SessionId = sessionId,
+            StreamId = 1,
+            Width = 1920,
+            Height = 1080,
+            Fps = 60,
+            BitrateKbps = 20000,
+            LocalVideoPort = 0,
+            LocalAudioPort = 0,
+            LocalControlFeedbackPort = 0,
+            EnableMicrophoneBackchannel = false
+        };
+
+        using var mockCapture = new MockDesktopCapturePipeline();
+        using var mockEncoder = new MockVideoEncoderPipeline();
+        var encoderEngine = new UnifiedHardwareEncoderEngine(mockEncoder);
+
+        await using var hostSession = new MoonshineHostStreamingSession(
+            config: hostConfig,
+            capturePipeline: mockCapture,
+            encoderEngine: encoderEngine,
+            authenticator: hostAuthenticator);
+
+        await hostSession.StartAsync();
+
+        using var clientSocket = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.InterNetwork, System.Net.Sockets.SocketType.Dgram, System.Net.Sockets.ProtocolType.Udp);
+        clientSocket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+        var hostControlEp = new IPEndPoint(IPAddress.Loopback, hostSession.BoundLocalControlPort);
+
+        // Unsigned 4-byte GetHostConfiguration packet
+        byte[] unsignedPacket = new byte[MoonshineProtocolConstants.HeaderSize + 4];
+        var header = new MoonshinePacketHeader(
+            Magic: MoonshineProtocolConstants.Magic,
+            Version: MoonshineProtocolConstants.Version10,
+            MessageType: MoonshineMessageType.GetHostConfiguration,
+            PayloadSize: 4,
+            SequenceNumber: 1,
+            SessionId: sessionId,
+            TimestampUs: (ulong)((Stopwatch.GetTimestamp() * 1_000_000L) / Stopwatch.Frequency));
+
+        MoonshineProtocolCodec.TryWriteHeader(in header, unsignedPacket);
+        MoonshineProtocolCodec.TryWriteGetHostConfiguration(0, unsignedPacket.AsSpan(MoonshineProtocolConstants.HeaderSize, 4));
+
+        await clientSocket.SendToAsync(unsignedPacket, System.Net.Sockets.SocketFlags.None, hostControlEp);
+
+        byte[] resp = new byte[128];
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(250));
+
+        var receiveFunc = async () =>
+        {
+            await clientSocket.ReceiveFromAsync(resp.AsMemory(), System.Net.Sockets.SocketFlags.None, hostControlEp, cts.Token);
+        };
+
+        await receiveFunc.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task HostSetConfiguration_WithAuthenticator_UnsignedMutationIsRejected()
+    {
+        ulong sessionId = 0x33445566CCDDEEFFUL;
+        byte[] hmacKey = new byte[32];
+        for (int i = 0; i < 32; i++) hmacKey[i] = (byte)(i + 9);
+
+        var hostAuthenticator = new MoonshineSessionAuthenticator(hmacKey);
+
+        var hostConfig = new HostSessionConfig
+        {
+            SessionId = sessionId,
+            StreamId = 1,
+            Width = 1920,
+            Height = 1080,
+            Fps = 60,
+            BitrateKbps = 20000,
+            LocalVideoPort = 0,
+            LocalAudioPort = 0,
+            LocalControlFeedbackPort = 0,
+            EnableMicrophoneBackchannel = false
+        };
+
+        using var mockCapture = new MockDesktopCapturePipeline();
+        using var mockEncoder = new MockVideoEncoderPipeline();
+        var encoderEngine = new UnifiedHardwareEncoderEngine(mockEncoder);
+
+        await using var hostSession = new MoonshineHostStreamingSession(
+            config: hostConfig,
+            capturePipeline: mockCapture,
+            encoderEngine: encoderEngine,
+            authenticator: hostAuthenticator);
+
+        await hostSession.StartAsync();
+
+        using var clientSocket = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.InterNetwork, System.Net.Sockets.SocketType.Dgram, System.Net.Sockets.ProtocolType.Udp);
+        clientSocket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+        var hostControlEp = new IPEndPoint(IPAddress.Loopback, hostSession.BoundLocalControlPort);
+
+        var proposed = new MoonshineHostConfigurationPayload
+        {
+            ConfigVersion = 1,
+            DisplayWidth = 1920,
+            DisplayHeight = 1080,
+            RefreshRateHz = 60,
+            TargetBitrateKbps = 25000,
+            MaxBitrateKbps = 50000,
+            PreferredCodec = MoonshineVideoCodec.Hevc,
+            AudioChannels = 2,
+            AudioBitrateKbps = 128
+        };
+
+        // Unsigned 48-byte SetHostConfiguration packet
+        byte[] unsignedPacket = new byte[MoonshineProtocolConstants.HeaderSize + 48];
+        var header = new MoonshinePacketHeader(
+            Magic: MoonshineProtocolConstants.Magic,
+            Version: MoonshineProtocolConstants.Version10,
+            MessageType: MoonshineMessageType.SetHostConfiguration,
+            PayloadSize: 48,
+            SequenceNumber: 1,
+            SessionId: sessionId,
+            TimestampUs: (ulong)((Stopwatch.GetTimestamp() * 1_000_000L) / Stopwatch.Frequency));
+
+        MoonshineProtocolCodec.TryWriteHeader(in header, unsignedPacket);
+        MoonshineProtocolCodec.TryWriteHostConfiguration(in proposed, unsignedPacket.AsSpan(MoonshineProtocolConstants.HeaderSize, 48));
+
+        await clientSocket.SendToAsync(unsignedPacket, System.Net.Sockets.SocketFlags.None, hostControlEp);
+
+        byte[] resp = new byte[128];
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        var res = await clientSocket.ReceiveFromAsync(resp.AsMemory(), System.Net.Sockets.SocketFlags.None, hostControlEp, cts.Token);
+
+        MoonshineErrorCode err = MoonshineProtocolCodec.TryReadHeader(resp.AsSpan(0, res.ReceivedBytes), out var respHeader);
+        err.Should().Be(MoonshineErrorCode.Success);
+        respHeader.MessageType.Should().Be(MoonshineMessageType.SetHostConfigurationResponse);
+
+        MoonshineErrorCode payloadErr = MoonshineProtocolCodec.TryReadSetHostConfigurationResponse(resp.AsSpan(MoonshineProtocolConstants.HeaderSize), out var respPayload);
+        payloadErr.Should().Be(MoonshineErrorCode.Success);
+        respPayload.StatusCode.Should().Be(MoonshineErrorCode.AuthenticationFailed);
+    }
 }
