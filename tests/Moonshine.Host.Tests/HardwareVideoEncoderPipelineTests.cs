@@ -47,6 +47,8 @@ public class HardwareVideoEncoderPipelineTests
         evidence.FirstValidFrameId.Should().Be(0);
         evidence.LastValidFrameId.Should().Be(0);
         evidence.LastDecoderAcceptedFrameId.Should().Be(0);
+        evidence.DecoderAcceptedLatestFrame.Should().BeFalse();
+        evidence.DecoderAcceptanceHealthy.Should().BeFalse();
     }
 
     [Fact]
@@ -421,11 +423,15 @@ public class HardwareVideoEncoderPipelineTests
         evidence.FirstValidFrameId.Should().Be(expectedFrameId);
         evidence.LastValidFrameId.Should().Be(expectedFrameId + 5);
         evidence.LastDecoderAcceptedFrameId.Should().Be(0);
+        evidence.DecoderAcceptedLatestFrame.Should().BeFalse();
+        evidence.DecoderAcceptanceHealthy.Should().BeFalse();
 
         // 6. Verify decoder acceptance recording
         correlatingPipeline.RecordDecoderAcceptance(expectedFrameId + 5);
         correlatingPipeline.Evidence.DecoderAccepted.Should().BeTrue();
         correlatingPipeline.Evidence.LastDecoderAcceptedFrameId.Should().Be(expectedFrameId + 5);
+        correlatingPipeline.Evidence.DecoderAcceptedLatestFrame.Should().BeTrue();
+        correlatingPipeline.Evidence.DecoderAcceptanceHealthy.Should().BeTrue();
     }
 
     [Fact]
@@ -434,7 +440,7 @@ public class HardwareVideoEncoderPipelineTests
         using var pipeline = new SyntheticCorrelatingEncoderPipeline();
         Span<byte> buffer = stackalloc byte[1024];
 
-        // 1. Tests 100 encoded + no decode -> DecoderAccepted == false
+        // 1. Initial state: 100 encoded + no decode -> DecoderAccepted == false, DecoderAcceptedLatestFrame == false, DecoderAcceptanceHealthy == false
         for (ulong frameId = 1; frameId <= 100; frameId++)
         {
             bool encoded = pipeline.TryEncodeFrame(IntPtr.Zero, frameId, frameId * 16666, frameId == 1, out _, buffer, out _);
@@ -444,33 +450,56 @@ public class HardwareVideoEncoderPipelineTests
         pipeline.Evidence.LastValidFrameId.Should().Be(100);
         pipeline.Evidence.LastDecoderAcceptedFrameId.Should().Be(0);
         pipeline.Evidence.DecoderAccepted.Should().BeFalse();
+        pipeline.Evidence.DecoderAcceptedLatestFrame.Should().BeFalse();
+        pipeline.Evidence.DecoderAcceptanceHealthy.Should().BeFalse();
 
-        // 2. Tests 100 encoded + 101 decoded -> DecoderAccepted == false (mismatched frame ID)
+        // 2. 100 encoded + 101 decoded -> DecoderAcceptedLatestFrame == false, DecoderAcceptanceHealthy == false, DecoderAccepted == false (cannot accept future unencoded frame)
         pipeline.RecordDecoderAcceptance(101);
         pipeline.Evidence.LastDecoderAcceptedFrameId.Should().Be(101);
         pipeline.Evidence.LastValidFrameId.Should().Be(100);
+        pipeline.Evidence.DecoderAcceptedLatestFrame.Should().BeFalse();
+        pipeline.Evidence.DecoderAcceptanceHealthy.Should().BeFalse();
         pipeline.Evidence.DecoderAccepted.Should().BeFalse();
 
-        // 3. Tests 100 encoded + 100 decoded -> DecoderAccepted == true
+        // 3. 100 encoded + 100 decoded -> DecoderAcceptedLatestFrame == true, DecoderAcceptanceHealthy == true, DecoderAccepted == true
         pipeline.RecordDecoderAcceptance(100);
         pipeline.Evidence.LastDecoderAcceptedFrameId.Should().Be(100);
         pipeline.Evidence.LastValidFrameId.Should().Be(100);
+        pipeline.Evidence.DecoderAcceptedLatestFrame.Should().BeTrue();
+        pipeline.Evidence.DecoderAcceptanceHealthy.Should().BeTrue();
         pipeline.Evidence.DecoderAccepted.Should().BeTrue();
 
-        // 4. Tests 100 accepted, then 101 encoded without decode -> DecoderAccepted == false
+        // 4. 102 encoded + 101 decoded -> DecoderAcceptedLatestFrame == false, DecoderAcceptanceHealthy == true (in-flight lag of 1 frame is healthy), DecoderAccepted == true
         bool encoded101 = pipeline.TryEncodeFrame(IntPtr.Zero, 101, 101 * 16666, false, out _, buffer, out _);
         encoded101.Should().BeTrue();
-        pipeline.Evidence.LastValidFrameId.Should().Be(101);
-        pipeline.Evidence.LastDecoderAcceptedFrameId.Should().Be(100);
-        pipeline.Evidence.DecoderAccepted.Should().BeFalse();
-
-        // Decode frame 101 -> DecoderAccepted becomes true again
+        bool encoded102 = pipeline.TryEncodeFrame(IntPtr.Zero, 102, 102 * 16666, false, out _, buffer, out _);
+        encoded102.Should().BeTrue();
         pipeline.RecordDecoderAcceptance(101);
+        pipeline.Evidence.LastValidFrameId.Should().Be(102);
+        pipeline.Evidence.LastDecoderAcceptedFrameId.Should().Be(101);
+        pipeline.Evidence.DecoderAcceptedLatestFrame.Should().BeFalse();
+        pipeline.Evidence.DecoderAcceptanceHealthy.Should().BeTrue();
         pipeline.Evidence.DecoderAccepted.Should().BeTrue();
 
-        // 5. Tests dispose clears decoder acceptance evidence
-        pipeline.Dispose();
+        // 5. 106 encoded + 100 decoded -> DecoderAcceptedLatestFrame == false, DecoderAcceptanceHealthy == false (lag of 6 frames > 4 exceeds tolerance window), DecoderAccepted == false
+        for (ulong frameId = 103; frameId <= 106; frameId++)
+        {
+            bool encoded = pipeline.TryEncodeFrame(IntPtr.Zero, frameId, frameId * 16666, false, out _, buffer, out _);
+            encoded.Should().BeTrue();
+        }
+        pipeline.RecordDecoderAcceptance(100);
+        pipeline.Evidence.LastValidFrameId.Should().Be(106);
+        pipeline.Evidence.LastDecoderAcceptedFrameId.Should().Be(100);
+        pipeline.Evidence.DecoderAcceptedLatestFrame.Should().BeFalse();
+        pipeline.Evidence.DecoderAcceptanceHealthy.Should().BeFalse();
         pipeline.Evidence.DecoderAccepted.Should().BeFalse();
+
+        // 6. Dispose -> SessionInitialised == false, decoder acceptance evidence cleared
+        pipeline.Dispose();
+        pipeline.Evidence.SessionInitialised.Should().BeFalse();
+        pipeline.Evidence.DecoderAccepted.Should().BeFalse();
+        pipeline.Evidence.DecoderAcceptedLatestFrame.Should().BeFalse();
+        pipeline.Evidence.DecoderAcceptanceHealthy.Should().BeFalse();
         pipeline.Evidence.LastDecoderAcceptedFrameId.Should().Be(0);
         pipeline.Evidence.LastValidFrameId.Should().Be(0);
     }
@@ -497,19 +526,32 @@ public class HardwareVideoEncoderPipelineTests
         private ulong _lastValidFrameId;
         private bool _hasValidFrame;
 
-        public EncoderEvidence Evidence => new(
-            ApiAvailable: true,
-            HardwareSupported: IsHardwareAccelerated,
-            SessionInitialised: IsActive,
-            FrameSubmitted: _frameSubmitted,
-            OutputReceived: HasProducedValidOutput,
-            BitstreamStructurallyValid: HasProducedValidOutput,
-            AccessUnitValid: HasProducedValidOutput,
-            DecoderAccepted: _lastDecoderAcceptedFrameId != 0 && _lastDecoderAcceptedFrameId == _lastValidFrameId,
-            FirstValidFrameId: _firstValidFrameId,
-            LastValidFrameId: _lastValidFrameId,
-            LastDecoderAcceptedFrameId: _lastDecoderAcceptedFrameId
-        );
+        public EncoderEvidence Evidence
+        {
+            get
+            {
+                ulong lastValid = _lastValidFrameId;
+                ulong lastAccepted = _lastDecoderAcceptedFrameId;
+                bool latestMatch = lastAccepted != 0 && lastAccepted == lastValid;
+                bool healthy = IsActive && lastAccepted != 0 && lastAccepted <= lastValid && (lastValid - lastAccepted) <= 4;
+
+                return new EncoderEvidence(
+                    ApiAvailable: true,
+                    HardwareSupported: IsHardwareAccelerated,
+                    SessionInitialised: IsActive,
+                    FrameSubmitted: _frameSubmitted,
+                    OutputReceived: HasProducedValidOutput,
+                    BitstreamStructurallyValid: HasProducedValidOutput,
+                    AccessUnitValid: HasProducedValidOutput,
+                    DecoderAccepted: healthy,
+                    FirstValidFrameId: _firstValidFrameId,
+                    LastValidFrameId: lastValid,
+                    LastDecoderAcceptedFrameId: lastAccepted,
+                    DecoderAcceptedLatestFrame: latestMatch,
+                    DecoderAcceptanceHealthy: healthy
+                );
+            }
+        }
 
         public bool TryEncodeFrame(
             IntPtr d3dTexture,

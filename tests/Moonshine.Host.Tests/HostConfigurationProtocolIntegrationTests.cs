@@ -63,19 +63,32 @@ public class HostConfigurationProtocolIntegrationTests
         public Type ImplementationType => GetType();
         public EncoderRuntimeState RuntimeState => EncoderRuntimeState.Ready;
         private ulong _lastDecoderAcceptedFrameId;
-        public EncoderEvidence Evidence => new(
-            ApiAvailable: true,
-            HardwareSupported: IsHardwareAccelerated,
-            SessionInitialised: IsActive,
-            FrameSubmitted: true,
-            OutputReceived: HasProducedValidOutput,
-            BitstreamStructurallyValid: HasProducedValidOutput,
-            AccessUnitValid: HasProducedValidOutput,
-            DecoderAccepted: _lastDecoderAcceptedFrameId != 0 && _lastDecoderAcceptedFrameId == Math.Max(1, _frameIndex),
-            FirstValidFrameId: 1,
-            LastValidFrameId: Math.Max(1, _frameIndex),
-            LastDecoderAcceptedFrameId: _lastDecoderAcceptedFrameId
-        );
+        public EncoderEvidence Evidence
+        {
+            get
+            {
+                ulong lastValid = Math.Max(1, _frameIndex);
+                ulong lastAccepted = _lastDecoderAcceptedFrameId;
+                bool latestMatch = lastAccepted != 0 && lastAccepted == lastValid;
+                bool healthy = IsActive && lastAccepted != 0 && lastAccepted <= lastValid && (lastValid - lastAccepted) <= 4;
+
+                return new EncoderEvidence(
+                    ApiAvailable: true,
+                    HardwareSupported: IsHardwareAccelerated,
+                    SessionInitialised: IsActive,
+                    FrameSubmitted: true,
+                    OutputReceived: HasProducedValidOutput,
+                    BitstreamStructurallyValid: HasProducedValidOutput,
+                    AccessUnitValid: HasProducedValidOutput,
+                    DecoderAccepted: healthy,
+                    FirstValidFrameId: 1,
+                    LastValidFrameId: lastValid,
+                    LastDecoderAcceptedFrameId: lastAccepted,
+                    DecoderAcceptedLatestFrame: latestMatch,
+                    DecoderAcceptanceHealthy: healthy
+                );
+            }
+        }
         public double AverageEncodingLatencyMicroseconds => 150.0;
 
         private uint _frameIndex;

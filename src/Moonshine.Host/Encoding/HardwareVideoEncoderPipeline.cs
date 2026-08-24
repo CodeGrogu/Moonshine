@@ -53,20 +53,33 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
     public Type ImplementationType => GetType();
     public EncoderRuntimeState RuntimeState => _disposed ? EncoderRuntimeState.Disposed : (_handle == IntPtr.Zero ? EncoderRuntimeState.Faulted : _runtimeState);
 
-    public EncoderEvidence Evidence => new(
-        ApiAvailable: _handle != IntPtr.Zero,
-        HardwareSupported: _isHardwareAccelerated,
-        SessionInitialised: _handle != IntPtr.Zero,
-        FrameSubmitted: Volatile.Read(ref _frameSubmitted),
-        OutputReceived: Volatile.Read(ref _outputReceived),
-        BitstreamStructurallyValid: Volatile.Read(ref _bitstreamStructurallyValid),
-        AccessUnitValid: Volatile.Read(ref _accessUnitValid),
-        DecoderAccepted: Volatile.Read(ref _lastDecoderAcceptedFrameId) != 0 &&
-                         Volatile.Read(ref _lastDecoderAcceptedFrameId) == Volatile.Read(ref _lastValidFrameId),
-        FirstValidFrameId: Volatile.Read(ref _firstValidFrameId),
-        LastValidFrameId: Volatile.Read(ref _lastValidFrameId),
-        LastDecoderAcceptedFrameId: Volatile.Read(ref _lastDecoderAcceptedFrameId)
-    );
+    public EncoderEvidence Evidence
+    {
+        get
+        {
+            ulong lastValid = Volatile.Read(ref _lastValidFrameId);
+            ulong lastAccepted = Volatile.Read(ref _lastDecoderAcceptedFrameId);
+            bool latestMatch = lastAccepted != 0 && lastAccepted == lastValid;
+            bool healthy = !_disposed && _handle != IntPtr.Zero &&
+                           lastAccepted != 0 && lastAccepted <= lastValid && (lastValid - lastAccepted) <= 4;
+
+            return new EncoderEvidence(
+                ApiAvailable: _handle != IntPtr.Zero,
+                HardwareSupported: _isHardwareAccelerated,
+                SessionInitialised: !_disposed && _handle != IntPtr.Zero,
+                FrameSubmitted: Volatile.Read(ref _frameSubmitted),
+                OutputReceived: Volatile.Read(ref _outputReceived),
+                BitstreamStructurallyValid: Volatile.Read(ref _bitstreamStructurallyValid),
+                AccessUnitValid: Volatile.Read(ref _accessUnitValid),
+                DecoderAccepted: healthy,
+                FirstValidFrameId: Volatile.Read(ref _firstValidFrameId),
+                LastValidFrameId: lastValid,
+                LastDecoderAcceptedFrameId: lastAccepted,
+                DecoderAcceptedLatestFrame: latestMatch,
+                DecoderAcceptanceHealthy: healthy
+            );
+        }
+    }
 
     public ulong FramesEncoded => Volatile.Read(ref _framesEncoded);
     public ulong EncodingErrorsCount => Volatile.Read(ref _encodingErrorsCount);

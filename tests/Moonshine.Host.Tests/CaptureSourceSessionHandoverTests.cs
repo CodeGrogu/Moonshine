@@ -102,19 +102,32 @@ public class CaptureSourceSessionHandoverTests
         public bool HasProducedValidOutput { get; set; } = true;
         public Type ImplementationType => GetType();
         public EncoderRuntimeState RuntimeState => IsActive ? EncoderRuntimeState.Ready : EncoderRuntimeState.Disposed;
-        public EncoderEvidence Evidence => new(
-            ApiAvailable: true,
-            HardwareSupported: IsHardwareAccelerated,
-            SessionInitialised: IsActive,
-            FrameSubmitted: true,
-            OutputReceived: HasProducedValidOutput,
-            BitstreamStructurallyValid: HasProducedValidOutput,
-            AccessUnitValid: HasProducedValidOutput,
-            DecoderAccepted: _lastDecoderAcceptedFrameId != 0 && _lastDecoderAcceptedFrameId == 1,
-            FirstValidFrameId: 1,
-            LastValidFrameId: 1,
-            LastDecoderAcceptedFrameId: _lastDecoderAcceptedFrameId
-        );
+        public EncoderEvidence Evidence
+        {
+            get
+            {
+                ulong lastValid = 1;
+                ulong lastAccepted = _lastDecoderAcceptedFrameId;
+                bool latestMatch = lastAccepted != 0 && lastAccepted == lastValid;
+                bool healthy = IsActive && lastAccepted != 0 && lastAccepted <= lastValid && (lastValid - lastAccepted) <= 4;
+
+                return new EncoderEvidence(
+                    ApiAvailable: true,
+                    HardwareSupported: IsHardwareAccelerated,
+                    SessionInitialised: IsActive,
+                    FrameSubmitted: true,
+                    OutputReceived: HasProducedValidOutput,
+                    BitstreamStructurallyValid: HasProducedValidOutput,
+                    AccessUnitValid: HasProducedValidOutput,
+                    DecoderAccepted: healthy,
+                    FirstValidFrameId: 1,
+                    LastValidFrameId: lastValid,
+                    LastDecoderAcceptedFrameId: lastAccepted,
+                    DecoderAcceptedLatestFrame: latestMatch,
+                    DecoderAcceptanceHealthy: healthy
+                );
+            }
+        }
         public double AverageEncodingLatencyMicroseconds => 200.0;
 
         public int ForceIdrCallCount { get; private set; }
