@@ -1,6 +1,7 @@
 #include "encoder/qsv/qsv_api.hpp"
 #include <utility>
 #include <string>
+#include <mutex>
 
 namespace moonshine::encoder::qsv {
 
@@ -114,9 +115,9 @@ bool QsvApi::load() {
 
 #if defined(_WIN32)
     static std::wstring s_resolved_dll;
-    static bool s_probe_done = false;
+    static std::once_flag s_probe_flag;
 
-    if (!s_probe_done) {
+    std::call_once(s_probe_flag, []() {
         const wchar_t* dll_names[] = {
             L"vpl.dll",
             L"libvpl.dll",
@@ -132,8 +133,7 @@ bool QsvApi::load() {
                 break;
             }
         }
-        s_probe_done = true;
-    }
+    });
 
     if (s_resolved_dll.empty()) {
         return false;

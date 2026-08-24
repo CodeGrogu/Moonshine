@@ -127,8 +127,8 @@ bool QsvVideoEncoder::encode_frame(
 
     _state = QsvLifecycleState::Encoding;
 
-    bool request_idr = force_idr || _force_keyframe.exchange(false) || (_frame_counter == 0);
-    uint64_t frame_id = _frame_counter++;
+    bool request_idr = force_idr || _force_keyframe.load() || (_frame_counter.load() == 0);
+    uint64_t frame_id = _frame_counter.load();
 
     auto now = std::chrono::high_resolution_clock::now().time_since_epoch();
     uint64_t timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(now).count();
@@ -144,13 +144,20 @@ bool QsvVideoEncoder::encode_frame(
         out_written_size
     );
 
-    if (!ok) {
-        _state = QsvLifecycleState::Faulted;
-        return false;
+    if (ok && out_written_size > 0) {
+        _frame_counter++;
+        _force_keyframe = false;
+        _state = QsvLifecycleState::Ready;
+        return true;
     }
 
-    _state = QsvLifecycleState::Ready;
-    return true;
+    if (_d3d_device && static_cast<ID3D11Device*>(_d3d_device)->GetDeviceRemovedReason() != S_OK) {
+        _state = QsvLifecycleState::Faulted;
+        _initialized = false;
+    } else {
+        _state = QsvLifecycleState::Ready;
+    }
+    return false;
 #else
     (void)d3d_texture; (void)force_idr; (void)out_desc; (void)out_bitstream; (void)max_buffer_size;
     return false;

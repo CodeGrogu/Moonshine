@@ -229,15 +229,12 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
                             Volatile.Write(ref _accessUnitValid, true);
                             Volatile.Write(ref _hasProducedValidOutput, true);
 
-                            if (frameId != 0)
+                            if (!_hasValidFrame)
                             {
-                                if (!_hasValidFrame)
-                                {
-                                    Volatile.Write(ref _firstValidFrameId, frameId);
-                                    _hasValidFrame = true;
-                                }
-                                Volatile.Write(ref _lastValidFrameId, frameId);
+                                Volatile.Write(ref _firstValidFrameId, frameId);
+                                _hasValidFrame = true;
                             }
+                            Volatile.Write(ref _lastValidFrameId, frameId);
 
                             bool isKeyframe = auResult.HasCodecHeaders || auResult.HasRandomAccessMarker || auResult.HasParameterSets || auResult.HasIdr || auResult.HasRandomAccessPoint;
                             desc.IsKeyframe = (byte)(isKeyframe ? 1 : desc.IsKeyframe);
@@ -326,7 +323,7 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
                 KeyFrame: false,
                 BytesWritten: 0,
                 PacketDesc: default,
-                Result: EncoderResult.EncoderFailure
+                Result: _runtimeState == EncoderRuntimeState.Faulted ? EncoderResult.DeviceLost : EncoderResult.EncoderFailure
             );
         }
 
@@ -349,8 +346,7 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
     )
     {
         ulong frameId = Interlocked.Increment(ref _submittedFrameCounter);
-        long ticks = Stopwatch.GetTimestamp();
-        ulong timestampUs = (ulong)(ticks / Stopwatch.Frequency * 1_000_000L + (ticks % Stopwatch.Frequency) * 1_000_000L / Stopwatch.Frequency);
+        ulong timestampUs = MoonshineMediaClock.GetCurrentTimestampMicroseconds();
         return SubmitFrame(d3dTexture, frameId, timestampUs, forceIdr, outBitstream, out bytesWritten);
     }
 

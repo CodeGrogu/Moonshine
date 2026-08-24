@@ -4,6 +4,10 @@
 #include <thread>
 #include <chrono>
 
+#if defined(_WIN32)
+#include <d3d11.h>
+#endif
+
 namespace moonshine::encoder::amf {
 
 AmfSession::AmfSession() = default;
@@ -283,7 +287,20 @@ bool AmfSession::reconfigure(const EncoderConfig& new_config) {
 void AmfSession::close() {
     std::lock_guard<std::mutex> lock(_mutex);
     if (_encoder) {
+#if defined(_WIN32)
+        bool device_healthy = true;
+        if (_d3d_device) {
+            auto* dev = static_cast<ID3D11Device*>(_d3d_device);
+            if (dev->GetDeviceRemovedReason() != S_OK) {
+                device_healthy = false;
+            }
+        }
+        if (device_healthy) {
+            _encoder->Drain();
+        }
+#else
         _encoder->Drain();
+#endif
         _encoder->Terminate();
         _encoder->Release();
         _encoder = nullptr;

@@ -70,7 +70,7 @@ private:
     uint32_t _intra_refresh_cycle_size{0};
     int32_t _intra_refresh_qp_delta{0};
     std::atomic<bool> _force_keyframe{true};
-    uint64_t _frame_counter{0};
+    std::atomic<uint64_t> _frame_counter{0};
 };
 
 } // namespace moonshine::encoder

@@ -165,8 +165,9 @@ bool QsvSession::configure(const EncoderConfig& config) {
 
     _params.mfx.CodecId = codec_id;
     _params.mfx.TargetUsage = static_cast<uint16_t>(_usage == QsvTargetUsage::BestSpeed ? MFX_TARGETUSAGE_BEST_SPEED : (_usage == QsvTargetUsage::Balanced ? MFX_TARGETUSAGE_BALANCED : MFX_TARGETUSAGE_BEST_QUALITY));
-    _params.mfx.TargetKbps = static_cast<uint16_t>(config.bitrate_kbps);
-    _params.mfx.MaxKbps = static_cast<uint16_t>(config.peak_bitrate_kbps > 0 ? config.peak_bitrate_kbps : config.bitrate_kbps);
+    _params.mfx.TargetKbps = static_cast<uint16_t>(config.bitrate_kbps > 65535 ? 65535 : config.bitrate_kbps);
+    uint32_t peak = config.peak_bitrate_kbps > 0 ? config.peak_bitrate_kbps : config.bitrate_kbps;
+    _params.mfx.MaxKbps = static_cast<uint16_t>(peak > 65535 ? 65535 : peak);
     _params.mfx.RateControlMethod = MFX_RATECONTROL_CBR;
     _params.mfx.LowPower = _low_power_vdenc ? 1 : 0;
     _params.mfx.GopRefDist = 1; // Zero B-frames
@@ -306,8 +307,9 @@ bool QsvSession::reconfigure(const EncoderConfig& new_config) {
     std::lock_guard<std::mutex> lock(_mutex);
 
     _config = new_config;
-    _params.mfx.TargetKbps = static_cast<uint16_t>(new_config.bitrate_kbps);
-    _params.mfx.MaxKbps = static_cast<uint16_t>(new_config.peak_bitrate_kbps > 0 ? new_config.peak_bitrate_kbps : new_config.bitrate_kbps);
+    _params.mfx.TargetKbps = static_cast<uint16_t>(new_config.bitrate_kbps > 65535 ? 65535 : new_config.bitrate_kbps);
+    uint32_t peak = new_config.peak_bitrate_kbps > 0 ? new_config.peak_bitrate_kbps : new_config.bitrate_kbps;
+    _params.mfx.MaxKbps = static_cast<uint16_t>(peak > 65535 ? 65535 : peak);
     _params.mfx.FrameInfo.FrameRateExtN = new_config.fps > 0 ? new_config.fps : 60;
 
     mfxStatus sts = _api->MFXVideoENCODE_Reset(_session, &_params);

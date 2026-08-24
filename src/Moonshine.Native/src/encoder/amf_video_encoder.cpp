@@ -125,8 +125,8 @@ bool AmfVideoEncoder::encode_frame(
         return false;
     }
 
-    bool is_key = force_idr || _force_keyframe.exchange(false) || (_frame_counter == 0);
-    uint64_t current_frame = _frame_counter++;
+    bool is_key = force_idr || _force_keyframe.load() || (_frame_counter.load() == 0);
+    uint64_t current_frame = _frame_counter.load();
 
     auto now = std::chrono::high_resolution_clock::now().time_since_epoch();
     uint64_t timestamp_us = static_cast<uint64_t>(
@@ -147,6 +147,8 @@ bool AmfVideoEncoder::encode_frame(
     );
 
     if (res && out_written_size > 0) {
+        _frame_counter++;
+        _force_keyframe = false;
         _state = AmfLifecycleState::Ready;
         return true;
     }

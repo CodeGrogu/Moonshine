@@ -122,8 +122,8 @@ public:
 
     [[nodiscard]] EncoderVendor vendor() const noexcept override { return EncoderVendor::NvidiaNvenc; }
     [[nodiscard]] bool is_initialized() const noexcept override { return _initialized; }
-    [[nodiscard]] NvencLifecycleState state() const noexcept { return _state; }
-    [[nodiscard]] uint32_t get_state() const noexcept override { return static_cast<uint32_t>(_state); }
+    [[nodiscard]] NvencLifecycleState state() const noexcept { return _state.load(); }
+    [[nodiscard]] uint32_t get_state() const noexcept override { return static_cast<uint32_t>(_state.load()); }
     [[nodiscard]] bool is_healthy() const noexcept override;
 
     bool set_preset_and_tuning(NvencPreset preset, NvencTuning tuning);
@@ -136,7 +136,7 @@ private:
     struct Impl;
     std::unique_ptr<Impl> _impl;
     bool _initialized{false};
-    NvencLifecycleState _state{NvencLifecycleState::Uninitialised};
+    std::atomic<NvencLifecycleState> _state{NvencLifecycleState::Uninitialised};
     EncoderConfig _config{};
     void* _d3d_device{nullptr};
     NvencPreset _preset{NvencPreset::P1_UltraFast};
@@ -145,7 +145,7 @@ private:
     uint32_t _intra_refresh_period{0};
     uint32_t _intra_refresh_count{0};
     std::atomic<bool> _force_keyframe{true};
-    uint64_t _frame_counter{0};
+    std::atomic<uint64_t> _frame_counter{0};
 };
 
 } // namespace moonshine::encoder
