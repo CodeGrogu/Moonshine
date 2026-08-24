@@ -25,6 +25,9 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
     private ulong _totalEncodingTimeQpc;
     private ulong _encodingErrorsCount;
 
+    private readonly EncoderImplementationKind _implementationKind;
+    private readonly bool _isHardwareAccelerated;
+
     public uint Width => _width;
     public uint Height => _height;
     public uint Fps => Volatile.Read(ref _fps);
@@ -32,8 +35,8 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
     public VideoCodec Codec => _codec;
     public EncoderVendor Vendor => _vendor;
     public bool IsActive => _handle != IntPtr.Zero && !_disposed;
-    public EncoderImplementationKind ImplementationKind => EncoderImplementationKind.HardwareAccelerated;
-    public bool IsHardwareAccelerated => true;
+    public EncoderImplementationKind ImplementationKind => _implementationKind;
+    public bool IsHardwareAccelerated => _isHardwareAccelerated;
     public bool HasProducedValidOutput => Volatile.Read(ref _framesEncoded) > 0;
     public Type ImplementationType => GetType();
 
@@ -84,6 +87,16 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
         };
 
         _handle = MoonshineNativeMethods.EncoderCreate((uint)vendor, d3dDevice, in config);
+        if (_handle != IntPtr.Zero)
+        {
+            _implementationKind = EncoderImplementationKind.HardwareAccelerated;
+            _isHardwareAccelerated = true;
+        }
+        else
+        {
+            _implementationKind = EncoderImplementationKind.Unimplemented;
+            _isHardwareAccelerated = false;
+        }
     }
 
     public unsafe bool TryEncodeFrame(

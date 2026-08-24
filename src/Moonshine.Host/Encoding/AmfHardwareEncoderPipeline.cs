@@ -27,6 +27,9 @@ public sealed class AmfHardwareEncoderPipeline : IVideoEncoderPipeline
     private bool _disposed;
     private readonly Lock _lock = new();
 
+    private readonly EncoderImplementationKind _implementationKind;
+    private readonly bool _isHardwareAccelerated;
+
     public uint Width => _width;
     public uint Height => _height;
     public uint Fps => Volatile.Read(ref _fps);
@@ -36,8 +39,8 @@ public sealed class AmfHardwareEncoderPipeline : IVideoEncoderPipeline
     public AmfQualityPreset Preset => _preset;
     public AmfUsage Usage => _usage;
     public bool IsActive => _handle != IntPtr.Zero && !_disposed;
-    public EncoderImplementationKind ImplementationKind => EncoderImplementationKind.HardwareAccelerated;
-    public bool IsHardwareAccelerated => true;
+    public EncoderImplementationKind ImplementationKind => _implementationKind;
+    public bool IsHardwareAccelerated => _isHardwareAccelerated;
     public bool HasProducedValidOutput => Volatile.Read(ref _framesEncoded) > 0;
     public Type ImplementationType => GetType();
     public double AverageEncodingLatencyMicroseconds
@@ -88,7 +91,14 @@ public sealed class AmfHardwareEncoderPipeline : IVideoEncoderPipeline
         _handle = MoonshineNativeMethods.EncoderCreate((uint)EncoderVendor.AmdAmf, d3dDevice, in config);
         if (_handle != IntPtr.Zero)
         {
+            _implementationKind = EncoderImplementationKind.HardwareAccelerated;
+            _isHardwareAccelerated = true;
             _ = MoonshineNativeMethods.AmfSetTuning(_handle, (uint)preset, (uint)usage);
+        }
+        else
+        {
+            _implementationKind = EncoderImplementationKind.Unimplemented;
+            _isHardwareAccelerated = false;
         }
     }
 

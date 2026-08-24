@@ -3,6 +3,16 @@
 #include "moonshine/encoder/video_encoder_interface.hpp"
 #include <atomic>
 #include <vector>
+#include <cstdint>
+
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#else
+using HMODULE = void*;
+#endif
 
 namespace moonshine::encoder {
 
@@ -22,6 +32,58 @@ enum class NvencTuning : uint32_t {
     UltraLowLatency = 2,
     Lossless = 3
 };
+
+#if !defined(_NVENC_FN_LIST_DEFINED)
+#define _NVENC_FN_LIST_DEFINED
+typedef struct _NVENC_FN_LIST {
+    uint32_t version;
+    uint32_t reserved;
+    void* nvEncOpenEncodeSession;
+    void* nvEncGetEncodeGUIDCount;
+    void* nvEncGetEncodeProfileGUIDCount;
+    void* nvEncGetEncodeProfileGUIDs;
+    void* nvEncGetEncodeGUIDs;
+    void* nvEncGetInputFormatCount;
+    void* nvEncGetInputFormats;
+    void* nvEncGetEncodeCaps;
+    void* nvEncGetEncodePresetCount;
+    void* nvEncGetEncodePresetGUIDs;
+    void* nvEncGetEncodePresetConfig;
+    void* nvEncInitializeEncoder;
+    void* nvEncCreateInputBuffer;
+    void* nvEncDestroyInputBuffer;
+    void* nvEncCreateBitstreamBuffer;
+    void* nvEncDestroyBitstreamBuffer;
+    void* nvEncEncodePicture;
+    void* nvEncLockBitstream;
+    void* nvEncUnlockBitstream;
+    void* nvEncLockInputBuffer;
+    void* nvEncUnlockInputBuffer;
+    void* nvEncGetEncodeStats;
+    void* nvEncGetSequenceParams;
+    void* nvEncRegisterAsyncEvent;
+    void* nvEncUnregisterAsyncEvent;
+    void* nvEncMapInputResource;
+    void* nvEncUnmapInputResource;
+    void* nvEncDestroyEncoder;
+    void* nvEncInvalidateRefFrames;
+    void* nvEncOpenEncodeSessionEx;
+    void* nvEncRegisterResource;
+    void* nvEncUnregisterResource;
+    void* nvEncReconfigureEncoder;
+    void* reserved1;
+    void* nvEncCreateMVBuffer;
+    void* nvEncDestroyMVBuffer;
+    void* nvEncRunMotionEstimationOnly;
+    void* nvEncGetLastErrorString;
+    void* nvEncSetIOCudaStreams;
+    void* nvEncGetEncodePresetConfigEx;
+    void* nvEncGetSequenceParamEx;
+    void* nvEncRestoreEncoderState;
+    void* nvEncLookaheadPicture;
+    void* reserved2[275];
+} NVENC_FN_LIST;
+#endif
 
 class NvencVideoEncoder final : public IVideoEncoder {
 public:
@@ -54,6 +116,12 @@ private:
     bool _initialized{false};
     EncoderConfig _config{};
     void* _d3d_device{nullptr};
+    void* _encoder_session{nullptr};
+    void* _bitstream_buffer{nullptr};
+    HMODULE _nvenc_module{nullptr};
+    NVENC_FN_LIST _nvenc_funcs{};
+    void* _registered_texture{nullptr};
+    void* _registered_resource{nullptr};
     NvencPreset _preset{NvencPreset::P1_UltraFast};
     NvencTuning _tuning{NvencTuning::UltraLowLatency};
     bool _intra_refresh_enabled{false};

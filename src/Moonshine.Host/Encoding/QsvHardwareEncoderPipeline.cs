@@ -28,6 +28,9 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
     private bool _disposed;
     private readonly Lock _lock = new();
 
+    private readonly EncoderImplementationKind _implementationKind;
+    private readonly bool _isHardwareAccelerated;
+
     public uint Width => _width;
     public uint Height => _height;
     public uint Fps => Volatile.Read(ref _fps);
@@ -37,8 +40,8 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
     public QsvTargetUsage TargetUsage => _targetUsage;
     public bool LowPowerVdenc => _lowPowerVdenc;
     public bool IsActive => _handle != IntPtr.Zero && !_disposed;
-    public EncoderImplementationKind ImplementationKind => EncoderImplementationKind.HardwareAccelerated;
-    public bool IsHardwareAccelerated => true;
+    public EncoderImplementationKind ImplementationKind => _implementationKind;
+    public bool IsHardwareAccelerated => _isHardwareAccelerated;
     public bool HasProducedValidOutput => Volatile.Read(ref _framesEncoded) > 0;
     public Type ImplementationType => GetType();
     public double AverageEncodingLatencyMicroseconds
@@ -89,7 +92,14 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
         _handle = MoonshineNativeMethods.EncoderCreate((uint)EncoderVendor.IntelQuickSync, d3dDevice, in config);
         if (_handle != IntPtr.Zero)
         {
+            _implementationKind = EncoderImplementationKind.HardwareAccelerated;
+            _isHardwareAccelerated = true;
             _ = MoonshineNativeMethods.QsvSetTuning(_handle, (uint)targetUsage, lowPowerVdenc ? 1 : 0);
+        }
+        else
+        {
+            _implementationKind = EncoderImplementationKind.Unimplemented;
+            _isHardwareAccelerated = false;
         }
     }
 
