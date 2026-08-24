@@ -56,7 +56,7 @@ add_test(NAME test_hardware_encoders COMMAND test_hardware_encoders)
 add_executable(test_nvenc_pipeline 
     test_nvenc_pipeline.cpp
 )
-target_link_libraries(test_nvenc_pipeline PRIVATE Moonshine.Native)
+target_link_libraries(test_nvenc_pipeline PRIVATE Moonshine.Native $<$<BOOL:${WIN32}>:d3d11 dxgi>)
 add_test(NAME test_nvenc_pipeline COMMAND test_nvenc_pipeline)
 
 add_executable(test_amf_pipeline 

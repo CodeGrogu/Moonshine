@@ -312,6 +312,16 @@ typedef struct _NV_ENC_PRESET_CONFIG {
 
 #define NV_ENC_PRESET_CONFIG_VER (NVENCAPI_STRUCT_VERSION(5) | (1u << 31))
 
+typedef struct _NVENC_EXTERNAL_ME_HINT_COUNTS_PER_BLOCKTYPE {
+    uint32_t numCandsPerBlk16x16 : 4;
+    uint32_t numCandsPerBlk16x8  : 4;
+    uint32_t numCandsPerBlk8x16  : 4;
+    uint32_t numCandsPerBlk8x8   : 4;
+    uint32_t numCandsPerSb       : 8;
+    uint32_t reserved            : 8;
+    uint32_t reserved1[3];
+} NVENC_EXTERNAL_ME_HINT_COUNTS_PER_BLOCKTYPE;
+
 typedef struct _NV_ENC_INITIALIZE_PARAMS {
     uint32_t version;
     GUID encodeGUID;
@@ -341,7 +351,7 @@ typedef struct _NV_ENC_INITIALIZE_PARAMS {
     NV_ENC_CONFIG* encodeConfig;
     uint32_t maxEncodeWidth;
     uint32_t maxEncodeHeight;
-    void* maxMEHintCountsPerBlock[2];
+    NVENC_EXTERNAL_ME_HINT_COUNTS_PER_BLOCKTYPE maxMEHintCountsPerBlock[2];
     uint32_t tuningInfo;
     uint32_t bufferFormat;
     uint32_t numStateBuffers;
