@@ -11,6 +11,12 @@ namespace Moonshine.Host.Encoding;
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "CA2216:DisposableTypesShouldDeclareFinalizer", Justification = "Finaliser deliberately omitted: managed disposal deterministically releases unmanaged Intel QuickSync hardware encoder resources via C-ABI.")]
 public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
 {
+    /// <summary>
+    /// Maximum acceptable frame lag between the latest encoded frame and the latest decoder-accepted frame (4 frames).
+    /// Accommodates the 4-stage pipelined streaming architecture: Capture -> Encoder In-Flight Queue -> Network Ingestion -> Decoder Display Queue.
+    /// </summary>
+    public const ulong DecoderAcceptanceLagWindow = HardwareVideoEncoderPipeline.DecoderAcceptanceLagWindow;
+
     private IntPtr _handle;
     private readonly uint _width;
     private readonly uint _height;
@@ -66,7 +72,7 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
             ulong lastAccepted = Volatile.Read(ref _lastDecoderAcceptedFrameId);
             bool latestMatch = lastAccepted != 0 && lastAccepted == lastValid;
             bool healthy = !_disposed && _handle != IntPtr.Zero &&
-                           lastAccepted != 0 && lastAccepted <= lastValid && (lastValid - lastAccepted) <= 4;
+                           lastAccepted != 0 && lastAccepted <= lastValid && (lastValid - lastAccepted) <= DecoderAcceptanceLagWindow;
 
             return new EncoderEvidence(
                 ApiAvailable: _handle != IntPtr.Zero,

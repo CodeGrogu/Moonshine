@@ -9,6 +9,12 @@ namespace Moonshine.Host.Encoding;
 /// </summary>
 public sealed class UnifiedHardwareEncoderEngine : IDisposable
 {
+    /// <summary>
+    /// Maximum acceptable frame lag between the latest encoded frame and the latest decoder-accepted frame (4 frames).
+    /// Accommodates the 4-stage pipelined streaming architecture: Capture -> Encoder In-Flight Queue -> Network Ingestion -> Decoder Display Queue.
+    /// </summary>
+    public const ulong DecoderAcceptanceLagWindow = HardwareVideoEncoderPipeline.DecoderAcceptanceLagWindow;
+
     private readonly IVideoEncoderPipeline _pipeline;
     private long _framesEncoded;
     private long _keyframesEmitted;

@@ -73,7 +73,7 @@ public class HostConfigurationSecurityAndStressTests
                 ulong lastValid = Math.Max(1, _frameIndex);
                 ulong lastAccepted = _lastDecoderAcceptedFrameId;
                 bool latestMatch = lastAccepted != 0 && lastAccepted == lastValid;
-                bool healthy = IsActive && lastAccepted != 0 && lastAccepted <= lastValid && (lastValid - lastAccepted) <= 4;
+                bool healthy = IsActive && lastAccepted != 0 && lastAccepted <= lastValid && (lastValid - lastAccepted) <= HardwareVideoEncoderPipeline.DecoderAcceptanceLagWindow;
 
                 return new EncoderEvidence(
                     ApiAvailable: true,
