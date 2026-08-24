@@ -94,6 +94,10 @@ public class HostStreamingSessionTests
         public VideoCodec Codec => VideoCodec.HevcMain10;
         public EncoderVendor Vendor => EncoderVendor.Direct3D11Hardware;
         public bool IsActive { get; set; } = true;
+        public EncoderImplementationKind ImplementationKind { get; set; } = EncoderImplementationKind.SyntheticTest;
+        public bool IsHardwareAccelerated { get; set; }
+        public bool HasProducedValidOutput { get; set; } = true;
+        public Type ImplementationType => GetType();
         public double AverageEncodingLatencyMicroseconds => 250.0;
 
         public int ForceIdrCallCount { get; private set; }
@@ -587,7 +591,13 @@ public class HostStreamingSessionTests
     public async Task HostStreamingSession_GetLiveBackendReadiness_VideoEncoder_SemanticRules()
     {
         var capture = new TestDesktopCapturePipeline();
-        var encoderPipeline = new TestVideoEncoderPipeline { IsActive = true };
+        var encoderPipeline = new TestVideoEncoderPipeline
+        {
+            IsActive = true,
+            ImplementationKind = EncoderImplementationKind.HardwareAccelerated,
+            IsHardwareAccelerated = true,
+            HasProducedValidOutput = true
+        };
         using var encoder = new UnifiedHardwareEncoderEngine(encoderPipeline);
 
         ushort basePort = (ushort)(60200 + Random.Shared.Next(0, 50) * 8);
@@ -618,6 +628,92 @@ public class HostStreamingSessionTests
         // Encoder becomes inactive while streaming: reports Faulted
         encoderPipeline.IsActive = false;
         session.GetLiveBackendReadiness().VideoEncoder.Should().Be(ComponentReadiness.Faulted);
+
+        await session.StopAsync();
+    }
+
+    [Fact]
+    public async Task SyntheticEncoder_NeverReportsOperational()
+    {
+        var capture = new TestDesktopCapturePipeline { IsAvailable = true };
+        var encoderPipeline = new TestVideoEncoderPipeline
+        {
+            IsActive = true,
+            ImplementationKind = EncoderImplementationKind.SyntheticTest,
+            IsHardwareAccelerated = false,
+            HasProducedValidOutput = true
+        };
+        using var encoder = new UnifiedHardwareEncoderEngine(encoderPipeline);
+
+        ushort basePort = (ushort)(60400 + Random.Shared.Next(0, 50) * 8);
+        var config = new HostSessionConfig
+        {
+            LocalVideoPort = basePort,
+            LocalAudioPort = (ushort)(basePort + 1),
+            LocalControlFeedbackPort = (ushort)(basePort + 2),
+            ClientVideoPort = (ushort)(basePort + 3),
+            ClientAudioPort = (ushort)(basePort + 4),
+            ClientControlFeedbackPort = (ushort)(basePort + 5)
+        };
+
+        await using var session = new MoonshineHostStreamingSession(
+            config: config,
+            capturePipeline: capture,
+            encoderEngine: encoder);
+
+        // Not streaming: reports Available
+        session.GetLiveBackendReadiness().VideoEncoder.Should().Be(ComponentReadiness.Available);
+
+        await session.StartAsync();
+        session.IsStreaming.Should().BeTrue();
+
+        // Streaming: synthetic test encoder must report Available, NEVER Operational
+        session.GetLiveBackendReadiness().VideoEncoder.Should().Be(ComponentReadiness.Available);
+
+        await session.StopAsync();
+    }
+
+    [Fact]
+    public async Task HardwareAcceleratedEncoder_ReportsOperational_OnlyWhenValidOutputProduced()
+    {
+        var capture = new TestDesktopCapturePipeline { IsAvailable = true };
+        var encoderPipeline = new TestVideoEncoderPipeline
+        {
+            IsActive = true,
+            ImplementationKind = EncoderImplementationKind.HardwareAccelerated,
+            IsHardwareAccelerated = true,
+            HasProducedValidOutput = false
+        };
+        using var encoder = new UnifiedHardwareEncoderEngine(encoderPipeline);
+
+        ushort basePort = (ushort)(60600 + Random.Shared.Next(0, 50) * 8);
+        var config = new HostSessionConfig
+        {
+            LocalVideoPort = basePort,
+            LocalAudioPort = (ushort)(basePort + 1),
+            LocalControlFeedbackPort = (ushort)(basePort + 2),
+            ClientVideoPort = (ushort)(basePort + 3),
+            ClientAudioPort = (ushort)(basePort + 4),
+            ClientControlFeedbackPort = (ushort)(basePort + 5)
+        };
+
+        await using var session = new MoonshineHostStreamingSession(
+            config: config,
+            capturePipeline: capture,
+            encoderEngine: encoder);
+
+        // Not streaming: reports Available
+        session.GetLiveBackendReadiness().VideoEncoder.Should().Be(ComponentReadiness.Available);
+
+        await session.StartAsync();
+        session.IsStreaming.Should().BeTrue();
+
+        // Streaming but before valid output produced: reports Available
+        session.GetLiveBackendReadiness().VideoEncoder.Should().Be(ComponentReadiness.Available);
+
+        // Once valid output is produced: transitions to Operational
+        encoderPipeline.HasProducedValidOutput = true;
+        session.GetLiveBackendReadiness().VideoEncoder.Should().Be(ComponentReadiness.Operational);
 
         await session.StopAsync();
     }

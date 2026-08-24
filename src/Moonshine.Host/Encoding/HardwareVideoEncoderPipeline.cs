@@ -32,6 +32,10 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
     public VideoCodec Codec => _codec;
     public EncoderVendor Vendor => _vendor;
     public bool IsActive => _handle != IntPtr.Zero && !_disposed;
+    public EncoderImplementationKind ImplementationKind => EncoderImplementationKind.HardwareAccelerated;
+    public bool IsHardwareAccelerated => true;
+    public bool HasProducedValidOutput => Volatile.Read(ref _framesEncoded) > 0;
+    public Type ImplementationType => GetType();
 
     public ulong FramesEncoded => Volatile.Read(ref _framesEncoded);
     public ulong EncodingErrorsCount => Volatile.Read(ref _encodingErrorsCount);

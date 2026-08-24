@@ -14,6 +14,10 @@ public interface IVideoEncoderPipeline : IDisposable
     VideoCodec Codec { get; }
     EncoderVendor Vendor { get; }
     bool IsActive { get; }
+    EncoderImplementationKind ImplementationKind { get; }
+    bool IsHardwareAccelerated { get; }
+    bool HasProducedValidOutput { get; }
+    Type ImplementationType { get; }
 
     /// <summary>
     /// Gets the average synchronous execution time in microseconds spent inside the native encoder call.

@@ -36,6 +36,10 @@ public sealed class AmfHardwareEncoderPipeline : IVideoEncoderPipeline
     public AmfQualityPreset Preset => _preset;
     public AmfUsage Usage => _usage;
     public bool IsActive => _handle != IntPtr.Zero && !_disposed;
+    public EncoderImplementationKind ImplementationKind => EncoderImplementationKind.HardwareAccelerated;
+    public bool IsHardwareAccelerated => true;
+    public bool HasProducedValidOutput => Volatile.Read(ref _framesEncoded) > 0;
+    public Type ImplementationType => GetType();
     public double AverageEncodingLatencyMicroseconds
     {
         get

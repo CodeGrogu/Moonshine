@@ -57,6 +57,10 @@ public class HostConfigurationProtocolIntegrationTests
         public VideoCodec Codec => VideoCodec.HevcMain10;
         public EncoderVendor Vendor => EncoderVendor.Direct3D11Hardware;
         public bool IsActive => true;
+        public EncoderImplementationKind ImplementationKind { get; set; } = EncoderImplementationKind.SyntheticTest;
+        public bool IsHardwareAccelerated { get; set; }
+        public bool HasProducedValidOutput { get; set; } = true;
+        public Type ImplementationType => GetType();
         public double AverageEncodingLatencyMicroseconds => 150.0;
 
         private uint _frameIndex;

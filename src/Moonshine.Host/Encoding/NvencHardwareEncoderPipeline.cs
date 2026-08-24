@@ -37,6 +37,10 @@ public sealed class NvencHardwareEncoderPipeline : IVideoEncoderPipeline
     public NvencPreset Preset => _preset;
     public NvencTuning Tuning => _tuning;
     public bool IsActive => _handle != IntPtr.Zero && !_disposed;
+    public EncoderImplementationKind ImplementationKind => EncoderImplementationKind.HardwareAccelerated;
+    public bool IsHardwareAccelerated => true;
+    public bool HasProducedValidOutput => Volatile.Read(ref _framesEncoded) > 0;
+    public Type ImplementationType => GetType();
     public double AverageEncodingLatencyMicroseconds
     {
         get

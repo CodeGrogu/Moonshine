@@ -24,6 +24,10 @@ public sealed class UnifiedHardwareEncoderEngine : IDisposable
     public VideoCodec Codec => _pipeline.Codec;
     public EncoderVendor Vendor => _pipeline.Vendor;
     public bool IsActive => _pipeline.IsActive && !_disposed;
+    public EncoderImplementationKind ImplementationKind => _pipeline.ImplementationKind;
+    public bool IsHardwareAccelerated => _pipeline.IsHardwareAccelerated;
+    public bool HasProducedValidOutput => Interlocked.Read(ref _bytesEmitted) > 0 || _pipeline.HasProducedValidOutput;
+    public Type ImplementationType => _pipeline.ImplementationType;
 
     public long FramesEncoded => Interlocked.Read(ref _framesEncoded);
     public long KeyframesEmitted => Interlocked.Read(ref _keyframesEmitted);

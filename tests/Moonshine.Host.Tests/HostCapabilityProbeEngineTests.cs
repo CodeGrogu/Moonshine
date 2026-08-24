@@ -125,7 +125,13 @@ public class HostCapabilityProbeEngineTests
     public async Task HostStreamingSession_LiveBackendReadiness_ReportsOperationalWhenStreaming()
     {
         var capture = new HostStreamingSessionTests.TestDesktopCapturePipeline { IsAvailable = true };
-        var encoderPipeline = new HostStreamingSessionTests.TestVideoEncoderPipeline { IsActive = true };
+        var encoderPipeline = new HostStreamingSessionTests.TestVideoEncoderPipeline
+        {
+            IsActive = true,
+            ImplementationKind = EncoderImplementationKind.HardwareAccelerated,
+            IsHardwareAccelerated = true,
+            HasProducedValidOutput = true
+        };
         using var encoder = new UnifiedHardwareEncoderEngine(encoderPipeline);
 
         ushort basePort = (ushort)(60000 + Random.Shared.Next(0, 50) * 8);

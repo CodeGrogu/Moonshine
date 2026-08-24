@@ -142,13 +142,22 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                                   HostCapabilityProbeEngine.IsAnyHardwareEncoderSupported();
 
         ComponentReadiness videoEncoder;
-        if (State == HostSessionState.Faulted || (_encoderEngine?.IsActive == false && IsStreaming))
+        if (State == HostSessionState.Faulted || (_encoderEngine?.IsActive == false && IsStreaming && State != HostSessionState.InitializingBackends))
         {
             videoEncoder = ComponentReadiness.Faulted;
         }
-        else if (_encoderEngine?.IsActive == true && IsStreaming)
+        else if (_encoderEngine != null && _encoderEngine.IsActive && IsStreaming)
         {
-            videoEncoder = ComponentReadiness.Operational;
+            // Operational is reported ONLY when the backend is a real hardware-accelerated encoder that has produced valid output.
+            // Synthetic test or placeholder encoders report Available, NEVER Operational.
+            if (_encoderEngine.ImplementationKind == EncoderImplementationKind.HardwareAccelerated && _encoderEngine.HasProducedValidOutput)
+            {
+                videoEncoder = ComponentReadiness.Operational;
+            }
+            else
+            {
+                videoEncoder = ComponentReadiness.Available;
+            }
         }
         else
         {

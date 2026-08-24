@@ -25,6 +25,10 @@ public class HardwareVideoEncoderPipelineTests
         pipeline.BitrateKbps.Should().Be(30000);
         pipeline.Codec.Should().Be(VideoCodec.Av1);
         pipeline.IsActive.Should().BeTrue();
+        pipeline.ImplementationKind.Should().Be(EncoderImplementationKind.HardwareAccelerated);
+        pipeline.IsHardwareAccelerated.Should().BeTrue();
+        pipeline.HasProducedValidOutput.Should().BeFalse();
+        pipeline.ImplementationType.Should().Be(typeof(HardwareVideoEncoderPipeline));
     }
 
     [Fact]
@@ -38,9 +42,11 @@ public class HardwareVideoEncoderPipelineTests
             codec: VideoCodec.HevcMain10
         );
 
+        pipeline.HasProducedValidOutput.Should().BeFalse();
         Span<byte> buffer = stackalloc byte[1024 * 512];
         bool success = pipeline.TryEncodeFrame(IntPtr.Zero, false, out var desc, buffer, out int written);
         success.Should().BeTrue();
+        pipeline.HasProducedValidOutput.Should().BeTrue();
         desc.IsKeyframe.Should().Be(1);
         written.Should().BeGreaterThan(0);
 
