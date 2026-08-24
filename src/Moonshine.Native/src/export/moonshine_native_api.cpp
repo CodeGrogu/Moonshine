@@ -1727,7 +1727,8 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_encoder_encode_frame(
     uint32_t max_buffer_size,
     uint32_t* out_size
 ) {
-    if (!handle || !out_desc || !out_buffer || !out_size) return 0;
+    if (out_size) *out_size = 0;
+    if (!handle || !out_desc || !out_buffer || !out_size || max_buffer_size == 0) return 0;
     auto* encoder = static_cast<encoder::UnifiedVideoEncoder*>(handle);
 
     encoder::EncodedPacketDesc desc{};
@@ -1741,7 +1742,10 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_encoder_encode_frame(
         written
     );
 
-    if (!res) return 0;
+    if (!res) {
+        *out_size = 0;
+        return 0;
+    }
 
     out_desc->frame_index = desc.frame_index;
     out_desc->timestamp_qpc = desc.timestamp_qpc;
@@ -1791,6 +1795,136 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_encoder_destroy(
     if (!handle) return;
     auto* encoder = static_cast<encoder::UnifiedVideoEncoder*>(handle);
     delete encoder;
+}
+
+MOONSHINE_API int32_t MOONSHINE_CONV moonshine_encoder_get_state(
+    MoonshineEncoderHandle handle
+) {
+    if (!handle) return 0;
+    auto* encoder = static_cast<encoder::UnifiedVideoEncoder*>(handle);
+    return static_cast<int32_t>(encoder->get_state());
+}
+
+MOONSHINE_API int32_t MOONSHINE_CONV moonshine_encoder_is_healthy(
+    MoonshineEncoderHandle handle
+) {
+    if (!handle) return 0;
+    auto* encoder = static_cast<encoder::UnifiedVideoEncoder*>(handle);
+    return encoder->is_healthy() ? 1 : 0;
+}
+
+// ============================================================================
+// Direct3D 11 Hardware Device & Texture Utility APIs
+// ============================================================================
+
+MOONSHINE_API void* MOONSHINE_CONV moonshine_d3d11_create_device(uint32_t vendor_id) {
+#if defined(_WIN32)
+    Microsoft::WRL::ComPtr<IDXGIFactory1> factory;
+    if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) {
+        return nullptr;
+    }
+
+    Microsoft::WRL::ComPtr<IDXGIAdapter1> chosen_adapter;
+    Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
+    for (UINT i = 0; factory->EnumAdapters1(i, &adapter) != DXGI_ERROR_NOT_FOUND; ++i) {
+        DXGI_ADAPTER_DESC1 desc{};
+        if (SUCCEEDED(adapter->GetDesc1(&desc))) {
+            if (vendor_id == 0 || desc.VendorId == vendor_id) {
+                chosen_adapter = adapter;
+                break;
+            }
+        }
+    }
+
+    if (!chosen_adapter) {
+        return nullptr;
+    }
+
+    const UINT create_flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT;
+    const D3D_FEATURE_LEVEL feature_levels[] = {
+        D3D_FEATURE_LEVEL_11_1,
+        D3D_FEATURE_LEVEL_11_0
+    };
+    D3D_FEATURE_LEVEL fl{};
+    Microsoft::WRL::ComPtr<ID3D11Device> device;
+    Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
+
+    HRESULT hr = D3D11CreateDevice(
+        chosen_adapter.Get(),
+        D3D_DRIVER_TYPE_UNKNOWN,
+        nullptr,
+        create_flags,
+        feature_levels,
+        static_cast<UINT>(std::size(feature_levels)),
+        D3D11_SDK_VERSION,
+        &device,
+        &fl,
+        &context
+    );
+
+    if (FAILED(hr) || !device) {
+        return nullptr;
+    }
+
+    return device.Detach();
+#else
+    (void)vendor_id;
+    return nullptr;
+#endif
+}
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_d3d11_destroy_device(void* d3d_device) {
+#if defined(_WIN32)
+    if (d3d_device) {
+        auto* dev = static_cast<ID3D11Device*>(d3d_device);
+        dev->Release();
+    }
+#else
+    (void)d3d_device;
+#endif
+}
+
+MOONSHINE_API void* MOONSHINE_CONV moonshine_d3d11_create_texture(
+    void* d3d_device,
+    uint32_t width,
+    uint32_t height,
+    uint32_t format
+) {
+#if defined(_WIN32)
+    if (!d3d_device || width == 0 || height == 0) return nullptr;
+    auto* dev = static_cast<ID3D11Device*>(d3d_device);
+
+    D3D11_TEXTURE2D_DESC desc{};
+    desc.Width = width;
+    desc.Height = height;
+    desc.MipLevels = 1;
+    desc.ArraySize = 1;
+    desc.Format = (format == 0) ? DXGI_FORMAT_B8G8R8A8_UNORM : static_cast<DXGI_FORMAT>(format);
+    desc.SampleDesc.Count = 1;
+    desc.SampleDesc.Quality = 0;
+    desc.Usage = D3D11_USAGE_DEFAULT;
+    desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> tex;
+    if (FAILED(dev->CreateTexture2D(&desc, nullptr, &tex)) || !tex) {
+        return nullptr;
+    }
+    return tex.Detach();
+#else
+    (void)d3d_device; (void)width; (void)height; (void)format;
+    return nullptr;
+#endif
+}
+
+MOONSHINE_API void MOONSHINE_CONV moonshine_d3d11_destroy_texture(void* texture) {
+#if defined(_WIN32)
+    if (texture) {
+        auto* tex = static_cast<ID3D11Texture2D*>(texture);
+        tex->Release();
+    }
+#else
+    (void)texture;
+#endif
 }
 
 // ============================================================================

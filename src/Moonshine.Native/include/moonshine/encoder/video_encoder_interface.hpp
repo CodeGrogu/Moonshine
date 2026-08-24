@@ -83,6 +83,8 @@ public:
     virtual void cleanup() = 0;
     [[nodiscard]] virtual EncoderVendor vendor() const noexcept = 0;
     [[nodiscard]] virtual bool is_initialized() const noexcept = 0;
+    [[nodiscard]] virtual uint32_t get_state() const noexcept { return is_initialized() ? 5 : 0; }
+    [[nodiscard]] virtual bool is_healthy() const noexcept { return is_initialized(); }
 };
 
 } // namespace moonshine::encoder

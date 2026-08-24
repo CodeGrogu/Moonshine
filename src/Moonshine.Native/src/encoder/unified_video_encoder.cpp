@@ -147,4 +147,12 @@ bool UnifiedVideoEncoder::is_initialized() const noexcept {
     return _active_encoder && _active_encoder->is_initialized();
 }
 
+uint32_t UnifiedVideoEncoder::get_state() const noexcept {
+    return _active_encoder ? _active_encoder->get_state() : 0;
+}
+
+bool UnifiedVideoEncoder::is_healthy() const noexcept {
+    return _active_encoder && _active_encoder->is_healthy();
+}
+
 } // namespace moonshine::encoder

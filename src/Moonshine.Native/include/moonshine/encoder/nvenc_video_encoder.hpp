@@ -20,6 +20,19 @@ using HMODULE = void*;
 
 namespace moonshine::encoder {
 
+enum class NvencLifecycleState : uint32_t {
+    Uninitialised = 0,
+    DeviceAttached = 1,
+    SessionCreated = 2,
+    EncoderInitialised = 3,
+    ResourcesRegistered = 4,
+    Ready = 5,
+    Encoding = 6,
+    Flushing = 7,
+    Faulted = 8,
+    Disposed = 9
+};
+
 enum class NvencPreset : uint32_t {
     P1_UltraFast = 1,
     P2_Fast = 2,
@@ -109,6 +122,9 @@ public:
 
     [[nodiscard]] EncoderVendor vendor() const noexcept override { return EncoderVendor::NvidiaNvenc; }
     [[nodiscard]] bool is_initialized() const noexcept override { return _initialized; }
+    [[nodiscard]] NvencLifecycleState state() const noexcept { return _state; }
+    [[nodiscard]] uint32_t get_state() const noexcept override { return static_cast<uint32_t>(_state); }
+    [[nodiscard]] bool is_healthy() const noexcept override;
 
     bool set_preset_and_tuning(NvencPreset preset, NvencTuning tuning);
     bool set_intra_refresh(bool enabled, uint32_t period, uint32_t count);
@@ -120,6 +136,7 @@ private:
     struct Impl;
     std::unique_ptr<Impl> _impl;
     bool _initialized{false};
+    NvencLifecycleState _state{NvencLifecycleState::Uninitialised};
     EncoderConfig _config{};
     void* _d3d_device{nullptr};
     NvencPreset _preset{NvencPreset::P1_UltraFast};

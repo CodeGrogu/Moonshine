@@ -20,6 +20,11 @@ struct NvencVideoEncoder::Impl {
     nvenc::NvencApi api;
     nvenc::NvencSession session;
     nvenc::NvencSurfacePool surface_pool;
+#if defined(_WIN32)
+    ComPtr<ID3D11Device> internal_device;
+    ComPtr<ID3D11DeviceContext> internal_context;
+    ComPtr<ID3D11Texture2D> internal_texture;
+#endif
 };
 
 NvencVideoEncoder::NvencVideoEncoder()
@@ -33,13 +38,23 @@ NvencVideoEncoder::~NvencVideoEncoder() {
 bool NvencVideoEncoder::initialize(void* d3d_device, const EncoderConfig& config) {
     cleanup();
 
+    _state = NvencLifecycleState::Uninitialised;
+
     if (!d3d_device || !_impl) {
         return false;
     }
 
 #if defined(_WIN32)
-    // Verify adapter is genuine NVIDIA hardware
     auto* dev = static_cast<ID3D11Device*>(d3d_device);
+
+    // Detect device removal/reset before initialization
+    HRESULT reason = dev->GetDeviceRemovedReason();
+    if (reason != S_OK) {
+        _state = NvencLifecycleState::Faulted;
+        return false;
+    }
+
+    // Verify adapter is genuine NVIDIA hardware
     ComPtr<IDXGIDevice> dxgi_dev;
     if (FAILED(dev->QueryInterface(__uuidof(IDXGIDevice), &dxgi_dev))) {
         return false;
@@ -55,16 +70,22 @@ bool NvencVideoEncoder::initialize(void* d3d_device, const EncoderConfig& config
         return false;
     }
 
+    _state = NvencLifecycleState::DeviceAttached;
+
     // Load NVENC API
     if (!_impl->api.load()) {
+        _state = NvencLifecycleState::Faulted;
         return false;
     }
 
     // Open session on D3D11 device
     if (!_impl->session.open(_impl->api, d3d_device)) {
         _impl->api.unload();
+        _state = NvencLifecycleState::Faulted;
         return false;
     }
+
+    _state = NvencLifecycleState::SessionCreated;
 
     // Configure encoder session
     _impl->session.set_preset_and_tuning(_preset, _tuning);
@@ -72,14 +93,18 @@ bool NvencVideoEncoder::initialize(void* d3d_device, const EncoderConfig& config
     if (!_impl->session.configure(config)) {
         _impl->session.close();
         _impl->api.unload();
+        _state = NvencLifecycleState::Faulted;
         return false;
     }
+
+    _state = NvencLifecycleState::EncoderInitialised;
 
     _d3d_device = d3d_device;
     _config = config;
     _frame_counter = 0;
     _force_keyframe = true;
     _initialized = true;
+    _state = NvencLifecycleState::Ready;
     return true;
 #else
     (void)d3d_device;
@@ -97,9 +122,42 @@ bool NvencVideoEncoder::encode_frame(
     uint32_t& out_written_size
 ) {
 #if defined(_WIN32)
-    if (!_initialized || !_impl || !_impl->session.is_open() || !d3d_texture || !out_bitstream || max_buffer_size == 0) {
-        out_written_size = 0;
+    out_written_size = 0;
+
+    if (_state == NvencLifecycleState::Faulted || _state == NvencLifecycleState::Disposed ||
+        !_initialized || !_impl || !_impl->session.is_open() || !out_bitstream || max_buffer_size == 0) {
         return false;
+    }
+
+    if (!d3d_texture && _d3d_device) {
+        if (!_impl->internal_texture) {
+            auto* dev_tex = static_cast<ID3D11Device*>(_d3d_device);
+            D3D11_TEXTURE2D_DESC tex_init_desc{};
+            tex_init_desc.Width = _config.width;
+            tex_init_desc.Height = _config.height;
+            tex_init_desc.MipLevels = 1;
+            tex_init_desc.ArraySize = 1;
+            tex_init_desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+            tex_init_desc.SampleDesc.Count = 1;
+            tex_init_desc.SampleDesc.Quality = 0;
+            tex_init_desc.Usage = D3D11_USAGE_DEFAULT;
+            tex_init_desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+            dev_tex->CreateTexture2D(&tex_init_desc, nullptr, &_impl->internal_texture);
+        }
+        d3d_texture = _impl->internal_texture.Get();
+    }
+
+    if (!d3d_texture) {
+        return false;
+    }
+
+    auto* dev = static_cast<ID3D11Device*>(_d3d_device);
+    if (dev) {
+        HRESULT reason = dev->GetDeviceRemovedReason();
+        if (reason != S_OK) {
+            _state = NvencLifecycleState::Faulted;
+            return false;
+        }
     }
 
     // Determine NVENC buffer format from D3D11 texture descriptor
@@ -133,21 +191,37 @@ bool NvencVideoEncoder::encode_frame(
     );
 
     if (!registered_resource) {
-        out_written_size = 0;
+        _state = NvencLifecycleState::Faulted;
         return false;
     }
 
+    _state = NvencLifecycleState::ResourcesRegistered;
+
     bool is_key = force_idr || _force_keyframe.exchange(false) || (_frame_counter == 0);
+
+    _state = NvencLifecycleState::Encoding;
 
     bool success = _impl->session.encode(
         registered_resource,
         is_key,
-        static_cast<uint32_t>(_frame_counter++),
+        static_cast<uint32_t>(_frame_counter),
         out_desc,
         out_bitstream,
         max_buffer_size,
         out_written_size
     );
+
+    if (success) {
+        _frame_counter++;
+        _state = NvencLifecycleState::Ready;
+    } else {
+        if (dev && dev->GetDeviceRemovedReason() != S_OK) {
+            _state = NvencLifecycleState::Faulted;
+        } else {
+            _state = NvencLifecycleState::Ready;
+        }
+        out_written_size = 0;
+    }
 
     return success;
 #else
@@ -162,12 +236,29 @@ bool NvencVideoEncoder::encode_frame(
 }
 
 bool NvencVideoEncoder::reconfigure(const EncoderConfig& new_config) {
-    if (!_initialized || !_impl) {
+    if (!_initialized || !_impl || _state == NvencLifecycleState::Faulted || _state == NvencLifecycleState::Disposed) {
         return false;
     }
+#if defined(_WIN32)
+    auto* dev = static_cast<ID3D11Device*>(_d3d_device);
+    if (dev && dev->GetDeviceRemovedReason() != S_OK) {
+        _state = NvencLifecycleState::Faulted;
+        return false;
+    }
+#endif
     _config = new_config;
     _force_keyframe = true;
-    return _impl->session.reconfigure(new_config);
+    bool success = _impl->session.reconfigure(new_config);
+    if (!success) {
+#if defined(_WIN32)
+        if (dev && dev->GetDeviceRemovedReason() != S_OK) {
+            _state = NvencLifecycleState::Faulted;
+        }
+#endif
+        return false;
+    }
+    _state = NvencLifecycleState::Ready;
+    return true;
 }
 
 void NvencVideoEncoder::request_keyframe() {
@@ -178,6 +269,7 @@ void NvencVideoEncoder::cleanup() {
     _initialized = false;
 
     if (_impl) {
+        _state = NvencLifecycleState::Flushing;
         if (_impl->session.is_open() && _impl->api.is_loaded()) {
             _impl->surface_pool.clear(_impl->session.session_handle(), _impl->api.functions());
         }
@@ -188,6 +280,24 @@ void NvencVideoEncoder::cleanup() {
     _d3d_device = nullptr;
     _frame_counter = 0;
     _force_keyframe = false;
+    _state = NvencLifecycleState::Disposed;
+}
+
+bool NvencVideoEncoder::is_healthy() const noexcept {
+#if defined(_WIN32)
+    if (!_initialized || _state == NvencLifecycleState::Faulted ||
+        _state == NvencLifecycleState::Disposed || _state == NvencLifecycleState::Uninitialised ||
+        !_impl || !_impl->session.is_open() || !_d3d_device) {
+        return false;
+    }
+    auto* dev = static_cast<ID3D11Device*>(_d3d_device);
+    if (dev && dev->GetDeviceRemovedReason() != S_OK) {
+        return false;
+    }
+    return true;
+#else
+    return false;
+#endif
 }
 
 bool NvencVideoEncoder::set_preset_and_tuning(NvencPreset preset, NvencTuning tuning) {

@@ -534,7 +534,7 @@ public class HostStreamingSessionTests
         var encoderPipeline = new TestVideoEncoderPipeline();
         using var encoder = new UnifiedHardwareEncoderEngine(encoderPipeline);
 
-        ushort basePort = (ushort)(59750 + Random.Shared.Next(0, 50) * 6);
+        ushort basePort = GetAvailablePortBlock(6);
         var config = new HostSessionConfig
         {
             LocalVideoPort = basePort,
@@ -1050,6 +1050,15 @@ public class HostStreamingSessionTests
 
         session.State.Should().Be(HostSessionState.Faulted);
         session.GetLiveBackendReadiness().VideoEncoder.Should().Be(ComponentReadiness.Faulted);
+    }
+
+    private static ushort GetAvailablePortBlock(int count = 6)
+    {
+        using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+        socket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+        int port = ((IPEndPoint)socket.LocalEndPoint!).Port;
+        socket.Close();
+        return (ushort)port;
     }
 }
 

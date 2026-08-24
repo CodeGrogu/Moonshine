@@ -921,6 +921,23 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_encoder_destroy(
     MoonshineEncoderHandle handle
 );
 
+MOONSHINE_API int32_t MOONSHINE_CONV moonshine_encoder_get_state(
+    MoonshineEncoderHandle handle
+);
+
+MOONSHINE_API int32_t MOONSHINE_CONV moonshine_encoder_is_healthy(
+    MoonshineEncoderHandle handle
+);
+
+// ============================================================================
+// Direct3D 11 Hardware Device & Texture Utility APIs
+// ============================================================================
+
+MOONSHINE_API void* MOONSHINE_CONV moonshine_d3d11_create_device(uint32_t vendor_id);
+MOONSHINE_API void MOONSHINE_CONV moonshine_d3d11_destroy_device(void* d3d_device);
+MOONSHINE_API void* MOONSHINE_CONV moonshine_d3d11_create_texture(void* d3d_device, uint32_t width, uint32_t height, uint32_t format);
+MOONSHINE_API void MOONSHINE_CONV moonshine_d3d11_destroy_texture(void* texture);
+
 // ============================================================================
 // NVIDIA NVENC Dedicated Custom APIs
 // ============================================================================

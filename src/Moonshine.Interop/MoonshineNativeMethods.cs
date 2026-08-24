@@ -835,6 +835,14 @@ public static unsafe partial class MoonshineNativeMethods
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial void EncoderDestroy(IntPtr handle);
 
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_encoder_get_state")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int EncoderGetState(IntPtr handle);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_encoder_is_healthy")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int EncoderIsHealthy(IntPtr handle);
+
     // ========================================================================
     // NVIDIA NVENC Dedicated Custom APIs
     // ========================================================================
@@ -862,6 +870,26 @@ public static unsafe partial class MoonshineNativeMethods
         uint period,
         uint count
     );
+
+    // ========================================================================
+    // Direct3D 11 Hardware Device & Texture Utility APIs
+    // ========================================================================
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_d3d11_create_device")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial IntPtr D3D11CreateDevice(uint vendorId);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_d3d11_destroy_device")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void D3D11DestroyDevice(IntPtr d3dDevice);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_d3d11_create_texture")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial IntPtr D3D11CreateTexture(IntPtr d3dDevice, uint width, uint height, uint format);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_d3d11_destroy_texture")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void D3D11DestroyTexture(IntPtr texture);
 
     // ========================================================================
     // AMD AMF Dedicated Custom APIs

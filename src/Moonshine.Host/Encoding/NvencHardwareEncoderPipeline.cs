@@ -48,6 +48,8 @@ public sealed class NvencHardwareEncoderPipeline : IVideoEncoderPipeline
     private ulong _firstValidFrameId;
     private ulong _lastValidFrameId;
     private bool _hasValidFrame;
+    private readonly IntPtr _ownedD3dDevice;
+    private IntPtr _ownedD3dTexture;
 
     public uint Width => _width;
     public uint Height => _height;
@@ -122,6 +124,12 @@ public sealed class NvencHardwareEncoderPipeline : IVideoEncoderPipeline
         _preset = preset;
         _tuning = tuning;
 
+        if (d3dDevice == IntPtr.Zero)
+        {
+            _ownedD3dDevice = MoonshineNativeMethods.D3D11CreateDevice(0x10DE); // 0x10DE = NVIDIA Vendor ID
+            d3dDevice = _ownedD3dDevice;
+        }
+
         var config = new MoonshineEncoderConfig
         {
             Width = width,
@@ -170,6 +178,15 @@ public sealed class NvencHardwareEncoderPipeline : IVideoEncoderPipeline
         {
             Volatile.Write(ref _frameSubmitted, true);
             if (_disposed || _handle == IntPtr.Zero) return false;
+
+            if (d3dTexture == IntPtr.Zero && _ownedD3dDevice != IntPtr.Zero)
+            {
+                if (_ownedD3dTexture == IntPtr.Zero)
+                {
+                    _ownedD3dTexture = MoonshineNativeMethods.D3D11CreateTexture(_ownedD3dDevice, _width, _height, 0);
+                }
+                d3dTexture = _ownedD3dTexture;
+            }
 
             _runtimeState = EncoderRuntimeState.Encoding;
             try
@@ -458,6 +475,17 @@ public sealed class NvencHardwareEncoderPipeline : IVideoEncoderPipeline
             {
                 MoonshineNativeMethods.EncoderDestroy(_handle);
                 _handle = IntPtr.Zero;
+            }
+
+            if (_ownedD3dTexture != IntPtr.Zero)
+            {
+                MoonshineNativeMethods.D3D11DestroyTexture(_ownedD3dTexture);
+                _ownedD3dTexture = IntPtr.Zero;
+            }
+
+            if (_ownedD3dDevice != IntPtr.Zero)
+            {
+                MoonshineNativeMethods.D3D11DestroyDevice(_ownedD3dDevice);
             }
         }
     }

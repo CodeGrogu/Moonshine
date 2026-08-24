@@ -304,10 +304,17 @@ bool NvencSession::encode(
         return false;
     }
 
-    uint32_t copy_size = (std::min)(lock_guard.bitstream_size(), max_buffer_size);
-    std::memcpy(out_bitstream, lock_guard.bitstream_ptr(), copy_size);
+    uint32_t bitstream_size = lock_guard.bitstream_size();
+    if (bitstream_size > max_buffer_size) {
+        lock_guard.reset();
+        _bitstream_pool.release_buffer(bitstream_buf);
+        out_written_size = 0;
+        return false;
+    }
 
-    out_written_size = copy_size;
+    std::memcpy(out_bitstream, lock_guard.bitstream_ptr(), bitstream_size);
+
+    out_written_size = bitstream_size;
     out_desc.frame_index = frame_id;
     if (timestamp_us > 0) {
         out_desc.timestamp_qpc = static_cast<int64_t>(timestamp_us);
@@ -315,7 +322,7 @@ bool NvencSession::encode(
         auto now = std::chrono::high_resolution_clock::now().time_since_epoch();
         out_desc.timestamp_qpc = std::chrono::duration_cast<std::chrono::microseconds>(now).count();
     }
-    out_desc.payload_size = copy_size;
+    out_desc.payload_size = bitstream_size;
     out_desc.is_keyframe = (lock_guard.is_keyframe() || force_idr) ? 1 : 0;
     out_desc.is_header_packet = out_desc.is_keyframe;
     out_desc.temporal_id = 0;
@@ -461,9 +468,16 @@ bool NvencSession::poll_packet(
         return false;
     }
 
-    uint32_t copy_size = (std::min)(lock_guard.bitstream_size(), max_buffer_size);
-    std::memcpy(out_bitstream, lock_guard.bitstream_ptr(), copy_size);
-    out_written_size = copy_size;
+    uint32_t bitstream_size = lock_guard.bitstream_size();
+    if (bitstream_size > max_buffer_size) {
+        lock_guard.reset();
+        _bitstream_pool.release_buffer(in_flight.bitstream_buffer);
+        out_written_size = 0;
+        return false;
+    }
+
+    std::memcpy(out_bitstream, lock_guard.bitstream_ptr(), bitstream_size);
+    out_written_size = bitstream_size;
 
     out_desc.frame_index = in_flight.frame_id;
     if (in_flight.timestamp_us > 0) {
@@ -472,7 +486,7 @@ bool NvencSession::poll_packet(
         auto now = std::chrono::high_resolution_clock::now().time_since_epoch();
         out_desc.timestamp_qpc = std::chrono::duration_cast<std::chrono::microseconds>(now).count();
     }
-    out_desc.payload_size = copy_size;
+    out_desc.payload_size = bitstream_size;
     out_desc.is_keyframe = (lock_guard.is_keyframe() || in_flight.keyframe) ? 1 : 0;
     out_desc.is_header_packet = out_desc.is_keyframe;
     out_desc.temporal_id = 0;
