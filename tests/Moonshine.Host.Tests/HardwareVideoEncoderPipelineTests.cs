@@ -515,13 +515,74 @@ public class HardwareVideoEncoderPipelineTests
     }
 
     [Fact]
+    public void EncoderEvidencePolicy_EvaluatesCorrectlyAcrossAllBoundaryConditions()
+    {
+        // 1. isDisposed = true -> false
+        EncoderEvidencePolicy.IsDecoderAcceptanceHealthy(
+            isDisposed: true,
+            hasHandle: true,
+            lastValidFrameId: 100,
+            lastDecoderAcceptedFrameId: 100
+        ).Should().BeFalse("Disposed encoders must never evaluate as healthy");
+
+        // 2. hasHandle = false -> false
+        EncoderEvidencePolicy.IsDecoderAcceptanceHealthy(
+            isDisposed: false,
+            hasHandle: false,
+            lastValidFrameId: 100,
+            lastDecoderAcceptedFrameId: 100
+        ).Should().BeFalse("Encoders without a valid handle must never evaluate as healthy");
+
+        // 3. lastAccepted = 0 -> false
+        EncoderEvidencePolicy.IsDecoderAcceptanceHealthy(
+            isDisposed: false,
+            hasHandle: true,
+            lastValidFrameId: 100,
+            lastDecoderAcceptedFrameId: 0
+        ).Should().BeFalse("No decoder acceptance acknowledged must evaluate as not healthy");
+
+        // 4. lastAccepted = 101, lastValid = 100 -> false (future frame rejected)
+        EncoderEvidencePolicy.IsDecoderAcceptanceHealthy(
+            isDisposed: false,
+            hasHandle: true,
+            lastValidFrameId: 100,
+            lastDecoderAcceptedFrameId: 101
+        ).Should().BeFalse("Decoder acceptance of an unencoded future frame must be rejected");
+
+        // 5. lastAccepted = 96, lastValid = 100 (lag 4) -> true (boundary accepted)
+        EncoderEvidencePolicy.IsDecoderAcceptanceHealthy(
+            isDisposed: false,
+            hasHandle: true,
+            lastValidFrameId: 100,
+            lastDecoderAcceptedFrameId: 96
+        ).Should().BeTrue("Decoder acceptance within the maximum lag window (lag = 4) must evaluate as healthy");
+
+        // 6. lastAccepted = 95, lastValid = 100 (lag 5) -> false (lag exceeded rejected)
+        EncoderEvidencePolicy.IsDecoderAcceptanceHealthy(
+            isDisposed: false,
+            hasHandle: true,
+            lastValidFrameId: 100,
+            lastDecoderAcceptedFrameId: 95
+        ).Should().BeFalse("Decoder acceptance exceeding the maximum lag window (lag = 5) must evaluate as not healthy");
+
+        // 7. lastAccepted = 100, lastValid = 100 (lag 0) -> true
+        EncoderEvidencePolicy.IsDecoderAcceptanceHealthy(
+            isDisposed: false,
+            hasHandle: true,
+            lastValidFrameId: 100,
+            lastDecoderAcceptedFrameId: 100
+        ).Should().BeTrue("Exact frame match with zero lag (lag = 0) must evaluate as healthy");
+    }
+
+    [Fact]
     public void HardwareVideoEncoderPipeline_DecoderAcceptanceLagWindow_MatchesDocumentedSpecification()
     {
-        HardwareVideoEncoderPipeline.DecoderAcceptanceLagWindow.Should().Be(4);
-        NvencHardwareEncoderPipeline.DecoderAcceptanceLagWindow.Should().Be(HardwareVideoEncoderPipeline.DecoderAcceptanceLagWindow);
-        AmfHardwareEncoderPipeline.DecoderAcceptanceLagWindow.Should().Be(HardwareVideoEncoderPipeline.DecoderAcceptanceLagWindow);
-        QsvHardwareEncoderPipeline.DecoderAcceptanceLagWindow.Should().Be(HardwareVideoEncoderPipeline.DecoderAcceptanceLagWindow);
-        UnifiedHardwareEncoderEngine.DecoderAcceptanceLagWindow.Should().Be(HardwareVideoEncoderPipeline.DecoderAcceptanceLagWindow);
+        EncoderEvidencePolicy.DecoderAcceptanceLagWindow.Should().Be(4);
+        HardwareVideoEncoderPipeline.DecoderAcceptanceLagWindow.Should().Be(EncoderEvidencePolicy.DecoderAcceptanceLagWindow);
+        NvencHardwareEncoderPipeline.DecoderAcceptanceLagWindow.Should().Be(EncoderEvidencePolicy.DecoderAcceptanceLagWindow);
+        AmfHardwareEncoderPipeline.DecoderAcceptanceLagWindow.Should().Be(EncoderEvidencePolicy.DecoderAcceptanceLagWindow);
+        QsvHardwareEncoderPipeline.DecoderAcceptanceLagWindow.Should().Be(EncoderEvidencePolicy.DecoderAcceptanceLagWindow);
+        UnifiedHardwareEncoderEngine.DecoderAcceptanceLagWindow.Should().Be(EncoderEvidencePolicy.DecoderAcceptanceLagWindow);
     }
 
     private sealed class SyntheticCorrelatingEncoderPipeline : IVideoEncoderPipeline
@@ -553,7 +614,7 @@ public class HardwareVideoEncoderPipelineTests
                 ulong lastValid = _lastValidFrameId;
                 ulong lastAccepted = _lastDecoderAcceptedFrameId;
                 bool latestMatch = lastAccepted != 0 && lastAccepted == lastValid;
-                bool healthy = IsActive && lastAccepted != 0 && lastAccepted <= lastValid && (lastValid - lastAccepted) <= HardwareVideoEncoderPipeline.DecoderAcceptanceLagWindow;
+                bool healthy = EncoderEvidencePolicy.IsDecoderAcceptanceHealthy(!IsActive, IsActive, lastValid, lastAccepted);
 
                 return new EncoderEvidence(
                     ApiAvailable: true,

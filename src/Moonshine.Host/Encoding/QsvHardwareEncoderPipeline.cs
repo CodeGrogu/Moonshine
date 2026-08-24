@@ -15,7 +15,7 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
     /// Maximum acceptable frame lag between the latest encoded frame and the latest decoder-accepted frame (4 frames).
     /// Accommodates the 4-stage pipelined streaming architecture: Capture -> Encoder In-Flight Queue -> Network Ingestion -> Decoder Display Queue.
     /// </summary>
-    public const ulong DecoderAcceptanceLagWindow = HardwareVideoEncoderPipeline.DecoderAcceptanceLagWindow;
+    public const ulong DecoderAcceptanceLagWindow = EncoderEvidencePolicy.DecoderAcceptanceLagWindow;
 
     private IntPtr _handle;
     private readonly uint _width;
@@ -71,8 +71,7 @@ public sealed class QsvHardwareEncoderPipeline : IVideoEncoderPipeline
             ulong lastValid = Volatile.Read(ref _lastValidFrameId);
             ulong lastAccepted = Volatile.Read(ref _lastDecoderAcceptedFrameId);
             bool latestMatch = lastAccepted != 0 && lastAccepted == lastValid;
-            bool healthy = !_disposed && _handle != IntPtr.Zero &&
-                           lastAccepted != 0 && lastAccepted <= lastValid && (lastValid - lastAccepted) <= DecoderAcceptanceLagWindow;
+            bool healthy = EncoderEvidencePolicy.IsDecoderAcceptanceHealthy(_disposed, _handle != IntPtr.Zero, lastValid, lastAccepted);
 
             return new EncoderEvidence(
                 ApiAvailable: _handle != IntPtr.Zero,

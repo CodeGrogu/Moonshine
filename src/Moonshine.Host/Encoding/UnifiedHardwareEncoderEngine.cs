@@ -13,7 +13,7 @@ public sealed class UnifiedHardwareEncoderEngine : IDisposable
     /// Maximum acceptable frame lag between the latest encoded frame and the latest decoder-accepted frame (4 frames).
     /// Accommodates the 4-stage pipelined streaming architecture: Capture -> Encoder In-Flight Queue -> Network Ingestion -> Decoder Display Queue.
     /// </summary>
-    public const ulong DecoderAcceptanceLagWindow = HardwareVideoEncoderPipeline.DecoderAcceptanceLagWindow;
+    public const ulong DecoderAcceptanceLagWindow = EncoderEvidencePolicy.DecoderAcceptanceLagWindow;
 
     private readonly IVideoEncoderPipeline _pipeline;
     private long _framesEncoded;
