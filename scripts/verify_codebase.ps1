@@ -25,6 +25,11 @@ Write-Host "`n[Step 0] Executing Repository Preflight Scanner..." -ForegroundCol
 & "$ScriptDir\preflight.ps1"
 if ($LASTEXITCODE -ne 0) { throw "Preflight scanner failed." }
 
+# Step 0.5: TODO Backlog Verification
+Write-Host "`n[Step 0.5] Validating TODO Backlog Schema and Dependencies..." -ForegroundColor Yellow
+& "$ScriptDir\verify_todo_backlog.ps1"
+if ($LASTEXITCODE -ne 0) { throw "TODO backlog validation failed." }
+
 # Steps 1-4: Native Build, CTests, Managed Build, and xUnit Suites
 Write-Host "`n[Steps 1-4] Executing Unified Build & Test Pipeline ($Configuration)..." -ForegroundColor Yellow
 & "$ScriptDir\build.ps1" -Configuration $Configuration
