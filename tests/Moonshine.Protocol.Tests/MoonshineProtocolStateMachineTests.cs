@@ -304,4 +304,174 @@ public class MoonshineProtocolStateMachineTests
         fsm.IngestFeedbackLossStats(in staleFb, 1060).Should().Be(MoonshineErrorCode.StaleTimestamp);
         fsm.LastReceivedFrameIndex.Should().Be(505); // Preserves monotonic horizon
     }
+
+    [Fact]
+    public void StateMachine_SequenceRollover_AcceptsWrappedSequenceAndRejectsStale()
+    {
+        var fsm = new MoonshineProtocolStateMachine
+        {
+            IsStrictSequenceEnforced = true
+        };
+
+        fsm.RecordHelloSent();
+        fsm.RecordHelloResponseReceived(0x1234UL);
+        fsm.RecordSessionSetupSent();
+        fsm.RecordSessionSetupResponseReceived(1, 2, 3, 1188);
+
+        // Sequence 0xFFFFFFFE
+        var pkt1 = new MoonshinePacketHeader(
+            Magic: MoonshineProtocolConstants.Magic,
+            Version: MoonshineProtocolConstants.Version10,
+            MessageType: MoonshineMessageType.VideoPacket,
+            PayloadSize: 100,
+            SequenceNumber: 0xFFFFFFFEU,
+            SessionId: 0x1234UL,
+            TimestampUs: 100);
+        fsm.IngestPacketHeader(in pkt1, 100).Should().Be(MoonshineErrorCode.Success);
+        fsm.LastReceivedSequenceNumber.Should().Be(0xFFFFFFFEU);
+
+        // Sequence 0xFFFFFFFF
+        var pkt2 = new MoonshinePacketHeader(
+            Magic: MoonshineProtocolConstants.Magic,
+            Version: MoonshineProtocolConstants.Version10,
+            MessageType: MoonshineMessageType.VideoPacket,
+            PayloadSize: 100,
+            SequenceNumber: 0xFFFFFFFFU,
+            SessionId: 0x1234UL,
+            TimestampUs: 200);
+        fsm.IngestPacketHeader(in pkt2, 200).Should().Be(MoonshineErrorCode.Success);
+        fsm.LastReceivedSequenceNumber.Should().Be(0xFFFFFFFFU);
+
+        // Sequence 0x00000000 (Modular 32-bit Rollover)
+        var pkt3 = new MoonshinePacketHeader(
+            Magic: MoonshineProtocolConstants.Magic,
+            Version: MoonshineProtocolConstants.Version10,
+            MessageType: MoonshineMessageType.VideoPacket,
+            PayloadSize: 100,
+            SequenceNumber: 0x00000000U,
+            SessionId: 0x1234UL,
+            TimestampUs: 300);
+        fsm.IngestPacketHeader(in pkt3, 300).Should().Be(MoonshineErrorCode.Success);
+        fsm.LastReceivedSequenceNumber.Should().Be(0x00000000U);
+
+        // Sequence 0x00000001
+        var pkt4 = new MoonshinePacketHeader(
+            Magic: MoonshineProtocolConstants.Magic,
+            Version: MoonshineProtocolConstants.Version10,
+            MessageType: MoonshineMessageType.VideoPacket,
+            PayloadSize: 100,
+            SequenceNumber: 0x00000001U,
+            SessionId: 0x1234UL,
+            TimestampUs: 400);
+        fsm.IngestPacketHeader(in pkt4, 400).Should().Be(MoonshineErrorCode.Success);
+        fsm.LastReceivedSequenceNumber.Should().Be(0x00000001U);
+
+        // Stale sequence 0xFFFFFFFF (should be rejected as older than 0x00000001)
+        var stalePkt = new MoonshinePacketHeader(
+            Magic: MoonshineProtocolConstants.Magic,
+            Version: MoonshineProtocolConstants.Version10,
+            MessageType: MoonshineMessageType.VideoPacket,
+            PayloadSize: 100,
+            SequenceNumber: 0xFFFFFFFFU,
+            SessionId: 0x1234UL,
+            TimestampUs: 500);
+        fsm.IngestPacketHeader(in stalePkt, 500).Should().Be(MoonshineErrorCode.DuplicateSequence);
+    }
+
+    [Fact]
+    public void StateMachine_FrameIndexRollover_AcceptsWrappedFrameIndexAndRejectsStale()
+    {
+        var fsm = new MoonshineProtocolStateMachine();
+        fsm.RecordHelloSent();
+        fsm.RecordHelloResponseReceived(0x5678UL);
+        fsm.RecordSessionSetupSent();
+        fsm.RecordSessionSetupResponseReceived(1, 2, 3, 1188);
+
+        var fbMax = new MoonshineFeedbackLossStatsPayload
+        {
+            StreamId = 1,
+            LastReceivedFrameIndex = 0xFFFFFFFFFFFFFFFFUL,
+            PacketsReceived = 1000
+        };
+        fsm.IngestFeedbackLossStats(in fbMax, 1000).Should().Be(MoonshineErrorCode.Success);
+        fsm.LastReceivedFrameIndex.Should().Be(0xFFFFFFFFFFFFFFFFUL);
+
+        // Wrapped index 0 (Modular 64-bit Rollover)
+        var fbZero = new MoonshineFeedbackLossStatsPayload
+        {
+            StreamId = 1,
+            LastReceivedFrameIndex = 0x0000000000000000UL,
+            PacketsReceived = 1010
+        };
+        fsm.IngestFeedbackLossStats(in fbZero, 1010).Should().Be(MoonshineErrorCode.Success);
+        fsm.LastReceivedFrameIndex.Should().Be(0x0000000000000000UL);
+
+        // Advance to 1
+        var fbOne = new MoonshineFeedbackLossStatsPayload
+        {
+            StreamId = 1,
+            LastReceivedFrameIndex = 0x0000000000000001UL,
+            PacketsReceived = 1020
+        };
+        fsm.IngestFeedbackLossStats(in fbOne, 1020).Should().Be(MoonshineErrorCode.Success);
+        fsm.LastReceivedFrameIndex.Should().Be(0x0000000000000001UL);
+
+        // Stale frame index 0xFFFFFFFFFFFFFFFF
+        var staleFb = new MoonshineFeedbackLossStatsPayload
+        {
+            StreamId = 1,
+            LastReceivedFrameIndex = 0xFFFFFFFFFFFFFFFFUL,
+            PacketsReceived = 1030
+        };
+        fsm.IngestFeedbackLossStats(in staleFb, 1030).Should().Be(MoonshineErrorCode.StaleTimestamp);
+        fsm.LastReceivedFrameIndex.Should().Be(0x0000000000000001UL);
+    }
+
+    [Fact]
+    public void StateMachine_ExplicitSessionIdPolicy_RejectsZeroSessionOnActiveMediaTraffic()
+    {
+        var fsm = new MoonshineProtocolStateMachine();
+        fsm.RecordHelloSent();
+        fsm.RecordHelloResponseReceived(0xABCDUL);
+        fsm.RecordSessionSetupSent();
+        fsm.RecordSessionSetupResponseReceived(1, 2, 3, 1188);
+
+        // Media packet with SessionId == 0 on an active session MUST be rejected
+        var zeroSessionHeader = new MoonshinePacketHeader(
+            Magic: MoonshineProtocolConstants.Magic,
+            Version: MoonshineProtocolConstants.Version10,
+            MessageType: MoonshineMessageType.VideoPacket,
+            PayloadSize: 100,
+            SequenceNumber: 1,
+            SessionId: 0,
+            TimestampUs: 100);
+
+        MoonshineErrorCode err = fsm.IngestPacketHeader(in zeroSessionHeader, 100);
+        err.Should().Be(MoonshineErrorCode.InvalidSession);
+        fsm.State.Should().Be(MoonshineProtocolState.Faulted);
+        fsm.FaultReason.Should().Contain("Session ID mismatch");
+    }
+
+    [Fact]
+    public void ProtocolContracts_MessageRequirementsPolicy_VerifiesContracts()
+    {
+        MoonshineProtocolCodec.RequiresSessionId(MoonshineMessageType.Hello).Should().BeFalse();
+        MoonshineProtocolCodec.RequiresSessionId(MoonshineMessageType.HelloResponse).Should().BeFalse();
+        MoonshineProtocolCodec.RequiresSessionId(MoonshineMessageType.DiscoveryProbe).Should().BeFalse();
+        MoonshineProtocolCodec.RequiresSessionId(MoonshineMessageType.VideoPacket).Should().BeTrue();
+        MoonshineProtocolCodec.RequiresSessionId(MoonshineMessageType.AudioPacket).Should().BeTrue();
+        MoonshineProtocolCodec.RequiresSessionId(MoonshineMessageType.SessionSetup).Should().BeTrue();
+
+        MoonshineProtocolCodec.RequiresAuthentication(MoonshineMessageType.GetHostConfiguration).Should().BeTrue();
+        MoonshineProtocolCodec.RequiresAuthentication(MoonshineMessageType.SetHostConfiguration).Should().BeTrue();
+        MoonshineProtocolCodec.RequiresAuthentication(MoonshineMessageType.VideoPacket).Should().BeFalse();
+        MoonshineProtocolCodec.RequiresAuthentication(MoonshineMessageType.KeepAlive).Should().BeFalse();
+
+        MoonshineProtocolCodec.GetMinimumPayloadSize(MoonshineMessageType.Hello).Should().Be(32);
+        MoonshineProtocolCodec.GetMinimumPayloadSize(MoonshineMessageType.HelloResponse).Should().Be(48);
+        MoonshineProtocolCodec.GetMinimumPayloadSize(MoonshineMessageType.SessionSetup).Should().Be(40);
+        MoonshineProtocolCodec.GetMinimumPayloadSize(MoonshineMessageType.VideoPacket).Should().Be(32);
+        MoonshineProtocolCodec.GetMinimumPayloadSize(MoonshineMessageType.AudioPacket).Should().Be(24);
+        MoonshineProtocolCodec.GetMinimumPayloadSize(MoonshineMessageType.MicPacket).Should().Be(20);
+    }
 }

@@ -15,6 +15,11 @@ inline constexpr uint16_t MOONSHINE_VERSION_1_0 = 0x0001U;
 enum class MoonshineMessageType : uint16_t {
     None = 0x0000,
 
+    // Discovery & Beacon
+    DiscoveryProbe = 0x0001,
+    DiscoveryResponse = 0x0002,
+    DiscoveryAnnouncement = 0x0003,
+
     // Control & Session
     Hello = 0x0101,
     HelloResponse = 0x0102,
@@ -399,6 +404,32 @@ inline bool write_header(const MoonshinePacketHeader& header, std::span<uint8_t>
     return true;
 }
 
+[[nodiscard]] inline constexpr uint32_t get_minimum_payload_size(MoonshineMessageType message_type) noexcept {
+    switch (message_type) {
+        case MoonshineMessageType::Hello: return 32;
+        case MoonshineMessageType::HelloResponse: return 48;
+        case MoonshineMessageType::SessionSetup: return 40;
+        case MoonshineMessageType::SessionSetupResponse: return 32;
+        case MoonshineMessageType::FeedbackLossStats: return 40;
+        case MoonshineMessageType::IdrRequest: return 16;
+        case MoonshineMessageType::InputKeyboard: return 12;
+        case MoonshineMessageType::InputMouse: return 20;
+        case MoonshineMessageType::InputGamepad: return 24;
+        case MoonshineMessageType::TelemetryReport: return 32;
+        case MoonshineMessageType::GetHostCapabilities: return 4;
+        case MoonshineMessageType::HostCapabilitiesResponse: return 32;
+        case MoonshineMessageType::GetHostConfiguration: return 4;
+        case MoonshineMessageType::HostConfigurationResponse: return 48;
+        case MoonshineMessageType::SetHostConfiguration: return 48;
+        case MoonshineMessageType::SetHostConfigurationResponse: return 8;
+        case MoonshineMessageType::ConfigurationChanged: return 8;
+        case MoonshineMessageType::VideoPacket: return 32;
+        case MoonshineMessageType::AudioPacket: return 24;
+        case MoonshineMessageType::MicPacket: return 20;
+        default: return 0;
+    }
+}
+
 /**
  * @brief Deserialises and validates a packet header from big-endian wire format.
  */
@@ -435,28 +466,54 @@ inline MoonshineErrorCode read_header(std::span<const uint8_t> source, Moonshine
     }
 
     auto msg_type = static_cast<MoonshineMessageType>(out_header.message_type);
-    if (msg_type == MoonshineMessageType::Hello && out_header.payload_size < 32) return MoonshineErrorCode::PayloadTruncated;
-    if (msg_type == MoonshineMessageType::HelloResponse && out_header.payload_size < 48) return MoonshineErrorCode::PayloadTruncated;
-    if (msg_type == MoonshineMessageType::SessionSetup && out_header.payload_size < 40) return MoonshineErrorCode::PayloadTruncated;
-    if (msg_type == MoonshineMessageType::SessionSetupResponse && out_header.payload_size < 32) return MoonshineErrorCode::PayloadTruncated;
-    if (msg_type == MoonshineMessageType::FeedbackLossStats && out_header.payload_size < 40) return MoonshineErrorCode::PayloadTruncated;
-    if (msg_type == MoonshineMessageType::IdrRequest && out_header.payload_size < 16) return MoonshineErrorCode::PayloadTruncated;
-    if (msg_type == MoonshineMessageType::InputKeyboard && out_header.payload_size < 12) return MoonshineErrorCode::PayloadTruncated;
-    if (msg_type == MoonshineMessageType::InputMouse && out_header.payload_size < 20) return MoonshineErrorCode::PayloadTruncated;
-    if (msg_type == MoonshineMessageType::InputGamepad && out_header.payload_size < 24) return MoonshineErrorCode::PayloadTruncated;
-    if (msg_type == MoonshineMessageType::TelemetryReport && out_header.payload_size < 32) return MoonshineErrorCode::PayloadTruncated;
-    if (msg_type == MoonshineMessageType::GetHostCapabilities && out_header.payload_size < 4) return MoonshineErrorCode::PayloadTruncated;
-    if (msg_type == MoonshineMessageType::HostCapabilitiesResponse && out_header.payload_size < 32) return MoonshineErrorCode::PayloadTruncated;
-    if (msg_type == MoonshineMessageType::GetHostConfiguration && out_header.payload_size < 4) return MoonshineErrorCode::PayloadTruncated;
-    if (msg_type == MoonshineMessageType::HostConfigurationResponse && out_header.payload_size < 48) return MoonshineErrorCode::PayloadTruncated;
-    if (msg_type == MoonshineMessageType::SetHostConfiguration && out_header.payload_size < 48) return MoonshineErrorCode::PayloadTruncated;
-    if (msg_type == MoonshineMessageType::SetHostConfigurationResponse && out_header.payload_size < 8) return MoonshineErrorCode::PayloadTruncated;
-    if (msg_type == MoonshineMessageType::ConfigurationChanged && out_header.payload_size < 8) return MoonshineErrorCode::PayloadTruncated;
-    if (msg_type == MoonshineMessageType::VideoPacket && out_header.payload_size < 32) return MoonshineErrorCode::PayloadTruncated;
-    if (msg_type == MoonshineMessageType::AudioPacket && out_header.payload_size < 24) return MoonshineErrorCode::PayloadTruncated;
-    if (msg_type == MoonshineMessageType::MicPacket && out_header.payload_size < 20) return MoonshineErrorCode::PayloadTruncated;
+    if (out_header.payload_size < get_minimum_payload_size(msg_type)) {
+        return MoonshineErrorCode::PayloadTruncated;
+    }
 
     return MoonshineErrorCode::Success;
+}
+
+[[nodiscard]] inline constexpr bool is_newer_sequence(uint32_t candidate, uint32_t previous) noexcept {
+    return candidate != previous && static_cast<int32_t>(candidate - previous) > 0;
+}
+
+[[nodiscard]] inline constexpr bool is_newer_frame_index(uint64_t candidate, uint64_t previous) noexcept {
+    return candidate != previous && static_cast<int64_t>(candidate - previous) > 0;
+}
+
+[[nodiscard]] inline constexpr bool requires_session_id(MoonshineMessageType message_type) noexcept {
+    switch (message_type) {
+        case MoonshineMessageType::Hello:
+        case MoonshineMessageType::HelloResponse:
+        case MoonshineMessageType::DiscoveryProbe:
+        case MoonshineMessageType::DiscoveryAnnouncement:
+        case MoonshineMessageType::DiscoveryResponse:
+        case MoonshineMessageType::GetHostCapabilities:
+        case MoonshineMessageType::HostCapabilitiesResponse:
+        case MoonshineMessageType::GetHostConfiguration:
+        case MoonshineMessageType::HostConfigurationResponse:
+        case MoonshineMessageType::SetHostConfiguration:
+        case MoonshineMessageType::SetHostConfigurationResponse:
+        case MoonshineMessageType::ConfigurationChanged:
+            return false;
+        default:
+            return true;
+    }
+}
+
+[[nodiscard]] inline constexpr bool requires_authentication(MoonshineMessageType message_type) noexcept {
+    switch (message_type) {
+        case MoonshineMessageType::GetHostCapabilities:
+        case MoonshineMessageType::HostCapabilitiesResponse:
+        case MoonshineMessageType::GetHostConfiguration:
+        case MoonshineMessageType::HostConfigurationResponse:
+        case MoonshineMessageType::SetHostConfiguration:
+        case MoonshineMessageType::SetHostConfigurationResponse:
+        case MoonshineMessageType::ConfigurationChanged:
+            return true;
+        default:
+            return false;
+    }
 }
 
 } // namespace moonshine::protocol

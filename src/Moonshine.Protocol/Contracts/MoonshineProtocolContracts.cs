@@ -533,28 +533,101 @@ public static class MoonshineProtocolCodec
 
         // Validate message-specific payload minimum bounds
         var msgType = (MoonshineMessageType)messageType;
-        if (msgType == MoonshineMessageType.Hello && payloadSize < 32) return MoonshineErrorCode.PayloadTruncated;
-        if (msgType == MoonshineMessageType.HelloResponse && payloadSize < 48) return MoonshineErrorCode.PayloadTruncated;
-        if (msgType == MoonshineMessageType.SessionSetup && payloadSize < 40) return MoonshineErrorCode.PayloadTruncated;
-        if (msgType == MoonshineMessageType.SessionSetupResponse && payloadSize < 32) return MoonshineErrorCode.PayloadTruncated;
-        if (msgType == MoonshineMessageType.FeedbackLossStats && payloadSize < 40) return MoonshineErrorCode.PayloadTruncated;
-        if (msgType == MoonshineMessageType.IdrRequest && payloadSize < 16) return MoonshineErrorCode.PayloadTruncated;
-        if (msgType == MoonshineMessageType.InputKeyboard && payloadSize < 12) return MoonshineErrorCode.PayloadTruncated;
-        if (msgType == MoonshineMessageType.InputMouse && payloadSize < 20) return MoonshineErrorCode.PayloadTruncated;
-        if (msgType == MoonshineMessageType.InputGamepad && payloadSize < 24) return MoonshineErrorCode.PayloadTruncated;
-        if (msgType == MoonshineMessageType.TelemetryReport && payloadSize < 32) return MoonshineErrorCode.PayloadTruncated;
-        if (msgType == MoonshineMessageType.GetHostCapabilities && payloadSize < 4) return MoonshineErrorCode.PayloadTruncated;
-        if (msgType == MoonshineMessageType.HostCapabilitiesResponse && payloadSize < 32) return MoonshineErrorCode.PayloadTruncated;
-        if (msgType == MoonshineMessageType.GetHostConfiguration && payloadSize < 4) return MoonshineErrorCode.PayloadTruncated;
-        if (msgType == MoonshineMessageType.HostConfigurationResponse && payloadSize < 48) return MoonshineErrorCode.PayloadTruncated;
-        if (msgType == MoonshineMessageType.SetHostConfiguration && payloadSize < 48) return MoonshineErrorCode.PayloadTruncated;
-        if (msgType == MoonshineMessageType.SetHostConfigurationResponse && payloadSize < 8) return MoonshineErrorCode.PayloadTruncated;
-        if (msgType == MoonshineMessageType.ConfigurationChanged && payloadSize < 8) return MoonshineErrorCode.PayloadTruncated;
-        if (msgType == MoonshineMessageType.VideoPacket && payloadSize < 32) return MoonshineErrorCode.PayloadTruncated;
-        if (msgType == MoonshineMessageType.AudioPacket && payloadSize < 24) return MoonshineErrorCode.PayloadTruncated;
-        if (msgType == MoonshineMessageType.MicPacket && payloadSize < 20) return MoonshineErrorCode.PayloadTruncated;
+        uint minPayload = GetMinimumPayloadSize(msgType);
+        if (payloadSize < minPayload)
+        {
+            return MoonshineErrorCode.PayloadTruncated;
+        }
 
         return MoonshineErrorCode.Success;
+    }
+
+    /// <summary>
+    /// Evaluates whether candidate sequence number is newer than previous using RFC 1982 modular serial arithmetic.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool IsNewerSequence(uint candidate, uint previous)
+    {
+        return candidate != previous && unchecked((int)(candidate - previous)) > 0;
+    }
+
+    /// <summary>
+    /// Evaluates whether candidate frame index is newer than previous using modular serial arithmetic.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool IsNewerFrameIndex(ulong candidate, ulong previous)
+    {
+        return candidate != previous && unchecked((long)(candidate - previous)) > 0;
+    }
+
+    /// <summary>
+    /// Returns whether the given message type strictly requires a non-zero negotiated Session ID.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool RequiresSessionId(MoonshineMessageType messageType) =>
+        messageType switch
+        {
+            MoonshineMessageType.Hello => false,
+            MoonshineMessageType.HelloResponse => false,
+            MoonshineMessageType.DiscoveryProbe => false,
+            MoonshineMessageType.DiscoveryAnnouncement => false,
+            MoonshineMessageType.DiscoveryResponse => false,
+            MoonshineMessageType.GetHostCapabilities => false,
+            MoonshineMessageType.GetHostConfiguration => false,
+            MoonshineMessageType.SetHostConfiguration => false,
+            MoonshineMessageType.ConfigurationChanged => false,
+            _ => true
+        };
+
+    /// <summary>
+    /// Returns whether the given message type requires HMAC authentication envelopes when security is enabled.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool RequiresAuthentication(MoonshineMessageType messageType)
+    {
+        return messageType switch
+        {
+            MoonshineMessageType.GetHostCapabilities => true,
+            MoonshineMessageType.HostCapabilitiesResponse => true,
+            MoonshineMessageType.GetHostConfiguration => true,
+            MoonshineMessageType.HostConfigurationResponse => true,
+            MoonshineMessageType.SetHostConfiguration => true,
+            MoonshineMessageType.SetHostConfigurationResponse => true,
+            MoonshineMessageType.ConfigurationChanged => true,
+            _ => false
+        };
+    }
+
+    /// <summary>
+    /// Returns the minimum payload size in bytes for a given message type.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static uint GetMinimumPayloadSize(MoonshineMessageType messageType)
+    {
+        return messageType switch
+        {
+            MoonshineMessageType.Hello => 32,
+            MoonshineMessageType.HelloResponse => 48,
+            MoonshineMessageType.SessionSetup => 40,
+            MoonshineMessageType.SessionSetupResponse => 32,
+            MoonshineMessageType.FeedbackLossStats => 40,
+            MoonshineMessageType.IdrRequest => 16,
+            MoonshineMessageType.InputKeyboard => 12,
+            MoonshineMessageType.InputMouse => 20,
+            MoonshineMessageType.InputGamepad => 24,
+            MoonshineMessageType.TelemetryReport => 32,
+            MoonshineMessageType.GetHostCapabilities => 4,
+            MoonshineMessageType.HostCapabilitiesResponse => 32,
+            MoonshineMessageType.GetHostConfiguration => 4,
+            MoonshineMessageType.HostConfigurationResponse => 48,
+            MoonshineMessageType.SetHostConfiguration => 48,
+            MoonshineMessageType.SetHostConfigurationResponse => 8,
+            MoonshineMessageType.ConfigurationChanged => 8,
+            MoonshineMessageType.VideoPacket => 32,
+            MoonshineMessageType.AudioPacket => 24,
+            MoonshineMessageType.MicPacket => 20,
+            _ => 0
+        };
     }
 
 

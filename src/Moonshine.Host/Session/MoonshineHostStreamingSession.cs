@@ -79,8 +79,10 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
     private readonly bool _ownsAudio;
     private readonly bool _ownsInput;
     private readonly bool _ownsMicUplink;
+    private readonly MoonshineProtocolStateMachine _protocolStateMachine;
 
     public HostSessionConfig Config => _config;
+    public MoonshineProtocolStateMachine ProtocolStateMachine => _protocolStateMachine;
     public HostSessionState State
     {
         get
@@ -383,6 +385,8 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
 
             _configurationService = new HostConfigurationService(capabilities, initialConfig);
         }
+
+        _protocolStateMachine = new MoonshineProtocolStateMachine(_config.SessionId, (uint)_config.MtuPayloadSize);
     }
 
     /// <summary>
@@ -514,6 +518,9 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
             lock (_stateLock)
             {
                 _state = HostSessionState.Streaming;
+                _protocolStateMachine.RecordHelloResponseReceived(_config.SessionId);
+                _protocolStateMachine.RecordSessionSetupSent();
+                _protocolStateMachine.RecordSessionSetupResponseReceived(1, 2, 3, (uint)_config.MtuPayloadSize);
             }
         }
         // ALLOWED_EXCEPTION: Fails closed on any backend initialization fault and cleans up all acquired resources.
@@ -876,6 +883,13 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                     MoonshineErrorCode err = MoonshineProtocolCodec.TryReadHeader(datagram, out var packetHeader);
                     if (err == MoonshineErrorCode.Success && packetHeader.Magic == MoonshineProtocolConstants.Magic)
                     {
+                        ulong currentTimestampUs = (ulong)((Stopwatch.GetTimestamp() * 1_000_000L) / Stopwatch.Frequency);
+                        MoonshineErrorCode stateErr = _protocolStateMachine.IngestPacketHeader(in packetHeader, currentTimestampUs);
+                        if (stateErr != MoonshineErrorCode.Success)
+                        {
+                            continue;
+                        }
+
                         if (packetHeader.MessageType == MoonshineMessageType.Hello)
                         {
                             if (MoonshineProtocolCodec.TryReadHello(datagram[MoonshineProtocolConstants.HeaderSize..], out var hello))
@@ -888,7 +902,7 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                                     PayloadSize: 48,
                                     SequenceNumber: packetHeader.SequenceNumber,
                                     SessionId: _config.SessionId,
-                                    TimestampUs: (ulong)((Stopwatch.GetTimestamp() * 1_000_000L) / Stopwatch.Frequency));
+                                    TimestampUs: currentTimestampUs);
 
                                 var respPayload = new MoonshineHelloResponsePayload
                                 {
@@ -908,6 +922,7 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                                 try
                                 {
                                     _controlSocket?.SendTo(respBuffer, result.RemoteEndPoint);
+                                    _protocolStateMachine.RecordHelloResponseReceived(_config.SessionId);
                                 }
                                 // ALLOWED_EXCEPTION: Transient socket error on hello response send.
                                 catch (SocketException) { }
@@ -931,6 +946,7 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                                     _encoderEngine?.ReconfigureBitrate(setup.VideoBitrateKbps);
                                 }
 
+                                uint negotiatedMtu = setup.MtuPayloadSize > 0 ? setup.MtuPayloadSize : (uint)_config.MtuPayloadSize;
                                 byte[] respBuffer = new byte[MoonshineProtocolConstants.HeaderSize + 32];
                                 var respHeader = new MoonshinePacketHeader(
                                     Magic: MoonshineProtocolConstants.Magic,
@@ -939,7 +955,7 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                                     PayloadSize: 32,
                                     SequenceNumber: packetHeader.SequenceNumber,
                                     SessionId: _config.SessionId,
-                                    TimestampUs: (ulong)((Stopwatch.GetTimestamp() * 1_000_000L) / Stopwatch.Frequency));
+                                    TimestampUs: currentTimestampUs);
 
                                 var respPayload = new MoonshineSessionSetupResponsePayload
                                 {
@@ -951,7 +967,7 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                                     HostUdpAudioPort = (ushort)BoundLocalAudioPort,
                                     HostUdpFeedbackPort = (ushort)BoundLocalControlPort,
                                     HostUdpInputPort = (ushort)BoundLocalControlPort,
-                                    NegotiatedMtu = setup.MtuPayloadSize > 0 ? setup.MtuPayloadSize : (uint)_config.MtuPayloadSize,
+                                    NegotiatedMtu = negotiatedMtu,
                                     Reserved = 0
                                 };
 
@@ -961,6 +977,7 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                                 try
                                 {
                                     _controlSocket?.SendTo(respBuffer, result.RemoteEndPoint);
+                                    _protocolStateMachine.RecordSessionSetupResponseReceived(1, 2, 3, negotiatedMtu);
                                 }
                                 // ALLOWED_EXCEPTION: Transient socket error on session setup response send.
                                 catch (SocketException) { }
@@ -971,6 +988,7 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                         {
                             if (MoonshineFeedbackCodec.TryReadLossStats(datagram, out _, out var lossStats) == MoonshineErrorCode.Success)
                             {
+                                _protocolStateMachine.IngestFeedbackLossStats(in lossStats, currentTimestampUs);
                                 _congestionController?.ProcessFeedback(in lossStats);
                             }
                             continue;

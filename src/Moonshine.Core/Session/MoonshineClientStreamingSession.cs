@@ -156,8 +156,10 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
     private readonly bool _ownsReassembly;
     private readonly bool _ownsAudio;
     private readonly bool _ownsMicCapture;
+    private readonly MoonshineProtocolStateMachine _protocolStateMachine;
 
     public ClientSessionConfig Config => _config;
+    public MoonshineProtocolStateMachine ProtocolStateMachine => _protocolStateMachine;
     public ClientSessionState State
     {
         get
@@ -228,6 +230,7 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
         _micCapturePipeline = micCapturePipeline;
         _ownsMicCapture = micCapturePipeline == null;
         _lastWindowTimestampQpc = Stopwatch.GetTimestamp();
+        _protocolStateMachine = new MoonshineProtocolStateMachine(_config.SessionId, (uint)_config.MtuPayloadSize);
     }
 
     /// <summary>
@@ -395,6 +398,7 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
         handshakeCts.CancelAfter(_config.HandshakeTimeoutMs);
 
         // 1. Send Hello
+        _protocolStateMachine.RecordHelloSent();
         byte[] helloBuffer = new byte[MoonshineProtocolConstants.HeaderSize + 32];
         var helloHeader = new MoonshinePacketHeader(
             Magic: MoonshineProtocolConstants.Magic,
@@ -425,18 +429,35 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
 
         MoonshineHelloResponsePayload helloResp = default;
         bool receivedHelloResp = false;
+        int packetsExamined = 0;
+        int malformedPackets = 0;
 
         while (!receivedHelloResp && !handshakeCts.Token.IsCancellationRequested)
         {
+            if (++packetsExamined > 256 || malformedPackets > 32)
+            {
+                _protocolStateMachine.Fault("Handshake exceeded maximum allowed packet inspections.");
+                throw new InvalidOperationException("Handshake exceeded maximum examined packet ceiling.");
+            }
+
             SocketReceiveFromResult result = await _controlSocket.ReceiveFromAsync(respBuffer.AsMemory(), SocketFlags.None, remoteEp, handshakeCts.Token).ConfigureAwait(false);
             if (result.ReceivedBytes < MoonshineProtocolConstants.HeaderSize)
             {
+                malformedPackets++;
                 continue;
             }
 
             MoonshineErrorCode err = MoonshineProtocolCodec.TryReadHeader(respBuffer.AsSpan(0, result.ReceivedBytes), out var respHeader);
             if (err != MoonshineErrorCode.Success)
             {
+                malformedPackets++;
+                continue;
+            }
+
+            err = _protocolStateMachine.IngestPacketHeader(in respHeader, (ulong)Stopwatch.GetTimestamp());
+            if (err != MoonshineErrorCode.Success)
+            {
+                malformedPackets++;
                 continue;
             }
 
@@ -444,15 +465,19 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
             {
                 if (result.ReceivedBytes < MoonshineProtocolConstants.HeaderSize + 48)
                 {
+                    _protocolStateMachine.Fault("Truncated HelloResponse received from host.");
                     throw new InvalidOperationException("Invalid HelloResponse received from host.");
                 }
 
                 err = MoonshineProtocolCodec.TryReadHelloResponse(respBuffer.AsSpan(MoonshineProtocolConstants.HeaderSize, 48), out helloResp);
                 if (err != MoonshineErrorCode.Success || helloResp.ServerVersionMajor < 1)
                 {
+                    _protocolStateMachine.Fault("Incompatible host protocol version in HelloResponse.");
                     throw new InvalidOperationException("Incompatible host protocol version.");
                 }
 
+                ulong assignedSessionId = helloResp.AssignedSessionId != 0 ? helloResp.AssignedSessionId : _config.SessionId;
+                _protocolStateMachine.RecordHelloResponseReceived(assignedSessionId);
                 receivedHelloResp = true;
                 break;
             }
@@ -464,16 +489,19 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
             else
             {
                 // Out-of-order unexpected handshake message
+                _protocolStateMachine.Fault($"Expected HelloResponse but received {respHeader.MessageType}.");
                 throw new InvalidOperationException($"Expected HelloResponse but received {respHeader.MessageType}.");
             }
         }
 
         if (!receivedHelloResp)
         {
+            _protocolStateMachine.Fault("Timed out awaiting HelloResponse from host.");
             throw new TimeoutException("Timed out awaiting HelloResponse from host.");
         }
 
         // 2. Send SessionSetup
+        _protocolStateMachine.RecordSessionSetupSent();
         byte[] setupBuffer = new byte[MoonshineProtocolConstants.HeaderSize + 40];
         var setupHeader = new MoonshinePacketHeader(
             Magic: MoonshineProtocolConstants.Magic,
@@ -510,17 +538,35 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
 
         // Await SessionSetupResponse
         bool receivedSetupResp = false;
+        packetsExamined = 0;
+        malformedPackets = 0;
+
         while (!receivedSetupResp && !handshakeCts.Token.IsCancellationRequested)
         {
+            if (++packetsExamined > 256 || malformedPackets > 32)
+            {
+                _protocolStateMachine.Fault("SessionSetup exceeded maximum allowed packet inspections.");
+                throw new InvalidOperationException("SessionSetup exceeded maximum examined packet ceiling.");
+            }
+
             SocketReceiveFromResult result = await _controlSocket.ReceiveFromAsync(respBuffer.AsMemory(), SocketFlags.None, remoteEp, handshakeCts.Token).ConfigureAwait(false);
             if (result.ReceivedBytes < MoonshineProtocolConstants.HeaderSize)
             {
+                malformedPackets++;
                 continue;
             }
 
             MoonshineErrorCode err = MoonshineProtocolCodec.TryReadHeader(respBuffer.AsSpan(0, result.ReceivedBytes), out var setupRespHeader);
             if (err != MoonshineErrorCode.Success)
             {
+                malformedPackets++;
+                continue;
+            }
+
+            err = _protocolStateMachine.IngestPacketHeader(in setupRespHeader, (ulong)Stopwatch.GetTimestamp());
+            if (err != MoonshineErrorCode.Success)
+            {
+                malformedPackets++;
                 continue;
             }
 
@@ -528,14 +574,22 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
             {
                 if (result.ReceivedBytes < MoonshineProtocolConstants.HeaderSize + 32)
                 {
+                    _protocolStateMachine.Fault("Truncated SessionSetupResponse received from host.");
                     throw new InvalidOperationException("Invalid SessionSetupResponse received from host.");
                 }
 
                 err = MoonshineProtocolCodec.TryReadSessionSetupResponse(respBuffer.AsSpan(MoonshineProtocolConstants.HeaderSize, 32), out var setupResp);
                 if (err != MoonshineErrorCode.Success || setupResp.StatusCode != MoonshineErrorCode.Success)
                 {
+                    _protocolStateMachine.Fault($"Host rejected session setup with code {setupResp.StatusCode}.");
                     throw new InvalidOperationException($"Host rejected session setup with code {setupResp.StatusCode}.");
                 }
+
+                _protocolStateMachine.RecordSessionSetupResponseReceived(
+                    setupResp.VideoStreamId != 0 ? setupResp.VideoStreamId : 1,
+                    setupResp.AudioStreamId != 0 ? setupResp.AudioStreamId : 2,
+                    setupResp.FeedbackStreamId != 0 ? setupResp.FeedbackStreamId : 3,
+                    setupResp.NegotiatedMtu != 0 ? setupResp.NegotiatedMtu : (uint)_config.MtuPayloadSize);
 
                 // Configure host destinations from response if specified
                 if (setupResp.HostUdpVideoPort > 0)
@@ -556,12 +610,14 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
             }
             else
             {
+                _protocolStateMachine.Fault($"Expected SessionSetupResponse but received {setupRespHeader.MessageType}.");
                 throw new InvalidOperationException($"Expected SessionSetupResponse but received {setupRespHeader.MessageType}.");
             }
         }
 
         if (!receivedSetupResp)
         {
+            _protocolStateMachine.Fault("Timed out awaiting SessionSetupResponse from host.");
             throw new TimeoutException("Timed out awaiting SessionSetupResponse from host.");
         }
 
@@ -1087,6 +1143,29 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
         if (_state == newState) return;
         _state = newState;
         if (error != null) _lastError = error;
+
+        switch (newState)
+        {
+            case ClientSessionState.Streaming:
+                if (_protocolStateMachine.State == MoonshineProtocolState.StreamingDegraded)
+                {
+                    _protocolStateMachine.SetDegraded(false);
+                }
+                break;
+            case ClientSessionState.Degraded:
+                _protocolStateMachine.SetDegraded(true);
+                break;
+            case ClientSessionState.Draining:
+                _protocolStateMachine.RecordTeardown();
+                break;
+            case ClientSessionState.Closed:
+                _protocolStateMachine.Close();
+                break;
+            case ClientSessionState.Faulted:
+                _protocolStateMachine.Fault(error ?? "Client session faulted.");
+                break;
+        }
+
         OnStateChanged?.Invoke(newState, error);
     }
 

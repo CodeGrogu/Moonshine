@@ -3,10 +3,12 @@ using Moonshine.Core.Video;
 using Moonshine.Interop;
 using Xunit;
 
-[assembly: CollectionBehavior(DisableTestParallelization = true)]
-
 namespace Moonshine.Core.Tests;
 
+[CollectionDefinition("HardwareExclusive", DisableParallelization = true)]
+public class HardwareExclusiveFixture { }
+
+[Collection("HardwareExclusive")]
 public class HardwareVideoDecoderPipelineTests
 {
     [Fact]

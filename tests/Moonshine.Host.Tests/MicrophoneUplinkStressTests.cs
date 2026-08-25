@@ -15,6 +15,7 @@ namespace Moonshine.Host.Tests;
 /// Comprehensive stress, packet loss, clock drift, and fault-tolerance integration tests
 /// for the host microphone uplink subsystem.
 /// </summary>
+[Collection("HardwareExclusive")]
 public sealed class MicrophoneUplinkStressTests
 {
     private static float[] GenerateSineWavePcm(int sampleCount, uint sampleRate = 48000, float frequency = 440.0f, float amplitude = 0.4f)

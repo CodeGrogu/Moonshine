@@ -12,7 +12,8 @@ WasapiLoopbackCapture::WasapiLoopbackCapture(
     uint32_t buffer_duration_ms
 ) : _sample_rate(sample_rate),
     _channels(channels),
-    _buffer_duration_ms(buffer_duration_ms)
+    _buffer_duration_ms(buffer_duration_ms),
+    _resampler(sample_rate == 0 ? 48000 : sample_rate, sample_rate == 0 ? 48000 : sample_rate, channels == 0 ? 2 : channels)
 {
     if (_channels != 1 && _channels != 2 && _channels != 6 && _channels != 8) {
         _channels = 2; // Default to Stereo
@@ -93,17 +94,17 @@ bool WasapiLoopbackCapture::initialize() {
         }
     }
 
+    _resampler.Configure(_device_sample_rate > 0 ? _device_sample_rate : _sample_rate, _sample_rate, _channels);
     _initialized = true;
     _device_invalidated = false;
     _frame_counter = 0;
     _sample_counter = 0;
     _underruns = 0;
     _overruns = 0;
-    _resample_phase = 0.0;
-    _last_src_frame.assign(_channels, 0.0f);
 
     return true;
 #else
+    _resampler.Configure(_sample_rate, _sample_rate, _channels);
     _initialized = true;
     _device_invalidated = false;
     _frame_counter = 0;
@@ -214,10 +215,9 @@ bool WasapiLoopbackCapture::recover() {
         return false;
     }
 
+    _resampler.Configure(_device_sample_rate > 0 ? _device_sample_rate : _sample_rate, _sample_rate, _channels);
     _device_invalidated = false;
     _initialized = true;
-    _resample_phase = 0.0;
-    _last_src_frame.assign(_channels, 0.0f);
     return true;
 #else
     _device_invalidated = false;
@@ -262,27 +262,9 @@ bool WasapiLoopbackCapture::read_samples_float(
         _device_invalidated = true;
     }
 
-    if (FAILED(hr) || packet_length == 0) {
-        std::memset(out_samples, 0, fallback_count * sizeof(float));
-        out_read_samples = fallback_count;
-        _sample_counter += (fallback_count / target_channels);
-        _frame_counter++;
-        return true;
-    }
-
     const uint32_t src_channels = _device_channels > 0 ? _device_channels : target_channels;
-    const uint32_t src_rate = _device_sample_rate > 0 ? _device_sample_rate : _sample_rate;
-    const uint32_t dst_rate = _sample_rate > 0 ? _sample_rate : 48000;
-    const bool needs_resample = (src_rate != dst_rate);
-    const double resample_ratio = (dst_rate > 0) ? (static_cast<double>(src_rate) / static_cast<double>(dst_rate)) : 1.0;
 
-    if (_last_src_frame.size() != target_channels) {
-        _last_src_frame.assign(target_channels, 0.0f);
-    }
-
-    uint32_t total_samples_written = 0;
-
-    while (packet_length > 0 && total_samples_written + target_channels <= max_samples) {
+    while (packet_length > 0) {
         BYTE* pData = nullptr;
         UINT32 numFramesRead = 0;
         DWORD flags = 0;
@@ -309,102 +291,60 @@ bool WasapiLoopbackCapture::read_samples_float(
             out_timestamp_qpc = qpcPos;
         }
 
-        auto extract_src_sample = [&](uint32_t frame_idx, uint32_t ch_idx) -> float {
-            if (ch_idx >= src_channels) return 0.0f;
-            float val = 0.0f;
-            if (_is_float_format) {
-                const auto* ptr = reinterpret_cast<const float*>(pData) + (frame_idx * src_channels);
-                val = ptr[ch_idx];
-            } else if (_bits_per_sample == 16) {
-                const auto* ptr = reinterpret_cast<const int16_t*>(pData) + (frame_idx * src_channels);
-                val = static_cast<float>(ptr[ch_idx]) / 32768.0f;
-            } else if (_bits_per_sample == 24 || _bits_per_sample == 32) {
-                const auto* ptr = reinterpret_cast<const int32_t*>(pData) + (frame_idx * src_channels);
-                val = static_cast<float>(ptr[ch_idx]) / 2147483648.0f;
-            }
-            if (std::isnan(val) || std::isinf(val)) return 0.0f;
-            return std::clamp(val, -1.0f, 1.0f);
-        };
-
-        auto map_src_to_target_channel = [&](uint32_t frame_idx, uint32_t target_ch) -> float {
-            if (flags & AUDCLNT_BUFFERFLAGS_SILENT) return 0.0f;
-            if (target_channels == 1) {
-                if (src_channels == 1) return extract_src_sample(frame_idx, 0);
-                return std::clamp(0.5f * (extract_src_sample(frame_idx, 0) + extract_src_sample(frame_idx, 1)), -1.0f, 1.0f);
-            }
-            if (target_channels == 2) {
-                if (src_channels == 1) return extract_src_sample(frame_idx, 0);
-                return extract_src_sample(frame_idx, target_ch < src_channels ? target_ch : 0);
-            }
-            return (target_ch < src_channels) ? extract_src_sample(frame_idx, target_ch) : 0.0f;
-        };
-
-        if (!needs_resample) {
-            uint32_t frames_to_process = (std::min)(numFramesRead, (max_samples - total_samples_written) / target_channels);
-            for (uint32_t f = 0; f < frames_to_process; ++f) {
-                uint32_t dst_offset = total_samples_written + (f * target_channels);
-                for (uint32_t ch = 0; ch < target_channels; ++ch) {
-                    float val = map_src_to_target_channel(f, ch);
-                    out_samples[dst_offset + ch] = val;
-                    _last_src_frame[ch] = val;
-                }
-            }
-            total_samples_written += frames_to_process * target_channels;
+        // 1. Extract raw device float samples
+        _raw_capture_buffer.resize(static_cast<size_t>(numFramesRead) * src_channels);
+        if (flags & AUDCLNT_BUFFERFLAGS_SILENT) {
+            std::memset(_raw_capture_buffer.data(), 0, _raw_capture_buffer.size() * sizeof(float));
         } else {
-            // High-quality linear resampling between 44.1 kHz, 48 kHz, 96 kHz, etc.
-            while (total_samples_written + target_channels <= max_samples) {
-                double src_pos = _resample_phase;
-                if (src_pos >= static_cast<double>(numFramesRead)) {
-                    break;
+            for (uint32_t f = 0; f < numFramesRead; ++f) {
+                for (uint32_t ch = 0; ch < src_channels; ++ch) {
+                    float val = 0.0f;
+                    if (_is_float_format) {
+                        const auto* ptr = reinterpret_cast<const float*>(pData) + (f * src_channels);
+                        val = ptr[ch];
+                    } else if (_bits_per_sample == 16) {
+                        const auto* ptr = reinterpret_cast<const int16_t*>(pData) + (f * src_channels);
+                        val = static_cast<float>(ptr[ch]) / 32768.0f;
+                    } else if (_bits_per_sample == 24 || _bits_per_sample == 32) {
+                        const auto* ptr = reinterpret_cast<const int32_t*>(pData) + (f * src_channels);
+                        val = static_cast<float>(ptr[ch]) / 2147483648.0f;
+                    }
+                    if (std::isnan(val) || std::isinf(val)) val = 0.0f;
+                    _raw_capture_buffer[f * src_channels + ch] = std::clamp(val, -1.0f, 1.0f);
                 }
-
-                auto idx = static_cast<uint32_t>(src_pos);
-                double frac = src_pos - static_cast<double>(idx);
-
-                for (uint32_t ch = 0; ch < target_channels; ++ch) {
-                    float s0 = (idx == 0 && _resample_phase < 1.0) ? _last_src_frame[ch] : map_src_to_target_channel(idx > 0 ? idx - 1 : 0, ch);
-                    float s1 = map_src_to_target_channel(idx, ch);
-                    float interpolated = static_cast<float>((1.0 - frac) * s0 + frac * s1);
-                    if (std::isnan(interpolated) || std::isinf(interpolated)) interpolated = 0.0f;
-                    out_samples[total_samples_written + ch] = std::clamp(interpolated, -1.0f, 1.0f);
-                }
-
-                total_samples_written += target_channels;
-                _resample_phase += resample_ratio;
-            }
-
-            if (numFramesRead > 0) {
-                for (uint32_t ch = 0; ch < target_channels; ++ch) {
-                    _last_src_frame[ch] = map_src_to_target_channel(numFramesRead - 1, ch);
-                }
-            }
-            _resample_phase -= static_cast<double>(numFramesRead);
-            if (_resample_phase < 0.0 || std::isnan(_resample_phase) || std::isinf(_resample_phase)) {
-                _resample_phase = 0.0;
             }
         }
+
+        // 2. Channel conversion (device_channels -> target_channels)
+        _channel_staging_buffer.resize(static_cast<size_t>(numFramesRead) * target_channels);
+        ChannelConverter::Convert(
+            _raw_capture_buffer.data(),
+            src_channels,
+            numFramesRead,
+            _channel_staging_buffer.data(),
+            target_channels
+        );
+
+        // 3. Push converted samples to resampler FIFO
+        _resampler.PushInput(_channel_staging_buffer.data(), numFramesRead);
 
         hr = _capture_client->ReleaseBuffer(numFramesRead);
-        if (hr == AUDCLNT_E_DEVICE_INVALIDATED || hr == AUDCLNT_E_RESOURCES_INVALIDATED || 
-            hr == AUDCLNT_E_SERVICE_NOT_RUNNING || hr == AUDCLNT_E_NOT_INITIALIZED || 
-            hr == AUDCLNT_E_UNSUPPORTED_FORMAT) {
+        if (FAILED(hr)) {
             _device_invalidated = true;
-        }
-
-        if (total_samples_written >= max_samples) {
             break;
         }
 
         hr = _capture_client->GetNextPacketSize(&packet_length);
         if (FAILED(hr)) {
-            if (hr == AUDCLNT_E_DEVICE_INVALIDATED || hr == AUDCLNT_E_RESOURCES_INVALIDATED || 
-                hr == AUDCLNT_E_SERVICE_NOT_RUNNING || hr == AUDCLNT_E_NOT_INITIALIZED || 
-                hr == AUDCLNT_E_UNSUPPORTED_FORMAT) {
-                _device_invalidated = true;
-            }
+            _device_invalidated = true;
             break;
         }
     }
+
+    // Drain up to max_samples from resampler FIFO
+    size_t target_frames = max_samples / target_channels;
+    size_t generated_frames = _resampler.Resample(out_samples, target_frames);
+    uint32_t total_samples_written = static_cast<uint32_t>(generated_frames * target_channels);
 
     if (total_samples_written == 0) {
         std::memset(out_samples, 0, fallback_count * sizeof(float));
@@ -478,10 +418,10 @@ void WasapiLoopbackCapture::cleanup() {
     _audio_client.Reset();
     _device.Reset();
     _enumerator.Reset();
-    _resample_phase = 0.0;
-    _last_src_frame.clear();
+    _resampler.Reset();
+    _raw_capture_buffer.clear();
+    _channel_staging_buffer.clear();
 #endif
 }
 
 } // namespace moonshine::audio
-

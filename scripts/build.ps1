@@ -73,8 +73,8 @@ if (-not $SkipTests) {
             Copy-Item $nativeDll $_.FullName -Force -ErrorAction Stop
         } catch {
             Get-Process -Name testhost*, vstest* -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-            Start-Sleep -Milliseconds 200
-            Copy-Item $nativeDll $_.FullName -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Milliseconds 250
+            Copy-Item $nativeDll $_.FullName -Force -ErrorAction Stop
         }
     }
 

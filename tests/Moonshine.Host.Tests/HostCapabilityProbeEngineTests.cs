@@ -10,6 +10,7 @@ using Xunit;
 
 namespace Moonshine.Host.Tests;
 
+[Collection("HardwareExclusive")]
 public class HostCapabilityProbeEngineTests
 {
     [Fact]

@@ -118,6 +118,12 @@ add_executable(test_wasapi_renderer
 target_link_libraries(test_wasapi_renderer PRIVATE Moonshine.Native $<$<BOOL:${WIN32}>:avrt>)
 add_test(NAME test_wasapi_renderer COMMAND test_wasapi_renderer)
 
+add_executable(test_audio_resampler
+    test_audio_resampler.cpp
+)
+target_link_libraries(test_audio_resampler PRIVATE Moonshine.Native)
+add_test(NAME test_audio_resampler COMMAND test_audio_resampler)
+
 add_executable(test_mic_sink 
     test_mic_sink.cpp
     ${CMAKE_SOURCE_DIR}/src/Moonshine.Native/src/audio/mic_audio_sink.cpp

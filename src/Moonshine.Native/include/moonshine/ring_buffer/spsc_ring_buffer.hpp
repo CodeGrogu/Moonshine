@@ -78,6 +78,14 @@ public:
         return capacity_;
     }
 
+    /**
+     * @brief Test-only helper to configure head and tail to specific indices for boundary rollover testing.
+     */
+    void SetHeadTailForTesting(size_t head, size_t tail) noexcept {
+        head_.store(head, std::memory_order_relaxed);
+        tail_.store(tail, std::memory_order_relaxed);
+    }
+
 private:
     static size_t RoundUpPowerOf2(size_t v) noexcept {
         v--;

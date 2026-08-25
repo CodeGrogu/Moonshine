@@ -1,5 +1,7 @@
 #pragma once
 
+#include "moonshine/audio/audio_resampler.hpp"
+#include "moonshine/audio/channel_converter.hpp"
 #include <cstdint>
 #include <vector>
 #include <atomic>
@@ -70,6 +72,10 @@ private:
     uint32_t _underruns{0};
     uint32_t _overruns{0};
 
+    AudioResampler _resampler;
+    std::vector<float> _raw_capture_buffer;
+    std::vector<float> _channel_staging_buffer;
+
 #if defined(_WIN32)
     Microsoft::WRL::ComPtr<IMMDeviceEnumerator> _enumerator;
     Microsoft::WRL::ComPtr<IMMDevice> _device;
@@ -79,11 +85,8 @@ private:
     uint32_t _device_sample_rate{48000};
     bool _is_float_format{true};
     uint16_t _bits_per_sample{32};
-    double _resample_phase{0.0};
-    std::vector<float> _last_src_frame{};
 #endif
     mutable std::recursive_mutex _mutex{};
 };
 
 } // namespace moonshine::audio
-

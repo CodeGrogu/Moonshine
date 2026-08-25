@@ -4,6 +4,7 @@ using Xunit;
 
 namespace Moonshine.Host.Tests;
 
+[Collection("HardwareExclusive")]
 public class HostVirtualMicSinkPipelineTests
 {
     private static byte[] GenerateRealOpusPacket(uint sampleRate, uint durationMs)

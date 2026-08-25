@@ -131,20 +131,23 @@ public sealed class MoonshineProtocolStateMachine
                 }
             }
 
-            // 4. Session ID validation (after handshake is established)
-            if (_state >= MoonshineProtocolState.HandshakeCompleted && SessionId != 0)
+            // 4. Session ID validation (explicit contract check)
+            if (MoonshineProtocolCodec.RequiresSessionId(header.MessageType))
             {
-                if (header.SessionId != 0 && header.SessionId != SessionId)
+                if (_state >= MoonshineProtocolState.HandshakeCompleted && SessionId != 0)
                 {
-                    TransitionToFaultedLocked($"Session ID mismatch: expected {SessionId}, got {header.SessionId}.");
-                    return MoonshineErrorCode.InvalidSession;
+                    if (header.SessionId != SessionId)
+                    {
+                        TransitionToFaultedLocked($"Session ID mismatch: expected {SessionId}, got {header.SessionId}.");
+                        return MoonshineErrorCode.InvalidSession;
+                    }
                 }
             }
 
-            // 5. Sequence number validation (anti-replay and monotonic progression)
+            // 5. Sequence number validation (anti-replay and RFC 1982 modular progression)
             if (IsStrictSequenceEnforced && LastReceivedSequenceNumber > 0)
             {
-                if (header.SequenceNumber <= LastReceivedSequenceNumber)
+                if (!MoonshineProtocolCodec.IsNewerSequence(header.SequenceNumber, LastReceivedSequenceNumber))
                 {
                     return MoonshineErrorCode.DuplicateSequence;
                 }
@@ -165,9 +168,9 @@ public sealed class MoonshineProtocolStateMachine
                 return stateError;
             }
 
-            // Update monotonic tracking metrics
+            // Update monotonic tracking metrics with modular rollover awareness
             LastActivityTimestampUs = currentTimestampUs;
-            if (header.SequenceNumber > LastReceivedSequenceNumber)
+            if (LastReceivedSequenceNumber == 0 || MoonshineProtocolCodec.IsNewerSequence(header.SequenceNumber, LastReceivedSequenceNumber))
             {
                 LastReceivedSequenceNumber = header.SequenceNumber;
             }
@@ -199,8 +202,8 @@ public sealed class MoonshineProtocolStateMachine
                 return MoonshineErrorCode.StreamNotFound;
             }
 
-            // Stale feedback filtering: monotonic stream horizon invariant
-            if (LastReceivedFrameIndex > 0 && feedback.LastReceivedFrameIndex < LastReceivedFrameIndex)
+            // Stale feedback filtering: monotonic stream horizon invariant with rollover safety
+            if (LastReceivedFrameIndex > 0 && !MoonshineProtocolCodec.IsNewerFrameIndex(feedback.LastReceivedFrameIndex, LastReceivedFrameIndex))
             {
                 return MoonshineErrorCode.StaleTimestamp;
             }
@@ -217,10 +220,23 @@ public sealed class MoonshineProtocolStateMachine
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private MoonshineErrorCode ValidateMessageForStateLocked(MoonshineMessageType messageType)
     {
+        // Host configuration and discovery messages are allowed across all operational states
+        if (messageType is MoonshineMessageType.DiscoveryProbe or MoonshineMessageType.DiscoveryAnnouncement or MoonshineMessageType.DiscoveryResponse or
+            MoonshineMessageType.GetHostCapabilities or MoonshineMessageType.HostCapabilitiesResponse or
+            MoonshineMessageType.GetHostConfiguration or MoonshineMessageType.HostConfigurationResponse or
+            MoonshineMessageType.SetHostConfiguration or MoonshineMessageType.SetHostConfigurationResponse or
+            MoonshineMessageType.ConfigurationChanged)
+        {
+            if (_state is not MoonshineProtocolState.Closed and not MoonshineProtocolState.Faulted)
+            {
+                return MoonshineErrorCode.Success;
+            }
+        }
+
         switch (_state)
         {
             case MoonshineProtocolState.Created:
-                if (messageType is MoonshineMessageType.Hello or MoonshineMessageType.DiscoveryProbe or MoonshineMessageType.DiscoveryAnnouncement or MoonshineMessageType.DiscoveryResponse)
+                if (messageType is MoonshineMessageType.Hello)
                 {
                     return MoonshineErrorCode.Success;
                 }

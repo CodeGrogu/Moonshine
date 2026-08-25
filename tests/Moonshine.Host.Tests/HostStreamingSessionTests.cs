@@ -21,6 +21,7 @@ using MoonshineErrorCode = Moonshine.Protocol.Contracts.MoonshineErrorCode;
 
 namespace Moonshine.Host.Tests;
 
+[Collection("HardwareExclusive")]
 public class HostStreamingSessionTests
 {
     internal sealed class TestDesktopCapturePipeline : IDesktopCapturePipeline

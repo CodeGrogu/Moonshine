@@ -131,6 +131,36 @@ void TestInterleavedSizeTracking()
     TEST_ASSERT(ring.Size() == 0);
 }
 
+void TestMaxUint64Rollover()
+{
+    std::cout << "[Test] SPSC Monotonic counter overflow and wrapping across SIZE_MAX boundary..." << std::endl;
+    constexpr size_t kMax = std::numeric_limits<size_t>::max();
+    SpscRingBuffer<int> ring(8);
+
+    // Initialise head and tail near wrap boundary (kMax - 3)
+    ring.SetHeadTailForTesting(kMax - 3, kMax - 3);
+    TEST_ASSERT(ring.Size() == 0);
+
+    // Enqueue 8 items across the wrap boundary
+    for (int i = 0; i < 8; i++)
+    {
+        TEST_ASSERT(ring.TryEnqueue(100 + i));
+    }
+    TEST_ASSERT(ring.Size() == 8);
+    TEST_ASSERT(!ring.TryEnqueue(999)); // Full
+
+    // Dequeue all items across the boundary
+    for (int i = 0; i < 8; i++)
+    {
+        int val = -1;
+        TEST_ASSERT(ring.TryDequeue(val));
+        TEST_ASSERT(val == 100 + i);
+    }
+    TEST_ASSERT(ring.Size() == 0);
+    int emptyVal = -1;
+    TEST_ASSERT(!ring.TryDequeue(emptyVal));
+}
+
 int main()
 {
     std::cout << "=== Running SPSC Ring Buffer Test Suite ===" << std::endl;
@@ -138,6 +168,7 @@ int main()
     TestFullAndEmptyBoundaries();
     TestWrapAroundContinuity();
     TestInterleavedSizeTracking();
+    TestMaxUint64Rollover();
     TestMultiThreadedStress();
     std::cout << "All SPSC Ring Buffer tests passed successfully." << std::endl;
     return 0;

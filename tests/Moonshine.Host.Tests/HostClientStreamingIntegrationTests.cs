@@ -16,6 +16,7 @@ using Xunit;
 
 namespace Moonshine.Host.Tests;
 
+[Collection("HardwareExclusive")]
 public class HostClientStreamingIntegrationTests
 {
     private sealed class MockDesktopCapturePipeline : IDesktopCapturePipeline

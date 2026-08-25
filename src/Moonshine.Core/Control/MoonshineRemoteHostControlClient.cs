@@ -306,14 +306,20 @@ public sealed class MoonshineRemoteHostControlClient : IDisposable
 
         ReadOnlySpan<byte> payload = datagram.Slice(MoonshineProtocolConstants.HeaderSize, (int)header.PayloadSize);
 
-        if (_authenticator != null && header.PayloadSize > 32)
+        if (_authenticator != null && MoonshineProtocolCodec.RequiresAuthentication(header.MessageType))
         {
+            if (header.PayloadSize <= 32)
+            {
+                // Authenticated message lacks required 32-byte HMAC signature envelope
+                return;
+            }
+
             int authTagOffset = (int)header.PayloadSize - 32;
             ReadOnlySpan<byte> signedPortion = datagram[..(MoonshineProtocolConstants.HeaderSize + authTagOffset)];
             ReadOnlySpan<byte> expectedTag = payload[authTagOffset..];
             Span<byte> computedTag = stackalloc byte[32];
             _authenticator.ComputeMessageAuthTag(signedPortion, computedTag);
-            if (!computedTag.SequenceEqual(expectedTag))
+            if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(computedTag, expectedTag))
             {
                 return;
             }

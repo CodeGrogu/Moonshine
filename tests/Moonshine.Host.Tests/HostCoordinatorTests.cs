@@ -3,10 +3,12 @@ using Moonshine.Core.Runtime;
 using Moonshine.Host;
 using Xunit;
 
-[assembly: CollectionBehavior(DisableTestParallelization = true)]
-
 namespace Moonshine.Host.Tests;
 
+[CollectionDefinition("HardwareExclusive", DisableParallelization = true)]
+public class HostHardwareExclusiveFixture { }
+
+[Collection("HardwareExclusive")]
 public class HostCoordinatorTests
 {
     [Fact]

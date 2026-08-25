@@ -387,6 +387,151 @@ void TestIndependentScalarEncodeToSimdReconstruct()
     TEST_ASSERT(std::memcmp(shards[10].data(), backup[10].data(), static_cast<size_t>(size)) == 0);
 }
 
+void TestAllParityExceptOneLost()
+{
+    std::cout << "[Test] All Parity Except One Lost with Simultaneous Data Loss (K=10, M=4)..." << std::endl;
+    constexpr int k = 10;
+    constexpr int m = 4;
+    constexpr int total = k + m;
+    constexpr int size = 1024;
+
+    std::vector<std::vector<uint8_t>> shards(total, std::vector<uint8_t>(size));
+    std::vector<std::vector<uint8_t>> backup(total, std::vector<uint8_t>(size));
+    std::vector<uint8_t*> shard_ptrs(total);
+    std::vector<const uint8_t*> data_ptrs(k);
+    std::vector<uint8_t*> parity_ptrs(m);
+
+    for (int i = 0; i < k; ++i) {
+        for (int b = 0; b < size; ++b) {
+            shards[i][b] = static_cast<uint8_t>((i + 7) * 31 + b * 17);
+        }
+        data_ptrs[i] = shards[i].data();
+    }
+    for (int p = 0; p < m; ++p) {
+        parity_ptrs[p] = shards[k + p].data();
+    }
+
+    ReedSolomonSimd codec;
+    int encRes = codec.Encode(data_ptrs.data(), k, parity_ptrs.data(), m, size);
+    TEST_ASSERT(encRes == 0);
+
+    for (int i = 0; i < total; ++i) {
+        backup[i] = shards[i];
+        shard_ptrs[i] = shards[i].data();
+    }
+
+    // Erase 1 data shard (idx 3) and 3 parity shards (indices 11, 12, 13)
+    // Only parity shard 10 survives to reconstruct data shard 3!
+    int erased[] = {3, 11, 12, 13};
+    std::memset(shards[3].data(), 0xCC, static_cast<size_t>(size));
+    std::memset(shards[11].data(), 0xCC, static_cast<size_t>(size));
+    std::memset(shards[12].data(), 0xCC, static_cast<size_t>(size));
+    std::memset(shards[13].data(), 0xCC, static_cast<size_t>(size));
+
+    int recRes = codec.Reconstruct(shard_ptrs.data(), k, m, size, erased, 4);
+    TEST_ASSERT(recRes == 0);
+
+    TEST_ASSERT(std::memcmp(shards[3].data(), backup[3].data(), static_cast<size_t>(size)) == 0);
+    TEST_ASSERT(std::memcmp(shards[11].data(), backup[11].data(), static_cast<size_t>(size)) == 0);
+    TEST_ASSERT(std::memcmp(shards[12].data(), backup[12].data(), static_cast<size_t>(size)) == 0);
+    TEST_ASSERT(std::memcmp(shards[13].data(), backup[13].data(), static_cast<size_t>(size)) == 0);
+}
+
+void TestFecBoundaryCombinations()
+{
+    std::cout << "[Test] FEC Boundary Combinations (K=1, M=1 and K+M=255 limits)..." << std::endl;
+    ReedSolomonSimd codec;
+    constexpr int size = 256;
+
+    // 1. Boundary K=1, M=1
+    {
+        constexpr int k = 1, m = 1;
+        std::vector<std::vector<uint8_t>> shards(2, std::vector<uint8_t>(size));
+        for (int b = 0; b < size; ++b) shards[0][b] = static_cast<uint8_t>(b ^ 0x5A);
+
+        const uint8_t* dPtr = shards[0].data();
+        uint8_t* pPtr = shards[1].data();
+        TEST_ASSERT(codec.Encode(&dPtr, k, &pPtr, m, size) == 0);
+        TEST_ASSERT(std::memcmp(shards[0].data(), shards[1].data(), static_cast<size_t>(size)) == 0);
+
+        uint8_t origData = shards[0][0];
+        std::memset(shards[0].data(), 0, static_cast<size_t>(size));
+        uint8_t* shard_ptrs[] = {shards[0].data(), shards[1].data()};
+        int erased[] = {0};
+        TEST_ASSERT(codec.Reconstruct(shard_ptrs, k, m, size, erased, 1) == 0);
+        TEST_ASSERT(shards[0][0] == origData);
+    }
+
+    // 2. Boundary K=64, M=1 (Max K)
+    {
+        constexpr int k = 64, m = 1;
+        constexpr int total = k + m;
+        std::vector<std::vector<uint8_t>> shards(total, std::vector<uint8_t>(size));
+        std::vector<const uint8_t*> data_ptrs(k);
+        std::vector<uint8_t*> parity_ptrs(m);
+        std::vector<uint8_t*> shard_ptrs(total);
+
+        for (int i = 0; i < k; ++i) {
+            for (int b = 0; b < size; ++b) shards[i][b] = static_cast<uint8_t>((i + 1) ^ b);
+            data_ptrs[i] = shards[i].data();
+            shard_ptrs[i] = shards[i].data();
+        }
+        parity_ptrs[0] = shards[k].data();
+        shard_ptrs[k] = shards[k].data();
+
+        TEST_ASSERT(codec.Encode(data_ptrs.data(), k, parity_ptrs.data(), m, size) == 0);
+
+        uint8_t origSample = shards[31][50];
+        std::memset(shards[31].data(), 0, static_cast<size_t>(size));
+        int erased[] = {31};
+        TEST_ASSERT(codec.Reconstruct(shard_ptrs.data(), k, m, size, erased, 1) == 0);
+        TEST_ASSERT(shards[31][50] == origSample);
+    }
+
+    // 3. Boundary K=64, M=32 (Max K + Max M = 96)
+    {
+        constexpr int k = 64, m = 32;
+        constexpr int total = k + m;
+        std::vector<std::vector<uint8_t>> shards(total, std::vector<uint8_t>(size));
+        std::vector<const uint8_t*> data_ptrs(k);
+        std::vector<uint8_t*> parity_ptrs(m);
+        std::vector<uint8_t*> shard_ptrs(total);
+
+        for (int i = 0; i < k; ++i) {
+            for (int b = 0; b < size; ++b) shards[i][b] = static_cast<uint8_t>((i + 3) * 7 + b);
+            data_ptrs[i] = shards[i].data();
+            shard_ptrs[i] = shards[i].data();
+        }
+        for (int p = 0; p < m; ++p) {
+            parity_ptrs[p] = shards[k + p].data();
+            shard_ptrs[k + p] = shards[k + p].data();
+        }
+
+        TEST_ASSERT(codec.Encode(data_ptrs.data(), k, parity_ptrs.data(), m, size) == 0);
+
+        // Erase 2 data shards and 2 parity shards (total 4 <= 32)
+        uint8_t orig0 = shards[0][10];
+        uint8_t orig63 = shards[63][10];
+        std::memset(shards[0].data(), 0, static_cast<size_t>(size));
+        std::memset(shards[63].data(), 0, static_cast<size_t>(size));
+        std::memset(shards[64].data(), 0, static_cast<size_t>(size));
+        std::memset(shards[95].data(), 0, static_cast<size_t>(size));
+
+        int erased[] = {0, 63, 64, 95};
+        TEST_ASSERT(codec.Reconstruct(shard_ptrs.data(), k, m, size, erased, 4) == 0);
+        TEST_ASSERT(shards[0][10] == orig0);
+        TEST_ASSERT(shards[63][10] == orig63);
+    }
+
+    // 4. Negative validation: K > 64 or M > 32 must be rejected
+    {
+        const uint8_t* invalid_data_ptrs[65] = {nullptr};
+        uint8_t* invalid_parity_ptrs[33] = {nullptr};
+        TEST_ASSERT(codec.Encode(invalid_data_ptrs, 65, invalid_parity_ptrs, 1, size) != 0);
+        TEST_ASSERT(codec.Encode(invalid_data_ptrs, 1, invalid_parity_ptrs, 33, size) != 0);
+    }
+}
+
 int main()
 {
     std::cout << "=== Running Comprehensive FEC SIMD Test Suite ===" << std::endl;
@@ -399,6 +544,8 @@ int main()
     TestParityEncodingVsScalarReference();
     TestIndependentScalarEncodeToSimdReconstruct();
     TestMultiShardRecoveryGroundTruth();
+    TestAllParityExceptOneLost();
+    TestFecBoundaryCombinations();
     TestNegativeAndDefensiveValidation();
     std::cout << "All FEC SIMD tests passed successfully." << std::endl;
     return 0;
