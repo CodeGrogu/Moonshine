@@ -26,6 +26,7 @@ add_library(Moonshine.Native SHARED
     src/encoder/amf_video_encoder.cpp
     src/encoder/qsv/qsv_api.cpp
     src/encoder/qsv/qsv_session.cpp
+    src/encoder/qsv/qsv_diagnostic.cpp
     src/encoder/qsv_video_encoder.cpp
     src/encoder/d3d11_hardware_encoder.cpp
     src/encoder/unified_video_encoder.cpp

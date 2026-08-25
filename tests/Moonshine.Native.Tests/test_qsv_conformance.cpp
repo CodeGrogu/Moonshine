@@ -29,7 +29,30 @@ using Microsoft::WRL::ComPtr;
 namespace {
 
 #if defined(_WIN32)
+void populate_smpte_colour_bars(std::vector<uint32_t>& pixels, uint32_t width, uint32_t height) {
+    pixels.resize(width * height);
+    const uint32_t smpte_colors[7] = {
+        0xFFBFBFBF, // White
+        0xFF00BFBF, // Yellow
+        0xFFBFBF00, // Cyan
+        0xFF00BF00, // Green
+        0xFFBF00BF, // Magenta
+        0xFF0000BF, // Red
+        0xFFBF0000  // Blue
+    };
+
+    for (uint32_t y = 0; y < height; ++y) {
+        for (uint32_t x = 0; x < width; ++x) {
+            uint32_t bar_index = std::min<uint32_t>(6, (x * 7) / width);
+            pixels[y * width + x] = smpte_colors[bar_index];
+        }
+    }
+}
+
 ComPtr<ID3D11Texture2D> create_test_texture(ID3D11Device* device, uint32_t width, uint32_t height) {
+    std::vector<uint32_t> pixels;
+    populate_smpte_colour_bars(pixels, width, height);
+
     D3D11_TEXTURE2D_DESC desc{};
     desc.Width = width;
     desc.Height = height;
@@ -41,8 +64,12 @@ ComPtr<ID3D11Texture2D> create_test_texture(ID3D11Device* device, uint32_t width
     desc.Usage = D3D11_USAGE_DEFAULT;
     desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
 
+    D3D11_SUBRESOURCE_DATA init_data{};
+    init_data.pSysMem = pixels.data();
+    init_data.SysMemPitch = width * sizeof(uint32_t);
+
     ComPtr<ID3D11Texture2D> texture;
-    HRESULT hr = device->CreateTexture2D(&desc, nullptr, &texture);
+    HRESULT hr = device->CreateTexture2D(&desc, &init_data, &texture);
     ACTIVE_ASSERT(SUCCEEDED(hr) && texture != nullptr);
     return texture;
 }

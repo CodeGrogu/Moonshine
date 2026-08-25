@@ -29,4 +29,36 @@ public class EncoderNativeTests
         var config = new MoonshineEncoderConfig { Width = 1920, Height = 1080, Fps = 60, BitrateKbps = 20000 };
         MoonshineNativeMethods.EncoderCreate(0, IntPtr.Zero, in config).Should().Be(IntPtr.Zero);
     }
+
+    [Theory]
+    [InlineData(0u)] // H.264
+    [InlineData(1u)] // HEVC
+    [InlineData(2u)] // HEVC Main10 (10-bit HDR)
+    [InlineData(3u)] // AV1
+    public void QsvQueryCodecSupport_AllCodecs_ReturnsSupported(uint codec)
+    {
+        int res = MoonshineNativeMethods.QsvQueryCodecSupport(codec, out uint supported);
+        res.Should().Be(1);
+        supported.Should().Be(1);
+    }
+
+    [Fact]
+    public void QsvSetTuningAndIntraRefresh_NullHandle_FailClosed()
+    {
+        int tuningRes = MoonshineNativeMethods.QsvSetTuning(IntPtr.Zero, 1, 1);
+        tuningRes.Should().Be(0, "Null handle must fail closed");
+
+        int intraRes = MoonshineNativeMethods.QsvSetIntraRefresh(IntPtr.Zero, 1, 30, -2);
+        intraRes.Should().Be(0, "Null handle must fail closed");
+    }
+
+    [Fact]
+    public void D3D11TextureHelpers_NullDevice_FailClosedSafely()
+    {
+        IntPtr tex = MoonshineNativeMethods.D3D11CreateTexture(IntPtr.Zero, 1920, 1080, 0);
+        tex.Should().Be(IntPtr.Zero, "Null D3D11 device must fail closed");
+
+        // Destroying null texture must be safe and idempotent
+        MoonshineNativeMethods.D3D11DestroyTexture(IntPtr.Zero);
+    }
 }

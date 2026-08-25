@@ -107,7 +107,7 @@ public unsafe struct MoonshineGpuAdapter
 }
 
 /// <summary>
-/// Exact binary match for MoonshineQsvDiagnosticReport (C-ABI, 256 bytes, 8-byte aligned).
+/// Exact binary match for MoonshineQsvDiagnosticReport (C-ABI, 384 bytes, 8-byte aligned).
 /// </summary>
 [StructLayout(LayoutKind.Sequential, Pack = 8)]
 public unsafe struct MoonshineQsvDiagnosticReport
@@ -117,19 +117,33 @@ public unsafe struct MoonshineQsvDiagnosticReport
     public uint D3D11DeviceCreated;
     public uint D3D11VendorVerified;
     public uint VplDllLoaded;
+    public uint VplConfigCreated;
+    public uint VplImplFilterApplied;
+    public uint VplAccelFilterApplied;
     public uint VplSessionCreated;
     public uint D3D11HandleBound;
+    public uint H264Queried;
+    public uint HevcQueried;
+    public uint Av1Queried;
     public uint H264Supported;
     public uint HevcSupported;
     public uint Av1Supported;
-    public uint EncoderInitialized;
+    public uint EncoderConfigured;
     public uint FrameEncoded;
     public uint BitstreamValid;
+    public uint DecoderCreated;
+    public uint DecoderAccepted;
+    public uint DecodedTextureAvailable;
     public uint DecoderLoopbackPassed;
+    public uint LegacyMfxFallbackUsed;
     public int LastMfxStatus;
+    public int ImplFilterStatus;
+    public int AccelFilterStatus;
     public int LastHResult;
     public fixed byte AdapterDescription[128];
     public fixed byte VplDllName[64];
+    public fixed byte FirstFailedStage[64];
+    public fixed uint Reserved[4];
 }
 
 /// <summary>

@@ -356,7 +356,7 @@ typedef void* mfxSyncPoint;
 typedef void* mfxLoader;
 typedef void* mfxConfig;
 
-enum mfxVariantType : uint16_t {
+enum mfxVariantType : uint32_t {
     MFX_VARIANT_TYPE_UNSET = 0,
     MFX_VARIANT_TYPE_U8    = 1,
     MFX_VARIANT_TYPE_I8    = 2,
@@ -377,6 +377,7 @@ enum mfxVariantType : uint16_t {
 #endif
 #pragma pack(push, 8)
 struct mfxVariant {
+    mfxVersion Version;
     mfxVariantType Type;
     union {
         uint8_t   U8;

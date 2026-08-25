@@ -41,6 +41,9 @@ public:
     [[nodiscard]] bool is_configured() const noexcept;
     [[nodiscard]] const EncoderConfig& config() const noexcept;
     [[nodiscard]] mfxStatus last_status() const noexcept;
+    [[nodiscard]] mfxStatus impl_filter_status() const noexcept;
+    [[nodiscard]] mfxStatus accel_filter_status() const noexcept;
+    [[nodiscard]] mfxSession session() const noexcept;
 
     void set_target_usage(QsvTargetUsage usage, bool low_power_vdenc) noexcept;
     void set_intra_refresh(bool enabled, uint32_t cycle_size, int32_t qp_delta) noexcept;
@@ -51,6 +54,8 @@ private:
     mfxLoader _loader{nullptr};
     mfxSession _session{nullptr};
     mfxStatus _last_status{MFX_ERR_NONE};
+    mfxStatus _status_impl_filter{MFX_ERR_NOT_INITIALIZED};
+    mfxStatus _status_accel_filter{MFX_ERR_NOT_INITIALIZED};
     mfxVideoParam _params{};
     mfxExtCodingOption _ext_opt{};
     mfxExtCodingOption2 _ext_opt2{};
@@ -63,6 +68,37 @@ private:
     uint32_t _intra_refresh_cycle_size{0};
     int32_t _intra_refresh_qp_delta{0};
     bool _is_configured{false};
+    mutable std::mutex _mutex;
+};
+
+/**
+ * Explicit Legacy Intel Media SDK (MSDK) session compatibility helper.
+ * Strictly isolated for legacy hardware backends when explicitly requested.
+ * Does not silently emulate in software (no MFX_IMPL_AUTO_ANY).
+ */
+class LegacyMfxSession {
+public:
+    LegacyMfxSession();
+    ~LegacyMfxSession();
+
+    LegacyMfxSession(const LegacyMfxSession&) = delete;
+    LegacyMfxSession& operator=(const LegacyMfxSession&) = delete;
+
+    LegacyMfxSession(LegacyMfxSession&& other) noexcept;
+    LegacyMfxSession& operator=(LegacyMfxSession&& other) noexcept;
+
+    bool open(QsvApi& api, void* d3d_device);
+    void close();
+
+    [[nodiscard]] bool is_open() const noexcept;
+    [[nodiscard]] mfxSession session() const noexcept;
+    [[nodiscard]] mfxStatus last_status() const noexcept;
+
+private:
+    QsvApi* _api{nullptr};
+    void* _d3d_device{nullptr};
+    mfxSession _session{nullptr};
+    mfxStatus _last_status{MFX_ERR_NONE};
     mutable std::mutex _mutex;
 };
 

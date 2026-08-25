@@ -46,4 +46,45 @@ public class QsvNativeTests
 
         MoonshineNativeMethods.EncoderDestroy(handle);
     }
+
+    [Fact]
+    public void QsvSetTuningAndIntraRefresh_NullHandle_FailClosed()
+    {
+        int tuningRes = MoonshineNativeMethods.QsvSetTuning(IntPtr.Zero, 1, 1);
+        tuningRes.Should().Be(0, "Null handle must fail closed");
+
+        int intraRes = MoonshineNativeMethods.QsvSetIntraRefresh(IntPtr.Zero, 1, 30, -2);
+        intraRes.Should().Be(0, "Null handle must fail closed");
+    }
+
+    [Fact]
+    public void QsvEncoder_HighBitrateReconfigure_HandlesMultiplierSuccessfully()
+    {
+        var config = new MoonshineEncoderConfig
+        {
+            Width = 1920,
+            Height = 1080,
+            Fps = 60,
+            BitrateKbps = 20000,
+            PeakBitrateKbps = 30000,
+            Codec = 1, // HEVC
+            RcMode = 0,
+            GopLength = 0,
+            EnableIntraRefresh = 0,
+            EnableFillerData = 1
+        };
+
+        IntPtr handle = MoonshineNativeMethods.EncoderCreate(3, IntPtr.Zero, in config);
+        handle.Should().NotBe(IntPtr.Zero);
+
+        // Reconfigure to 80 Mbps (which requires BRCParamMultiplier = 2)
+        var highBitrateConfig = config;
+        highBitrateConfig.BitrateKbps = 80000;
+        highBitrateConfig.PeakBitrateKbps = 100000;
+
+        int reconfRes = MoonshineNativeMethods.EncoderReconfigure(handle, in highBitrateConfig);
+        reconfRes.Should().Be(1, "High bitrate reconfiguration with multiplier should succeed");
+
+        MoonshineNativeMethods.EncoderDestroy(handle);
+    }
 }

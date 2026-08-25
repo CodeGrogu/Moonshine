@@ -1,4 +1,4 @@
-﻿#include <iostream>
+#include <iostream>
 #include <vector>
 #include <cstring>
 #include "moonshine/export/moonshine_native_api.h"
@@ -57,27 +57,60 @@ int main() {
     std::cout << "  Intel Adapter:          " << (found_intel ? "PRESENT" : "ABSENT") << std::endl;
     std::cout << "  Primary Display Output: " << (found_primary_display ? "VERIFIED ON NVIDIA" : "UNATTACHED") << std::endl;
 
+    // Defensive input validation for GPU inventory and diagnostics
+    std::cout << "\n=== Testing Defensive Error Handling on Export Boundaries ===" << std::endl;
+    REQUIRE(moonshine_qsv_run_diagnostics(nullptr) == -1);
+    std::cout << "  [+] moonshine_qsv_run_diagnostics(nullptr) safely failed closed." << std::endl;
+
+    // Direct3D 11 Post-Creation Vendor Invariant Verification
+    std::cout << "\n=== Testing Direct3D 11 Device Vendor Invariant Creation ===" << std::endl;
+    void* invalid_dev = moonshine_d3d11_create_device(0x9999);
+    REQUIRE(invalid_dev == nullptr);
+    std::cout << "  [+] Nonexistent vendor ID (0x9999) failed closed with nullptr." << std::endl;
+
+    if (found_intel) {
+        void* intel_dev = moonshine_d3d11_create_device(0x8086);
+        REQUIRE(intel_dev != nullptr);
+        std::cout << "  [+] Intel Direct3D 11 device created and vendor verified." << std::endl;
+        moonshine_d3d11_destroy_device(intel_dev);
+    }
+
     // Verify QSV Diagnostic Export API
     std::cout << "\n=== Running Dedicated Intel QSV Diagnostic Suite ===" << std::endl;
     MoonshineQsvDiagnosticReport report{};
     int diag_res = moonshine_qsv_run_diagnostics(&report);
     std::cout << "  Diagnostic execution result: " << diag_res << std::endl;
-    std::cout << "  Intel Adapter Found:         " << (report.adapter_found ? "YES" : "NO") << std::endl;
-    std::cout << "  Intel Adapter Description:   " << report.adapter_description << std::endl;
-    std::cout << "  D3D11 Device Created:        " << (report.d3d11_device_created ? "YES" : "NO") << std::endl;
-    std::cout << "  D3D11 Vendor Verified:       " << (report.d3d11_vendor_verified ? "YES (0x8086)" : "NO") << std::endl;
-    std::cout << "  oneVPL DLL Loaded:           " << (report.vpl_dll_loaded ? "YES" : "NO") << " (" << report.vpl_dll_name << ")" << std::endl;
-    std::cout << "  oneVPL Session Initialised:  " << (report.vpl_session_created ? "YES" : "NO") << std::endl;
-    std::cout << "  D3D11 Handle Bound:          " << (report.d3d11_handle_bound ? "YES" : "NO") << std::endl;
-    std::cout << "  H.264 Capability:            " << (report.h264_supported ? "SUPPORTED" : "UNSUPPORTED") << std::endl;
-    std::cout << "  HEVC Capability:             " << (report.hevc_supported ? "SUPPORTED" : "UNSUPPORTED") << std::endl;
-    std::cout << "  AV1 Capability:              " << (report.av1_supported ? "SUPPORTED" : "UNSUPPORTED") << std::endl;
-    std::cout << "  Encoder Initialised:         " << (report.encoder_initialized ? "YES" : "NO") << std::endl;
-    std::cout << "  Frame Encoded:               " << (report.frame_encoded ? "YES" : "NO") << std::endl;
-    std::cout << "  Bitstream Valid:             " << (report.bitstream_valid ? "YES" : "NO") << std::endl;
-    std::cout << "  Decoder Loopback:            " << (report.decoder_loopback_passed ? "PASSED" : "SKIPPED/UNTESTED") << std::endl;
-    std::cout << "  Last MFX Status:             " << report.last_mfx_status << std::endl;
-    std::cout << "  Last HRESULT:                0x" << std::hex << report.last_hresult << std::dec << std::endl;
+    std::cout << "  1.  Intel Adapter Found:         " << (report.adapter_found ? "YES" : "NO") << std::endl;
+    std::cout << "  2.  Intel Adapter Description:   " << report.adapter_description << std::endl;
+    std::cout << "  3.  D3D11 Device Created:        " << (report.d3d11_device_created ? "YES" : "NO") << std::endl;
+    std::cout << "  4.  D3D11 Vendor Verified:       " << (report.d3d11_vendor_verified ? "YES (0x8086)" : "NO") << std::endl;
+    std::cout << "  5.  oneVPL DLL Loaded:           " << (report.vpl_dll_loaded ? "YES" : "NO") << " (" << report.vpl_dll_name << ")" << std::endl;
+    std::cout << "  6.  oneVPL Config Created:       " << (report.vpl_config_created ? "YES" : "NO") << std::endl;
+    std::cout << "  7.  oneVPL Impl Filter Applied:  " << (report.vpl_impl_filter_applied ? "YES" : "NO") << " (status: " << report.impl_filter_status << ")" << std::endl;
+    std::cout << "  8.  oneVPL Accel Filter Applied: " << (report.vpl_accel_filter_applied ? "YES" : "NO") << " (status: " << report.accel_filter_status << ")" << std::endl;
+    std::cout << "  9.  oneVPL Session Initialised:  " << (report.vpl_session_created ? "YES" : "NO") << std::endl;
+    std::cout << "  10. D3D11 Handle Bound:          " << (report.d3d11_handle_bound ? "YES" : "NO") << std::endl;
+    std::cout << "  11. H.264 Session Capability:    " << (report.h264_supported ? "SUPPORTED" : "UNSUPPORTED") << std::endl;
+    std::cout << "  12. HEVC Session Capability:     " << (report.hevc_supported ? "SUPPORTED" : "UNSUPPORTED") << std::endl;
+    std::cout << "  13. AV1 Session Capability:      " << (report.av1_supported ? "SUPPORTED" : "UNSUPPORTED") << std::endl;
+    std::cout << "  14. Encoder Configured:          " << (report.encoder_configured ? "YES" : "NO") << std::endl;
+    std::cout << "  15. Known Frame Encoded:         " << (report.frame_encoded ? "YES (SMPTE 75% Colour Bars)" : "NO") << std::endl;
+    std::cout << "  16. Bitstream Valid:             " << (report.bitstream_valid ? "YES" : "NO") << std::endl;
+    std::cout << "  17. Decoder Created:             " << (report.decoder_created ? "YES" : "NO") << std::endl;
+    std::cout << "  18. Decoder Accepted Frame:      " << (report.decoder_accepted ? "YES" : "NO") << std::endl;
+    std::cout << "  19. Decoded Texture Available:   " << (report.decoded_texture_available ? "YES" : "NO") << std::endl;
+    std::cout << "  20. Decoder Loopback Passed:     " << (report.decoder_loopback_passed ? "PASSED" : "FAILED/SKIPPED") << std::endl;
+    std::cout << "  21. Legacy MFX Fallback Used:    " << (report.legacy_mfx_fallback_used ? "YES" : "NO (Pure Modern oneVPL)") << std::endl;
+    std::cout << "  22. First Failed Stage:          " << (report.first_failed_stage[0] != '\0' ? report.first_failed_stage : "NONE") << std::endl;
+    std::cout << "  23. Last MFX Status:             " << report.last_mfx_status << std::endl;
+    std::cout << "  24. Last HRESULT:                0x" << std::hex << report.last_hresult << std::dec << std::endl;
+
+    if (found_intel) {
+        REQUIRE(report.adapter_found == 1);
+        REQUIRE(report.adapter_device_id != 0);
+        REQUIRE(report.d3d11_device_created == 1);
+        REQUIRE(report.d3d11_vendor_verified == 1);
+    }
 
     std::cout << "\n[+] GPU Adapter Inventory and Diagnostic suite passed successfully." << std::endl;
     return 0;

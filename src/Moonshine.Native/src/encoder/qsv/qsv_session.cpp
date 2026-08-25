@@ -24,6 +24,9 @@ QsvSession::QsvSession(QsvSession&& other) noexcept
       _d3d_device(other._d3d_device),
       _loader(other._loader),
       _session(other._session),
+      _last_status(other._last_status),
+      _status_impl_filter(other._status_impl_filter),
+      _status_accel_filter(other._status_accel_filter),
       _params(other._params),
       _ext_opt(other._ext_opt),
       _ext_opt2(other._ext_opt2),
@@ -52,6 +55,9 @@ QsvSession& QsvSession::operator=(QsvSession&& other) noexcept {
         _d3d_device = other._d3d_device;
         _loader = other._loader;
         _session = other._session;
+        _last_status = other._last_status;
+        _status_impl_filter = other._status_impl_filter;
+        _status_accel_filter = other._status_accel_filter;
         _params = other._params;
         _ext_opt = other._ext_opt;
         _ext_opt2 = other._ext_opt2;
@@ -79,92 +85,119 @@ QsvSession& QsvSession::operator=(QsvSession&& other) noexcept {
 bool QsvSession::open(QsvApi& api, void* d3d_device) {
     close();
 
+    _status_impl_filter = MFX_ERR_NOT_INITIALIZED;
+    _status_accel_filter = MFX_ERR_NOT_INITIALIZED;
+
     if (!api.is_loaded() || !d3d_device) {
+        _last_status = MFX_ERR_NULL_PTR;
         return false;
     }
 
     _api = &api;
     _d3d_device = d3d_device;
 
-    if (api.is_vpl() && api.MFXLoad && api.MFXCreateSession) {
-        // Modern oneVPL 2.x session initialization architecture
-        mfxLoader loader = api.MFXLoad();
-        if (loader) {
-            if (api.MFXCreateConfig && api.MFXSetConfigFilterProperty) {
-                mfxConfig cfg = api.MFXCreateConfig(loader);
-                if (cfg) {
-                    mfxVariant var{};
-                    var.Type = MFX_VARIANT_TYPE_U32;
-                    var.Data.U32 = MFX_IMPL_TYPE_HARDWARE;
-                    api.MFXSetConfigFilterProperty(cfg, reinterpret_cast<const uint8_t*>("mfxImplDescription.Impl"), var);
-
-                    mfxVariant accelVar{};
-                    accelVar.Type = MFX_VARIANT_TYPE_U32;
-                    accelVar.Data.U32 = MFX_ACCEL_MODE_VIA_D3D11;
-                    api.MFXSetConfigFilterProperty(cfg, reinterpret_cast<const uint8_t*>("mfxImplDescription.AccelerationMode"), accelVar);
-                }
-            }
-
-            mfxStatus sts = MFX_ERR_NOT_FOUND;
-            for (uint32_t implIdx = 0; implIdx < 8; ++implIdx) {
-                sts = api.MFXCreateSession(loader, implIdx, &_session);
-                _last_status = sts;
-                if (sts == MFX_ERR_NONE && _session) {
-                    break;
-                }
-            }
-
-            if (sts != MFX_ERR_NONE || !_session) {
-                // Try without config filter properties (enumerate all installed runtimes)
-                api.MFXUnload(loader);
-                _session = nullptr;
-                loader = api.MFXLoad();
-                if (loader) {
-                    for (uint32_t implIdx = 0; implIdx < 8; ++implIdx) {
-                        sts = api.MFXCreateSession(loader, implIdx, &_session);
-                        _last_status = sts;
-                        if (sts == MFX_ERR_NONE && _session) {
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (sts == MFX_ERR_NONE && _session) {
-                _loader = loader;
-            } else if (loader) {
-                api.MFXUnload(loader);
-                _loader = nullptr;
-                _session = nullptr;
-            }
-        }
-    }
-
-    if (!_session && api.MFXInitEx) {
-        // Fallback to legacy MSDK initialization if modern oneVPL session creation was unavailable
-        mfxInitParam initPar{};
-        initPar.Implementation = MFX_IMPL_HARDWARE_ANY | MFX_IMPL_VIA_D3D11;
-        initPar.Version.Major = 1;
-        initPar.Version.Minor = 0;
-        initPar.GPUCopy = 1;
-
-        mfxStatus sts = api.MFXInitEx(initPar, &_session);
-        _last_status = sts;
-        if (sts != MFX_ERR_NONE || !_session) {
-            initPar.Implementation = MFX_IMPL_AUTO_ANY;
-            sts = api.MFXInitEx(initPar, &_session);
-            _last_status = sts;
-            if (sts != MFX_ERR_NONE || !_session) {
-                close();
-                return false;
-            }
-        }
-    }
-
-    if (!_session) {
-        close();
+    // Strict modern oneVPL 2.x session initialisation workflow
+    if (!api.is_vpl() || !api.MFXLoad || !api.MFXCreateConfig ||
+        !api.MFXSetConfigFilterProperty || !api.MFXCreateSession ||
+        !api.MFXVideoCORE_SetHandle || !api.MFXUnload) {
+        _last_status = MFX_ERR_UNSUPPORTED;
+        _api = nullptr;
+        _d3d_device = nullptr;
         return false;
     }
+
+    mfxLoader loader = api.MFXLoad();
+    if (!loader) {
+        _last_status = MFX_ERR_MEMORY_ALLOC;
+        _api = nullptr;
+        _d3d_device = nullptr;
+        return false;
+    }
+
+    // Configure hardware implementation filter property
+    mfxConfig cfg1 = api.MFXCreateConfig(loader);
+    if (!cfg1) {
+        api.MFXUnload(loader);
+        _last_status = MFX_ERR_MEMORY_ALLOC;
+        _api = nullptr;
+        _d3d_device = nullptr;
+        return false;
+    }
+
+    mfxVariant impl_var{};
+    impl_var.Version.Major = 1;
+    impl_var.Version.Minor = 0;
+    impl_var.Type = MFX_VARIANT_TYPE_U32;
+    impl_var.Data.U32 = MFX_IMPL_TYPE_HARDWARE;
+    mfxStatus sts = api.MFXSetConfigFilterProperty(
+        cfg1,
+        reinterpret_cast<const uint8_t*>("mfxImplDescription.Impl"),
+        impl_var
+    );
+    _status_impl_filter = sts;
+    _last_status = sts;
+    if (sts != MFX_ERR_NONE) {
+        api.MFXUnload(loader);
+        _api = nullptr;
+        _d3d_device = nullptr;
+        return false;
+    }
+
+    // Configure Direct3D 11 acceleration mode filter property
+    mfxConfig cfg2 = api.MFXCreateConfig(loader);
+    if (!cfg2) {
+        api.MFXUnload(loader);
+        _last_status = MFX_ERR_MEMORY_ALLOC;
+        _api = nullptr;
+        _d3d_device = nullptr;
+        return false;
+    }
+
+    mfxVariant accel_var{};
+    accel_var.Version.Major = 1;
+    accel_var.Version.Minor = 0;
+    accel_var.Type = MFX_VARIANT_TYPE_U32;
+    accel_var.Data.U32 = MFX_ACCEL_MODE_VIA_D3D11;
+    sts = api.MFXSetConfigFilterProperty(
+        cfg2,
+        reinterpret_cast<const uint8_t*>("mfxImplDescription.AccelerationMode"),
+        accel_var
+    );
+    _status_accel_filter = sts;
+    _last_status = sts;
+    if (sts != MFX_ERR_NONE) {
+        api.MFXUnload(loader);
+        _api = nullptr;
+        _d3d_device = nullptr;
+        return false;
+    }
+
+    // Enumerate candidate hardware sessions matching filtered configuration
+    mfxSession session = nullptr;
+    sts = MFX_ERR_NOT_FOUND;
+    for (uint32_t impl_idx = 0; impl_idx < 8; ++impl_idx) {
+        session = nullptr;
+        sts = api.MFXCreateSession(loader, impl_idx, &session);
+        _last_status = sts;
+        if (sts == MFX_ERR_NONE && session != nullptr) {
+            break;
+        }
+        if (sts == MFX_ERR_NOT_FOUND) {
+            break;
+        }
+    }
+
+    if (sts != MFX_ERR_NONE || session == nullptr) {
+        api.MFXUnload(loader);
+        _loader = nullptr;
+        _session = nullptr;
+        _api = nullptr;
+        _d3d_device = nullptr;
+        return false;
+    }
+
+    _loader = loader;
+    _session = session;
 
 #if defined(_WIN32)
     auto* dev = static_cast<ID3D11Device*>(d3d_device);
@@ -174,7 +207,7 @@ bool QsvSession::open(QsvApi& api, void* d3d_device) {
     }
 #endif
 
-    mfxStatus sts = api.MFXVideoCORE_SetHandle(_session, MFX_HANDLE_D3D11_DEVICE, d3d_device);
+    sts = api.MFXVideoCORE_SetHandle(_session, MFX_HANDLE_D3D11_DEVICE, d3d_device);
     _last_status = sts;
     if (sts != MFX_ERR_NONE) {
         close();
@@ -186,6 +219,18 @@ bool QsvSession::open(QsvApi& api, void* d3d_device) {
 
 mfxStatus QsvSession::last_status() const noexcept {
     return _last_status;
+}
+
+mfxStatus QsvSession::impl_filter_status() const noexcept {
+    return _status_impl_filter;
+}
+
+mfxStatus QsvSession::accel_filter_status() const noexcept {
+    return _status_accel_filter;
+}
+
+mfxSession QsvSession::session() const noexcept {
+    return _session;
 }
 
 bool QsvSession::configure(const EncoderConfig& config) {
@@ -206,12 +251,21 @@ bool QsvSession::configure(const EncoderConfig& config) {
         codec_id = MFX_CODEC_AV1;
     }
 
+    uint16_t multiplier = 1;
+    uint32_t target_kbps = config.bitrate_kbps;
+    uint32_t max_kbps = config.peak_bitrate_kbps > 0 ? config.peak_bitrate_kbps : config.bitrate_kbps;
+    uint32_t highest_kbps = std::max(target_kbps, max_kbps);
+    if (highest_kbps > 65535) {
+        multiplier = static_cast<uint16_t>((highest_kbps + 65534) / 65535);
+    }
+
     _params.mfx.CodecId = codec_id;
     _params.mfx.TargetUsage = static_cast<uint16_t>(_usage == QsvTargetUsage::BestSpeed ? MFX_TARGETUSAGE_BEST_SPEED : (_usage == QsvTargetUsage::Balanced ? MFX_TARGETUSAGE_BALANCED : MFX_TARGETUSAGE_BEST_QUALITY));
-    _params.mfx.TargetKbps = static_cast<uint16_t>(std::min<uint32_t>(config.bitrate_kbps, 65535));
-    _params.mfx.MaxKbps = _params.mfx.TargetKbps;
+    _params.mfx.BRCParamMultiplier = multiplier;
+    _params.mfx.TargetKbps = static_cast<uint16_t>(target_kbps / multiplier);
+    _params.mfx.MaxKbps = static_cast<uint16_t>(max_kbps / multiplier);
     _params.mfx.RateControlMethod = MFX_RATECONTROL_CBR;
-    _params.mfx.BufferSizeInKB = static_cast<uint16_t>(std::max<uint32_t>(100, config.bitrate_kbps / 8));
+    _params.mfx.BufferSizeInKB = static_cast<uint16_t>(std::max<uint32_t>(100, (target_kbps / 8) / multiplier));
     _params.mfx.InitialDelayInKB = static_cast<uint16_t>(_params.mfx.BufferSizeInKB / 2);
     _params.mfx.LowPower = 0;
     _params.mfx.GopRefDist = 1; // Zero B-frames
@@ -400,6 +454,114 @@ void QsvSession::set_intra_refresh(bool enabled, uint32_t cycle_size, int32_t qp
     _intra_refresh_enabled = enabled;
     _intra_refresh_cycle_size = cycle_size;
     _intra_refresh_qp_delta = qp_delta;
+}
+
+// ============================================================================
+// Legacy Intel Media SDK (MSDK) Compatibility Helper Implementation
+// ============================================================================
+
+LegacyMfxSession::LegacyMfxSession() = default;
+
+LegacyMfxSession::~LegacyMfxSession() {
+    close();
+}
+
+LegacyMfxSession::LegacyMfxSession(LegacyMfxSession&& other) noexcept
+    : _api(other._api),
+      _d3d_device(other._d3d_device),
+      _session(other._session),
+      _last_status(other._last_status) {
+    other._api = nullptr;
+    other._d3d_device = nullptr;
+    other._session = nullptr;
+}
+
+LegacyMfxSession& LegacyMfxSession::operator=(LegacyMfxSession&& other) noexcept {
+    if (this != &other) {
+        close();
+        _api = other._api;
+        _d3d_device = other._d3d_device;
+        _session = other._session;
+        _last_status = other._last_status;
+
+        other._api = nullptr;
+        other._d3d_device = nullptr;
+        other._session = nullptr;
+    }
+    return *this;
+}
+
+bool LegacyMfxSession::open(QsvApi& api, void* d3d_device) {
+    close();
+
+    if (!api.is_loaded() || !d3d_device) {
+        _last_status = MFX_ERR_NULL_PTR;
+        return false;
+    }
+
+    _api = &api;
+    _d3d_device = d3d_device;
+
+    if (!api.MFXInitEx || !api.MFXClose || !api.MFXVideoCORE_SetHandle) {
+        _last_status = MFX_ERR_UNSUPPORTED;
+        _api = nullptr;
+        _d3d_device = nullptr;
+        return false;
+    }
+
+    mfxInitParam init_param{};
+    init_param.Implementation = MFX_IMPL_HARDWARE_ANY | MFX_IMPL_VIA_D3D11;
+    init_param.Version.Major = 1;
+    init_param.Version.Minor = 0;
+    init_param.GPUCopy = 1;
+
+    mfxStatus sts = api.MFXInitEx(init_param, &_session);
+    _last_status = sts;
+    if (sts != MFX_ERR_NONE || !_session) {
+        _session = nullptr;
+        _api = nullptr;
+        _d3d_device = nullptr;
+        return false;
+    }
+
+#if defined(_WIN32)
+    auto* dev = static_cast<ID3D11Device*>(d3d_device);
+    Microsoft::WRL::ComPtr<ID3D11Multithread> multithread;
+    if (SUCCEEDED(dev->QueryInterface(IID_PPV_ARGS(&multithread)))) {
+        multithread->SetMultithreadProtected(TRUE);
+    }
+#endif
+
+    sts = api.MFXVideoCORE_SetHandle(_session, MFX_HANDLE_D3D11_DEVICE, d3d_device);
+    _last_status = sts;
+    if (sts != MFX_ERR_NONE) {
+        close();
+        return false;
+    }
+
+    return true;
+}
+
+void LegacyMfxSession::close() {
+    std::lock_guard<std::mutex> lock(_mutex);
+    if (_session && _api && _api->MFXClose) {
+        _api->MFXClose(_session);
+        _session = nullptr;
+    }
+    _d3d_device = nullptr;
+    _api = nullptr;
+}
+
+bool LegacyMfxSession::is_open() const noexcept {
+    return _session != nullptr;
+}
+
+mfxSession LegacyMfxSession::session() const noexcept {
+    return _session;
+}
+
+mfxStatus LegacyMfxSession::last_status() const noexcept {
+    return _last_status;
 }
 
 } // namespace moonshine::encoder::qsv
