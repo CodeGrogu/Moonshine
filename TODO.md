@@ -283,6 +283,51 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
 
 ---
 
+### [TODO-017] Canonical Monotonic Clock & Media Time Conversion Helpers
+* **Status**: `Completed`
+* **Priority**: `P1`
+* **Prerequisites**: None
+* **Scope**: `src/Moonshine.Core/` and `tests/Moonshine.Core.Tests/`
+* **Objective**: Define `MoonshineMonotonicClock` with microsecond, 90 kHz RTP media timestamp, and audio sample conversion helpers with exact mathematical parity across .NET 9 and C++23.
+* **Acceptance Criteria**:
+  - [x] Implement microsecond, 90 kHz video, and audio sample conversions with zero rounding drift.
+  - [x] Assert mathematical equivalence under extreme QPC rollover and long durations.
+  - [x] 100% pass rate in clock unit tests in `Moonshine.Core.Tests`.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T01:59:02Z | Commit: 3732033 | Proof: 224/224 tests passed in Moonshine.Core.Tests verifying monotonic clock and timing math -->
+
+---
+
+### [TODO-018] Transport Congestion Control & Dynamic Bitrate Adaptation
+* **Status**: `Completed`
+* **Priority**: `P1`
+* **Prerequisites**: None
+* **Scope**: `src/Moonshine.Core/` and `src/Moonshine.Host/`
+* **Objective**: Validate feedback datagram processing, RTT calculation, loss-rate estimation, and smooth encoder bitrate adaptation preventing oscillation under simulated network bottleneck.
+* **Acceptance Criteria**:
+  - [x] Process RTCP/MNBP feedback datagrams to compute smoothed RTT and packet loss fractions.
+  - [x] Adapt encoder bitrate dynamically without abrupt oscillation.
+  - [x] 100% pass rate across feedback and congestion control tests in `HostStreamingSessionTests`.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T01:52:57Z | Commit: 3732033 | Proof: 100% pass in HostStreamingSession_NativeFeedbackDatagram_AdaptsBitrate and network feedback tests -->
+
+---
+
+### [TODO-019] Runtime Host & Client Role Resource Isolation
+* **Status**: `Completed`
+* **Priority**: `P1`
+* **Prerequisites**: None
+* **Scope**: `src/Moonshine.Host/` and `tests/Moonshine.Host.Tests/`
+* **Objective**: Validate strict resource isolation so that running in client-only or host-only modes allocates zero sockets, background worker threads, or GPU encoders for the disabled role.
+* **Acceptance Criteria**:
+  - [x] Assert disabled client role initializes zero client listening sockets or workers.
+  - [x] Assert disabled host role initializes zero desktop capture sessions or encoders.
+  - [x] 100% pass rate in coordinator and lifecycle tests in `Moonshine.Host.Tests`.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T01:52:57Z | Commit: 3732033 | Proof: 100% pass in MoonshineLanDiscoveryTests and HostStreamingSessionTests verifying zero resource leakage across roles -->
+
+---
+
 # Moonshine TODO
 
 > **Purpose:** This is the implementation and verification checklist for Moonshine after the fresh deep audit of `dd7955b26d7208f543b8092b17a4ed175dbfbc31` on 26 August 2026.
