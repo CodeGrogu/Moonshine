@@ -3459,6 +3459,80 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_d3d11_readback_pixels(
     }
 }
 
+MOONSHINE_API int MOONSHINE_CONV moonshine_d3d11_cross_adapter_copy(
+    void* src_device,
+    void* src_texture,
+    void* dst_device,
+    void* dst_texture,
+    uint32_t width,
+    uint32_t height
+) {
+    try {
+        if (!src_texture || !dst_texture || width == 0 || height == 0) {
+            return MOONSHINE_ERR_INVALID_ARGUMENT;
+        }
+
+    #if defined(_WIN32)
+        auto* p_src_tex = static_cast<ID3D11Texture2D*>(src_texture);
+        auto* p_dst_tex = static_cast<ID3D11Texture2D*>(dst_texture);
+
+        Microsoft::WRL::ComPtr<ID3D11Device> p_src_dev;
+        if (src_device) {
+            p_src_dev = static_cast<ID3D11Device*>(src_device);
+        } else {
+            p_src_tex->GetDevice(&p_src_dev);
+        }
+
+        Microsoft::WRL::ComPtr<ID3D11Device> p_dst_dev;
+        if (dst_device) {
+            p_dst_dev = static_cast<ID3D11Device*>(dst_device);
+        } else {
+            p_dst_tex->GetDevice(&p_dst_dev);
+        }
+
+        if (!p_src_dev || !p_dst_dev) {
+            return MOONSHINE_ERR_INVALID_ARGUMENT;
+        }
+
+        D3D11_TEXTURE2D_DESC src_desc{};
+        p_src_tex->GetDesc(&src_desc);
+
+        // Readback source texture via staging readback
+        std::vector<uint8_t> staging_buffer(width * height * 4);
+        uint32_t read_bytes = 0;
+        int read_res = moonshine_d3d11_readback_pixels(
+            p_src_dev.Get(),
+            p_src_tex,
+            staging_buffer.data(),
+            static_cast<uint32_t>(staging_buffer.size()),
+            &read_bytes
+        );
+
+        if (read_res != MOONSHINE_SUCCESS || read_bytes == 0) {
+            return MOONSHINE_ERR_FATAL;
+        }
+
+        // Upload to destination texture
+        Microsoft::WRL::ComPtr<ID3D11DeviceContext> dst_context;
+        p_dst_dev->GetImmediateContext(&dst_context);
+        if (!dst_context) {
+            return MOONSHINE_ERR_FATAL;
+        }
+
+        uint32_t row_pitch = width * 4;
+        dst_context->UpdateSubresource(p_dst_tex, 0, nullptr, staging_buffer.data(), row_pitch, 0);
+        return MOONSHINE_SUCCESS;
+    #else
+        (void)src_device; (void)src_texture; (void)dst_device; (void)dst_texture; (void)width; (void)height;
+        return MOONSHINE_ERR_UNSUPPORTED_HARDWARE;
+    #endif
+    } catch (const std::exception&) {
+        return MOONSHINE_ERR_FATAL;
+    } catch (...) {
+        return MOONSHINE_ERR_FATAL;
+    }
+}
+
 MOONSHINE_API int MOONSHINE_CONV moonshine_video_verify_decoded_pattern(
     void* decoder,
     uint32_t pattern_type,

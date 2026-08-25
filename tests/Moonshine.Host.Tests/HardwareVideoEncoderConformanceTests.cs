@@ -1236,4 +1236,87 @@ public class HardwareVideoEncoderConformanceTests
             MoonshineNativeMethods.D3D11DestroyDevice(newDev);
         }
     }
+
+    [SkippableFact]
+    public unsafe void HardwareEncoder_CrossAdapterSurfaceSharing_NvidiaCaptureToIntelQsvEncoding_Succeeds()
+    {
+        var adapters = Moonshine.Core.Hardware.GpuAdapterInventory.EnumerateAdapters();
+        Skip.If(adapters == null || adapters.Count == 0, "No physical GPU adapters discovered on this system.");
+
+        var nvidiaAdapter = adapters.FirstOrDefault(a => a.IsNvidia || a.VendorId == 0x10DE);
+        var intelAdapter = adapters.FirstOrDefault(a => a.IsIntel || a.VendorId == 0x8086);
+
+        Skip.If(nvidiaAdapter == null || intelAdapter == null, "Both NVIDIA (0x10DE) and Intel (0x8086) GPUs required for cross-adapter test.");
+
+        IntPtr devNvidia = MoonshineNativeMethods.D3D11CreateDevice(0x10DE);
+        Skip.If(devNvidia == IntPtr.Zero, "NVIDIA Direct3D 11 device creation failed.");
+
+        IntPtr devIntel = MoonshineNativeMethods.D3D11CreateDevice(0x8086);
+        if (devIntel == IntPtr.Zero)
+        {
+            MoonshineNativeMethods.D3D11DestroyDevice(devNvidia);
+            Skip.If(true, "Intel Direct3D 11 device creation failed.");
+        }
+
+        IntPtr srcTexNvidia = MoonshineNativeMethods.D3D11CreatePatternTexture(devNvidia, 1920, 1080, 0, 0);
+        IntPtr dstTexIntel = MoonshineNativeMethods.D3D11CreateTexture(devIntel, 1920, 1080, 0);
+
+        try
+        {
+            // 1. Render SMPTE Bars (Pattern 4) on NVIDIA GPU
+            int renderRes = MoonshineNativeMethods.D3D11RenderPattern(devNvidia, srcTexNvidia, 1920, 1080, 4, 0);
+            renderRes.Should().Be(1);
+
+            // 2. Perform cross-adapter surface copy: NVIDIA VRAM -> Intel VRAM
+            int copyRes = MoonshineNativeMethods.D3D11CrossAdapterCopy(devNvidia, srcTexNvidia, devIntel, dstTexIntel, 1920, 1080);
+            copyRes.Should().Be(0);
+
+            // 3. Submit transferred texture to Intel QuickSync encoder pipeline
+            using var qsvPipeline = new QsvHardwareEncoderPipeline(1920, 1080, d3dDevice: devIntel);
+            Skip.IfNot(qsvPipeline.IsActive, "Intel QuickSync encoder unavailable on this system.");
+
+            Span<byte> outBitstream = stackalloc byte[1024 * 512];
+            bool encodeOk = qsvPipeline.TryEncodeFrame(dstTexIntel, true, out var desc, outBitstream, out int written);
+            encodeOk.Should().BeTrue();
+            written.Should().BeGreaterThan(0);
+            desc.IsKeyframe.Should().Be(1);
+            qsvPipeline.HasProducedValidOutput.Should().BeTrue();
+
+            // 4. Submit bitstream to decoder and verify decoded pattern
+            IntPtr decoder = MoonshineNativeMethods.VideoCreateD3D11(IntPtr.Zero, 1920, 1080, (uint)VideoCodec.HevcMain10);
+            if (decoder != IntPtr.Zero)
+            {
+                try
+                {
+                    fixed (byte* pBitstream = outBitstream)
+                    {
+                        var frameDesc = new MoonshineFrameDesc
+                        {
+                            FrameIndex = (uint)desc.FrameIndex,
+                            TotalBytes = (uint)written,
+                            PacketCount = 1,
+                            IsKeyframe = 1,
+                            FrameBuffer = pBitstream
+                        };
+                        int decodeRes = MoonshineNativeMethods.VideoSubmitFrame(decoder, in frameDesc);
+                        decodeRes.Should().Be(0);
+
+                        int verifyRes = MoonshineNativeMethods.VideoVerifyDecodedPattern(decoder, 4, 0.5f);
+                        verifyRes.Should().Be(0);
+                    }
+                }
+                finally
+                {
+                    MoonshineNativeMethods.VideoDestroy(decoder);
+                }
+            }
+        }
+        finally
+        {
+            if (srcTexNvidia != IntPtr.Zero) MoonshineNativeMethods.D3D11DestroyTexture(srcTexNvidia);
+            if (dstTexIntel != IntPtr.Zero) MoonshineNativeMethods.D3D11DestroyTexture(dstTexIntel);
+            MoonshineNativeMethods.D3D11DestroyDevice(devNvidia);
+            MoonshineNativeMethods.D3D11DestroyDevice(devIntel);
+        }
+    }
 }

@@ -979,6 +979,17 @@ public static unsafe partial class MoonshineNativeMethods
         out uint outBytes
     );
 
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_d3d11_cross_adapter_copy")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int D3D11CrossAdapterCopy(
+        IntPtr srcDevice,
+        IntPtr srcTexture,
+        IntPtr dstDevice,
+        IntPtr dstTexture,
+        uint width,
+        uint height
+    );
+
     // ========================================================================
     // AMD AMF Dedicated Custom APIs
     // ========================================================================
