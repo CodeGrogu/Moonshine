@@ -302,7 +302,7 @@ BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
 ---
 
 ### Galois Field GF(2^8) Reed-Solomon Forward Error Correction & SIMD Shard Recovery (Issue #82)
-<!-- VERIFIED: 2026-08-26T00:57:28Z | Commit: 347512d | Proof: dotnet run -c Release --project src/Moonshine.Benchmarks -- --filter *FecBenchmarks* --inProcess --job short in Windows 11 Pro build 26200, x64 RyuJIT AVX-512 -->
+<!-- VERIFIED: 2026-08-26T00:57:28Z | Commit: abbf1d3 | Proof: dotnet run -c Release --project src/Moonshine.Benchmarks -- --filter *FecBenchmarks* --inProcess --job short in Windows 11 Pro build 26200, x64 RyuJIT AVX-512 -->
 
 ```
 BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
@@ -321,7 +321,7 @@ BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
 ---
 
 ### Lock-Free SPSC Native & Managed Ring Buffer Operations (Issue #82)
-<!-- VERIFIED: 2026-08-26T00:58:07Z | Commit: 347512d | Proof: dotnet run -c Release --project src/Moonshine.Benchmarks -- --filter *RingBufferBenchmarks* --inProcess --job short in Windows 11 Pro build 26200, x64 RyuJIT AVX-512 -->
+<!-- VERIFIED: 2026-08-26T00:58:07Z | Commit: abbf1d3 | Proof: dotnet run -c Release --project src/Moonshine.Benchmarks -- --filter *RingBufferBenchmarks* --inProcess --job short in Windows 11 Pro build 26200, x64 RyuJIT AVX-512 -->
 
 ```
 BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
@@ -339,7 +339,7 @@ BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
 ---
 
 ### Client-Side Predictive Jitter Buffer Resequencing & Frame Extraction (Issue #82)
-<!-- VERIFIED: 2026-08-26T00:58:29Z | Commit: 347512d | Proof: dotnet run -c Release --project src/Moonshine.Benchmarks -- --filter *JitterBufferBenchmarks* --inProcess --job short in Windows 11 Pro build 26200, x64 RyuJIT AVX-512 -->
+<!-- VERIFIED: 2026-08-26T00:58:29Z | Commit: abbf1d3 | Proof: dotnet run -c Release --project src/Moonshine.Benchmarks -- --filter *JitterBufferBenchmarks* --inProcess --job short in Windows 11 Pro build 26200, x64 RyuJIT AVX-512 -->
 
 ```
 BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)

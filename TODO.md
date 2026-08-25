@@ -68,7 +68,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Record physical results (Mean latency, P95, P99, Allocations) in `docs/BENCHMARKS.md`.
   - [x] Ensure all entries carry valid timestamped `<!-- VERIFIED: ... -->` provenance tags.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T00:58:30Z | Commit: 347512d | Proof: Microbenchmarks for FEC (196.5 ns, 0 B), SPSC RingBuffer (7.80 ns, 0 B), and JitterBuffer (45.26 ns, 0 B) documented in docs/BENCHMARKS.md -->
+  - <!-- VERIFIED: 2026-08-26T00:58:30Z | Commit: abbf1d3 | Proof: Microbenchmarks for FEC (196.5 ns, 0 B), SPSC RingBuffer (7.80 ns, 0 B), and JitterBuffer (45.26 ns, 0 B) documented in docs/BENCHMARKS.md -->
 
 ---
 
