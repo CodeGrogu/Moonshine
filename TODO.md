@@ -42,18 +42,18 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
 ## Active Task Backlog
 
 ### [TODO-001] Zero-Copy Direct3D 11.1 NT Shared Handle Cross-Adapter Transfer
-* **Status**: `Pending`
+* **Status**: `Completed`
 * **Priority**: `P1`
 * **Prerequisites**: None
 * **Scope**: Native `Moonshine.Native.dll` and Managed `Moonshine.Interop`
 * **Objective**: Enhance `moonshine_d3d11_cross_adapter_copy` to use `IDXGIResource1::CreateSharedHandle` with `D3D11_RESOURCE_MISC_SHARED_NTHANDLE` and `ID3D11Device1::OpenSharedResource1` for hardware-accelerated zero-copy cross-adapter VRAM migration when supported by the underlying GPU drivers, retaining the CPU staging copy as a robust fallback.
 * **Acceptance Criteria**:
-  - [ ] Implement `moonshine_d3d11_create_shared_nt_handle` and `moonshine_d3d11_open_shared_nt_handle` in `moonshine_native_api.cpp`.
-  - [ ] Support keyed mutex synchronization (`IDXGIKeyedMutex`) for race-free cross-device access.
-  - [ ] Add unit and loopback tests in `HardwareVideoEncoderConformanceTests.cs`.
-  - [ ] 100% CTest and xUnit pass rate with zero preflight violations.
+  - [x] Implement `moonshine_d3d11_create_shared_nt_handle` and `moonshine_d3d11_open_shared_nt_handle` in `moonshine_native_api.cpp`.
+  - [x] Support keyed mutex synchronization (`IDXGIKeyedMutex`) for race-free cross-device access.
+  - [x] Add unit and loopback tests in `HardwareVideoEncoderConformanceTests.cs`.
+  - [x] 100% CTest and xUnit pass rate with zero preflight violations.
 * **Evidence**:
-  - <!-- PENDING: Provenance tag will be added upon completion -->
+  - <!-- VERIFIED: 2026-08-26T01:18:05Z | Commit: a110f80 | Proof: D3D11 shared texture creation/opening and cross-adapter surface copy verified in EncoderNativeTests.cs and HardwareVideoEncoderConformanceTests.cs -->
 
 ---
 
