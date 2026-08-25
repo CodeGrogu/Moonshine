@@ -35,15 +35,36 @@ public static class MoonshineVideoPacketCodec
         header = default;
         if (source.Length < HeaderSize) return false;
 
-        header.StreamId = BinaryPrimitives.ReadUInt32BigEndian(source[0..4]);
-        header.FrameIndex = BinaryPrimitives.ReadUInt64BigEndian(source[4..12]);
-        header.PacketIndex = BinaryPrimitives.ReadUInt32BigEndian(source[12..16]);
-        header.TotalPackets = BinaryPrimitives.ReadUInt32BigEndian(source[16..20]);
-        header.FecBlockIndex = BinaryPrimitives.ReadUInt32BigEndian(source[20..24]);
-        header.PayloadSize = BinaryPrimitives.ReadUInt16BigEndian(source[24..26]);
-        header.PacketType = source[26];
-        header.Flags = (MoonshineVideoAttributes)source[27];
-        header.TotalFrameBytes = BinaryPrimitives.ReadUInt32BigEndian(source[28..32]);
+        uint streamId = BinaryPrimitives.ReadUInt32BigEndian(source[0..4]);
+        ulong frameIndex = BinaryPrimitives.ReadUInt64BigEndian(source[4..12]);
+        uint packetIndex = BinaryPrimitives.ReadUInt32BigEndian(source[12..16]);
+        uint totalPackets = BinaryPrimitives.ReadUInt32BigEndian(source[16..20]);
+        uint fecBlockIndex = BinaryPrimitives.ReadUInt32BigEndian(source[20..24]);
+        ushort payloadSize = BinaryPrimitives.ReadUInt16BigEndian(source[24..26]);
+        byte packetType = source[26];
+        var flags = (MoonshineVideoAttributes)source[27];
+        uint totalFrameBytes = BinaryPrimitives.ReadUInt32BigEndian(source[28..32]);
+
+        if (streamId == 0 || totalPackets == 0 || totalPackets > 65535 || packetType > 1 || 
+            payloadSize == 0 || payloadSize > 65507 || totalFrameBytes == 0 ||
+            (packetType == 0 && packetIndex >= totalPackets))
+        {
+            return false;
+        }
+
+        header = new MoonshineVideoPacketHeader
+        {
+            StreamId = streamId,
+            FrameIndex = frameIndex,
+            PacketIndex = packetIndex,
+            TotalPackets = totalPackets,
+            FecBlockIndex = fecBlockIndex,
+            PayloadSize = payloadSize,
+            PacketType = packetType,
+            Flags = flags,
+            TotalFrameBytes = totalFrameBytes
+        };
         return true;
     }
+
 }

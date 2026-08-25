@@ -38,6 +38,7 @@ public:
     ~WasapiLoopbackCapture();
 
     bool initialize();
+    bool recover();
     bool read_samples_float(
         float* out_samples,
         uint32_t max_samples,
@@ -78,8 +79,11 @@ private:
     uint32_t _device_sample_rate{48000};
     bool _is_float_format{true};
     uint16_t _bits_per_sample{32};
+    double _resample_phase{0.0};
+    std::vector<float> _last_src_frame{};
 #endif
     mutable std::recursive_mutex _mutex{};
 };
 
 } // namespace moonshine::audio
+

@@ -34,14 +34,34 @@ public static class MoonshineAudioPacketCodec
         header = default;
         if (source.Length < HeaderSize) return false;
 
-        header.StreamId = BinaryPrimitives.ReadUInt32BigEndian(source[0..4]);
-        header.SampleIndex = BinaryPrimitives.ReadUInt64BigEndian(source[4..12]);
-        header.SampleRate = BinaryPrimitives.ReadUInt32BigEndian(source[12..16]);
-        header.FrameDurationUs = BinaryPrimitives.ReadUInt16BigEndian(source[16..18]);
-        header.PayloadSize = BinaryPrimitives.ReadUInt16BigEndian(source[18..20]);
-        header.Channels = source[20];
-        header.Codec = (MoonshineAudioCodec)source[21];
-        header.Reserved = BinaryPrimitives.ReadUInt16BigEndian(source[22..24]);
+        uint streamId = BinaryPrimitives.ReadUInt32BigEndian(source[0..4]);
+        ulong sampleIndex = BinaryPrimitives.ReadUInt64BigEndian(source[4..12]);
+        uint sampleRate = BinaryPrimitives.ReadUInt32BigEndian(source[12..16]);
+        ushort frameDurationUs = BinaryPrimitives.ReadUInt16BigEndian(source[16..18]);
+        ushort payloadSize = BinaryPrimitives.ReadUInt16BigEndian(source[18..20]);
+        byte channels = source[20];
+        var codec = (MoonshineAudioCodec)source[21];
+        ushort reserved = BinaryPrimitives.ReadUInt16BigEndian(source[22..24]);
+
+        if (streamId == 0 || (channels != 1 && channels != 2 && channels != 6 && channels != 8) || 
+            sampleRate < 8000 || sampleRate > 384000 ||
+            codec == MoonshineAudioCodec.Unknown || payloadSize == 0 || payloadSize > 8192)
+        {
+            return false;
+        }
+
+        header = new MoonshineAudioPacketHeader
+        {
+            StreamId = streamId,
+            SampleIndex = sampleIndex,
+            SampleRate = sampleRate,
+            FrameDurationUs = frameDurationUs,
+            PayloadSize = payloadSize,
+            Channels = channels,
+            Codec = codec,
+            Reserved = reserved
+        };
         return true;
     }
+
 }

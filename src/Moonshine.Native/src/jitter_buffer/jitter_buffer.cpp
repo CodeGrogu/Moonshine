@@ -17,8 +17,8 @@ int JitterBuffer::PushPacket(const MoonshinePacketDesc& packet) noexcept {
         return -1;
     }
 
-    // Ignore frames far in the past
-    if (last_popped_frame_index_ > 0 && packet.frame_index <= last_popped_frame_index_) {
+    // Ignore frames far in the past using modular signed arithmetic to handle 2^32-1 -> 0 rollover
+    if (has_popped_frame_ && static_cast<int32_t>(packet.frame_index - last_popped_frame_index_) <= 0) {
         return 0; // Stale dropped packet
     }
 
@@ -121,21 +121,32 @@ int JitterBuffer::PushPacket(const MoonshinePacketDesc& packet) noexcept {
 }
 
 int JitterBuffer::PopFrame(MoonshineFrameDesc& out_frame) noexcept {
+    int best_slot_idx = -1;
     for (size_t i = 0; i < max_frames_; ++i) {
-        FrameSlot& slot = slots_[i];
+        const FrameSlot& slot = slots_[i];
         if (slot.is_occupied && slot.is_complete) {
-            out_frame.frame_index = slot.frame_index;
-            out_frame.total_bytes = slot.total_bytes;
-            out_frame.packet_count = slot.received_packets;
-            out_frame.is_keyframe = slot.is_keyframe ? 1 : 0;
-            out_frame.frame_buffer = slot.payload_buffer.get();
-
-            last_popped_frame_index_ = slot.frame_index;
-            slot.is_complete = false;
-            slot.is_occupied = false;
-            return 1; // 1 frame popped
+            if (best_slot_idx == -1 ||
+                static_cast<int32_t>(slot.frame_index - slots_[best_slot_idx].frame_index) < 0) {
+                best_slot_idx = static_cast<int>(i);
+            }
         }
     }
+
+    if (best_slot_idx >= 0) {
+        FrameSlot& slot = slots_[best_slot_idx];
+        out_frame.frame_index = slot.frame_index;
+        out_frame.total_bytes = slot.total_bytes;
+        out_frame.packet_count = slot.received_packets;
+        out_frame.is_keyframe = slot.is_keyframe ? 1 : 0;
+        out_frame.frame_buffer = slot.payload_buffer.get();
+
+        last_popped_frame_index_ = slot.frame_index;
+        has_popped_frame_ = true;
+        slot.is_complete = false;
+        slot.is_occupied = false;
+        return 1; // 1 frame popped
+    }
+
     return 0; // No complete frame ready
 }
 

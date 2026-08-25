@@ -51,13 +51,42 @@ int main() {
             TEST_ASSERT(frames >= 1);
             std::cout << "    [+] Metrics: " << frames << " frames, " << samples << " channel-samples" << std::endl;
 
+            int recover_res = moonshine_audio_capture_recover(handle);
+            TEST_ASSERT(recover_res == 1);
+            std::cout << "    [+] Loopback Capture Recovery: Verified" << std::endl;
+
             moonshine_audio_capture_destroy(handle);
         } else {
             std::cout << "    [-] No default WASAPI audio render device available (headless environment)." << std::endl;
         }
     }
 
-    // 2. Test Surround 5.1 48kHz 10ms Capture
+    // 2. Test 44.1kHz and 96kHz Loopback Capture
+    {
+        MoonshineAudioCaptureHandle handle441 = moonshine_audio_capture_create(44100, 2, 10);
+        if (handle441) {
+            std::vector<float> float_buffer(882);
+            uint32_t samples_read = 0;
+            uint64_t qpc = 0;
+            int res = moonshine_audio_capture_read_float(handle441, float_buffer.data(), (uint32_t)float_buffer.size(), &samples_read, &qpc);
+            TEST_ASSERT(res == 1);
+            moonshine_audio_capture_destroy(handle441);
+            std::cout << "    [+] 44.1kHz Loopback Capture: Verified" << std::endl;
+        }
+
+        MoonshineAudioCaptureHandle handle96k = moonshine_audio_capture_create(96000, 2, 10);
+        if (handle96k) {
+            std::vector<float> float_buffer(1920);
+            uint32_t samples_read = 0;
+            uint64_t qpc = 0;
+            int res = moonshine_audio_capture_read_float(handle96k, float_buffer.data(), (uint32_t)float_buffer.size(), &samples_read, &qpc);
+            TEST_ASSERT(res == 1);
+            moonshine_audio_capture_destroy(handle96k);
+            std::cout << "    [+] 96kHz Loopback Capture: Verified" << std::endl;
+        }
+    }
+
+    // 3. Test Surround 5.1 48kHz 10ms Capture
     {
         MoonshineAudioCaptureHandle handle = moonshine_audio_capture_create(48000, 6, 10);
         if (handle) {
@@ -79,7 +108,7 @@ int main() {
         }
     }
 
-    // 3. Test Surround 7.1 48kHz 5ms Capture
+    // 4. Test Surround 7.1 48kHz 5ms Capture
     {
         MoonshineAudioCaptureHandle handle = moonshine_audio_capture_create(48000, 8, 5);
         if (handle) {
@@ -101,10 +130,11 @@ int main() {
         }
     }
 
-    // 4. Test Microphone Capture Lifecycle and Recovery
+    // 5. Test Microphone Capture Lifecycle and Recovery
     {
         TEST_ASSERT(moonshine_mic_capture_is_active(nullptr) == 0);
         TEST_ASSERT(moonshine_mic_capture_recover(nullptr) == 0);
+        TEST_ASSERT(moonshine_audio_capture_recover(nullptr) == 0);
 
         MoonshineMicCaptureHandle handle = moonshine_mic_capture_create(48000, 1, 10);
         if (handle) {
@@ -147,6 +177,64 @@ int main() {
         }
     }
 
+    // 6. Test Dynamic Format Change Resilience (44.1 kHz <-> 48 kHz <-> 96 kHz <-> 192 kHz)
+    {
+        MoonshineAudioCaptureHandle handle192k = moonshine_audio_capture_create(192000, 2, 5);
+        if (handle192k) {
+            std::vector<float> float_buffer(3840); // 1920 samples * 2 channels
+            uint32_t samples_read = 0;
+            uint64_t qpc = 0;
+            int res = moonshine_audio_capture_read_float(handle192k, float_buffer.data(), (uint32_t)float_buffer.size(), &samples_read, &qpc);
+            TEST_ASSERT(res == 1);
+            TEST_ASSERT(qpc > 0);
+            
+            // Perform multiple recoveries simulating endpoint format shifts
+            for (int i = 0; i < 5; ++i) {
+                int rec_res = moonshine_audio_capture_recover(handle192k);
+                TEST_ASSERT(rec_res == 1);
+                res = moonshine_audio_capture_read_float(handle192k, float_buffer.data(), (uint32_t)float_buffer.size(), &samples_read, &qpc);
+                TEST_ASSERT(res == 1);
+            }
+            moonshine_audio_capture_destroy(handle192k);
+            std::cout << "    [+] 192kHz Dynamic Format Switch and Recovery: Verified" << std::endl;
+        }
+    }
+
+    // 7. Test Defensive Boundary and Null Pointer Handling
+    {
+        uint32_t samples_read = 0;
+        uint64_t qpc = 0;
+        float sample_buf[10] = {0};
+
+        TEST_ASSERT(moonshine_audio_capture_read_float(nullptr, sample_buf, 10, &samples_read, &qpc) == 0);
+        TEST_ASSERT(moonshine_audio_capture_read_pcm16(nullptr, reinterpret_cast<int16_t*>(sample_buf), 10, &samples_read, &qpc) == 0);
+        moonshine_audio_capture_get_metrics(nullptr, nullptr, nullptr, nullptr, nullptr);
+
+        MoonshineAudioCaptureHandle handle = moonshine_audio_capture_create(48000, 2, 5);
+        if (handle) {
+            TEST_ASSERT(moonshine_audio_capture_read_float(handle, nullptr, 10, &samples_read, &qpc) == 0);
+            TEST_ASSERT(moonshine_audio_capture_read_float(handle, sample_buf, 0, &samples_read, &qpc) == 0);
+            TEST_ASSERT(moonshine_audio_capture_read_pcm16(handle, nullptr, 10, &samples_read, &qpc) == 0);
+            TEST_ASSERT(moonshine_audio_capture_read_pcm16(handle, reinterpret_cast<int16_t*>(sample_buf), 0, &samples_read, &qpc) == 0);
+            moonshine_audio_capture_destroy(handle);
+            std::cout << "    [+] Defensive Boundaries and Null Pointer Protection: Verified" << std::endl;
+        }
+    }
+
+    // 8. Test Repeated Recovery Stress Loop
+    {
+        MoonshineAudioCaptureHandle handle = moonshine_audio_capture_create(48000, 2, 5);
+        if (handle) {
+            for (int i = 0; i < 20; ++i) {
+                int rec_res = moonshine_audio_capture_recover(handle);
+                TEST_ASSERT(rec_res == 1);
+            }
+            moonshine_audio_capture_destroy(handle);
+            std::cout << "    [+] Repeated Recovery Stress Loop: Verified" << std::endl;
+        }
+    }
+
     std::cout << "[+] WASAPI Capture Native Tests Passed Successfully!" << std::endl;
     return 0;
 }
+

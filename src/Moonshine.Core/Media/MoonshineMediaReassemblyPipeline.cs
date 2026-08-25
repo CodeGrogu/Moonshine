@@ -134,7 +134,15 @@ public sealed class MoonshineMediaReassemblyPipeline : IDisposable
             return -1;
         }
 
+        if (videoHeader.PayloadSize == 0 ||
+            videoHeader.PayloadSize > _mtuPayloadSize ||
+            datagram.Length < MoonshineVideoPacketiser.TotalHeaderOverhead + videoHeader.PayloadSize)
+        {
+            return -1;
+        }
+
         ReadOnlySpan<byte> slicePayload = datagram.Slice(MoonshineVideoPacketiser.TotalHeaderOverhead, videoHeader.PayloadSize);
+
 
         fixed (byte* pPayload = slicePayload)
         {
@@ -517,7 +525,7 @@ public sealed class MoonshineMediaReassemblyPipeline : IDisposable
             if (actualDataInBlock <= 0) return 0;
 
             int missingCount = 0;
-            Span<int> missingIndices = stackalloc int[_dataShards];
+            Span<int> missingIndices = stackalloc int[_totalShardsInBlock];
 
             for (int i = 0; i < actualDataInBlock; i++)
             {
@@ -528,8 +536,10 @@ public sealed class MoonshineMediaReassemblyPipeline : IDisposable
                 }
             }
 
-            if (missingCount == 0) return 0;
-            if (missingCount > _parityShards) return 0;
+            int missingDataCount = missingCount;
+
+            if (missingDataCount == 0) return 0;
+            if (missingDataCount > _parityShards) return 0;
 
             int parityStart = blockIndex * _parityShards;
             int parityAvailable = 0;
@@ -539,9 +549,13 @@ public sealed class MoonshineMediaReassemblyPipeline : IDisposable
                 {
                     parityAvailable++;
                 }
+                else
+                {
+                    missingIndices[missingCount++] = _dataShards + p;
+                }
             }
 
-            int dataAvailable = actualDataInBlock - missingCount;
+            int dataAvailable = actualDataInBlock - missingDataCount;
             if (dataAvailable + parityAvailable < actualDataInBlock)
             {
                 return 0;
@@ -579,7 +593,7 @@ public sealed class MoonshineMediaReassemblyPipeline : IDisposable
 
             _reconstructedBlocks[blockIndex] = true;
 
-            for (int m = 0; m < missingCount; m++)
+            for (int m = 0; m < missingDataCount; m++)
             {
                 int erasedIdx = missingIndices[m];
                 int recoveredPacketIdx = blockStart + erasedIdx;

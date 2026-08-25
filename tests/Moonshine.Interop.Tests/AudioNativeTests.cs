@@ -237,5 +237,56 @@ public class AudioNativeTests
         int bogusRecover = MoonshineNativeMethods.MicCaptureRecover(new IntPtr(0x12345678));
         bogusRecover.Should().Be(0);
     }
+
+    [Fact]
+    public unsafe void AudioWasapi_InvalidHandle_FailsSafelyWithoutThrowing()
+    {
+        float[] sample = [0.5f, 0.5f];
+        fixed (float* ptr = sample)
+        {
+            // Null handle submit
+            int submitZero = MoonshineNativeMethods.AudioSubmitPcm(IntPtr.Zero, ptr, 1);
+            submitZero.Should().NotBe(0);
+
+            // Bogus handle submit
+            int submitBogus = MoonshineNativeMethods.AudioSubmitPcm(new IntPtr(0x12345678), ptr, 1);
+            submitBogus.Should().NotBe(0);
+        }
+
+        // Metrics on invalid handles
+        MoonshineNativeMethods.AudioGetMetrics(IntPtr.Zero, out ulong renderedZero, out uint underrunsZero);
+        renderedZero.Should().Be(0);
+        underrunsZero.Should().Be(0);
+
+        MoonshineNativeMethods.AudioGetMetrics(new IntPtr(0x12345678), out ulong renderedBogus, out uint underrunsBogus);
+        renderedBogus.Should().Be(0);
+        underrunsBogus.Should().Be(0);
+
+        // Destruction of invalid handles must be safe no-op
+        MoonshineNativeMethods.AudioDestroy(IntPtr.Zero);
+        MoonshineNativeMethods.AudioDestroy(new IntPtr(0x12345678));
+    }
+
+    [Fact]
+    public unsafe void AudioWasapi_PostDisposal_FailsClosedViaSafeHandleStore()
+    {
+        IntPtr handle = MoonshineNativeMethods.AudioCreateWasapi(48000, 2, 0);
+        handle.Should().NotBe(IntPtr.Zero);
+
+        float[] sample = [0.1f, 0.2f];
+        fixed (float* ptr = sample)
+        {
+            int submitInitial = MoonshineNativeMethods.AudioSubmitPcm(handle, ptr, 1);
+            submitInitial.Should().Be(0);
+
+            // Destroy the handle
+            MoonshineNativeMethods.AudioDestroy(handle);
+
+            // Subsequent submit to released handle must fail closed without use-after-free crash
+            int submitPostDestroy = MoonshineNativeMethods.AudioSubmitPcm(handle, ptr, 1);
+            submitPostDestroy.Should().NotBe(0);
+        }
+    }
 }
+
 

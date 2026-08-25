@@ -82,8 +82,9 @@ if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
 
 # 2. Compile and link a real C++ test binary probing standard library headers
 $tempDir = [System.IO.Path]::GetTempPath()
-$testCpp = Join-Path $tempDir "moonshine_env_probe.cpp"
-$testExe = Join-Path $tempDir "moonshine_env_probe.exe"
+$uniqueSuffix = "$([System.Diagnostics.Process]::GetCurrentProcess().Id)_$([System.Guid]::NewGuid().ToString('N').Substring(0, 8))"
+$testCpp = Join-Path $tempDir "moonshine_env_probe_${uniqueSuffix}.cpp"
+$testExe = Join-Path $tempDir "moonshine_env_probe_${uniqueSuffix}.exe"
 
 $probeSource = @"
 #include <cstdint>

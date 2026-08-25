@@ -446,7 +446,7 @@ public class MoonshineClientStreamingSessionTests
             ConnectionTimeoutSeconds = 0.5 // Short timeout for testing
         };
 
-        var session = new MoonshineClientStreamingSession(config);
+        await using var session = new MoonshineClientStreamingSession(config);
         await session.StartAsync();
 
         // Wait for connection to timeout (should fault after 0.5s of no activity)

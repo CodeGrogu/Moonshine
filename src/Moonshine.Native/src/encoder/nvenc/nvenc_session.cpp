@@ -122,6 +122,14 @@ bool NvencSession::configure(const EncoderConfig& config) {
         return false;
     }
 
+    // Fail-closed boundary validation on bitrate and peak bitrate to prevent 32-bit integer overflow
+    if (config.bitrate_kbps < 500 || config.bitrate_kbps > 150000) {
+        return false;
+    }
+    if (config.peak_bitrate_kbps > 0 && (config.peak_bitrate_kbps < config.bitrate_kbps || config.peak_bitrate_kbps > 150000)) {
+        return false;
+    }
+
 #if defined(_WIN32)
     const auto& fn = _api->functions();
 
@@ -130,10 +138,14 @@ bool NvencSession::configure(const EncoderConfig& config) {
 
     auto selected_codec = static_cast<VideoCodec>(config.codec);
     GUID codec_guid = NV_ENC_CODEC_H264_GUID_LOCAL;
-    if (selected_codec == VideoCodec::Hevc || selected_codec == VideoCodec::HevcMain10) {
+    if (selected_codec == VideoCodec::H264) {
+        codec_guid = NV_ENC_CODEC_H264_GUID_LOCAL;
+    } else if (selected_codec == VideoCodec::Hevc || selected_codec == VideoCodec::HevcMain10) {
         codec_guid = NV_ENC_CODEC_HEVC_GUID_LOCAL;
     } else if (selected_codec == VideoCodec::Av1) {
         codec_guid = NV_ENC_CODEC_AV1_GUID_LOCAL;
+    } else {
+        return false;
     }
 
     GUID preset_guid = NV_ENC_PRESET_P1_GUID_LOCAL;
@@ -505,6 +517,14 @@ bool NvencSession::poll_packet(
 
 bool NvencSession::reconfigure(const EncoderConfig& new_config) {
     if (!_session || !_is_configured) {
+        return false;
+    }
+
+    // Fail-closed boundary validation on bitrate and peak bitrate
+    if (new_config.bitrate_kbps < 500 || new_config.bitrate_kbps > 150000) {
+        return false;
+    }
+    if (new_config.peak_bitrate_kbps > 0 && (new_config.peak_bitrate_kbps < new_config.bitrate_kbps || new_config.peak_bitrate_kbps > 150000)) {
         return false;
     }
 

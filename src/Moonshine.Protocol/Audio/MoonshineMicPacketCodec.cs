@@ -38,12 +38,29 @@ public static class MoonshineMicPacketCodec
             return false;
         }
 
-        header.StreamId = BinaryPrimitives.ReadUInt32BigEndian(source[0..4]);
-        header.SampleIndex = BinaryPrimitives.ReadUInt64BigEndian(source[4..12]);
-        header.PayloadSize = BinaryPrimitives.ReadUInt16BigEndian(source[12..14]);
-        header.Channels = source[14];
-        header.Codec = (MoonshineAudioCodec)source[15];
-        header.SampleRate = BinaryPrimitives.ReadUInt32BigEndian(source[16..20]);
+        uint streamId = BinaryPrimitives.ReadUInt32BigEndian(source[0..4]);
+        ulong sampleIndex = BinaryPrimitives.ReadUInt64BigEndian(source[4..12]);
+        ushort payloadSize = BinaryPrimitives.ReadUInt16BigEndian(source[12..14]);
+        byte channels = source[14];
+        var codec = (MoonshineAudioCodec)source[15];
+        uint sampleRate = BinaryPrimitives.ReadUInt32BigEndian(source[16..20]);
+
+        if (streamId == 0 || channels == 0 || channels > 2 || sampleRate < 8000 || sampleRate > 384000 ||
+            codec == MoonshineAudioCodec.Unknown || payloadSize == 0 || payloadSize > 8192)
+        {
+            return false;
+        }
+
+        header = new MoonshineMicPacketHeader
+        {
+            StreamId = streamId,
+            SampleIndex = sampleIndex,
+            PayloadSize = payloadSize,
+            Channels = channels,
+            Codec = codec,
+            SampleRate = sampleRate
+        };
         return true;
     }
+
 }

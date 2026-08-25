@@ -45,7 +45,7 @@ public sealed class MoonshineClientAudioPipeline : IDisposable
     private uint _underruns;
 
     private readonly byte[] _popBuffer = new byte[2048];
-    private readonly float[] _decodePcmBuffer;
+    private float[] _decodePcmBuffer;
 
     public uint SampleRate => _sampleRate;
     public AudioChannelConfiguration Channels => _channels;
@@ -145,11 +145,13 @@ public sealed class MoonshineClientAudioPipeline : IDisposable
         }
 
         var incomingChannels = (AudioChannelConfiguration)audioHdr.Channels;
-        if (incomingChannels != _channels && (incomingChannels == AudioChannelConfiguration.Stereo ||
-            incomingChannels == AudioChannelConfiguration.Surround51 ||
-            incomingChannels == AudioChannelConfiguration.Surround71))
+        uint incomingSampleRate = audioHdr.SampleRate > 0 ? audioHdr.SampleRate : _sampleRate;
+        if ((incomingChannels != _channels || incomingSampleRate != _sampleRate) &&
+            (incomingChannels == AudioChannelConfiguration.Stereo ||
+             incomingChannels == AudioChannelConfiguration.Surround51 ||
+             incomingChannels == AudioChannelConfiguration.Surround71))
         {
-            ReconfigureFormat(audioHdr.SampleRate > 0 ? audioHdr.SampleRate : _sampleRate, incomingChannels);
+            ReconfigureFormat(incomingSampleRate, incomingChannels);
         }
 
         ReadOnlySpan<byte> payload = packetData.Slice(payloadOffset, audioHdr.PayloadSize);
@@ -199,7 +201,7 @@ public sealed class MoonshineClientAudioPipeline : IDisposable
     }
 
     /// <summary>
-    /// Dynamically reconfigures audio format (e.g. Stereo to 5.1/7.1 Surround).
+    /// Dynamically reconfigures audio format (e.g. 44.1 kHz / 48 kHz / 96 kHz, Stereo to 5.1/7.1 Surround).
     /// </summary>
     public void ReconfigureFormat(uint sampleRate, AudioChannelConfiguration channels)
     {
@@ -217,8 +219,27 @@ public sealed class MoonshineClientAudioPipeline : IDisposable
             _decoder = new OpusAudioDecoderPipeline(sampleRate, channels);
             _renderer = new MoonshineAudioPipeline(sampleRate, channels, _isExclusive);
             _jitterBuffer.Reset();
+
+            int maxSamples = (int)((sampleRate * 20) / 1000) * (int)channels;
+            if (_decodePcmBuffer == null || _decodePcmBuffer.Length < maxSamples)
+            {
+                _decodePcmBuffer = new float[maxSamples];
+            }
         }
     }
+
+    /// <summary>
+    /// Recovers the underlying audio renderer after device invalidation or disconnection.
+    /// </summary>
+    public bool RecoverRenderer()
+    {
+        lock (_stateLock)
+        {
+            if (_disposed) return false;
+            return _renderer.Recover();
+        }
+    }
+
 
     private void PlaybackWorkerLoop()
     {

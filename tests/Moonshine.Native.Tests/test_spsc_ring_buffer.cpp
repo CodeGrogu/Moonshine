@@ -107,12 +107,37 @@ void TestMultiThreadedStress()
     TEST_ASSERT(ring->Size() == 0);
 }
 
+void TestInterleavedSizeTracking()
+{
+    std::cout << "[Test] SPSC Size() consistency during interleaved operations..." << std::endl;
+    SpscRingBuffer<int> ring(8);
+    TEST_ASSERT(ring.Size() == 0);
+
+    for (int cycle = 0; cycle < 5000; cycle++)
+    {
+        TEST_ASSERT(ring.TryEnqueue(cycle));
+        TEST_ASSERT(ring.TryEnqueue(cycle + 1));
+        TEST_ASSERT(ring.Size() == 2);
+
+        int out1 = 0, out2 = 0;
+        TEST_ASSERT(ring.TryDequeue(out1));
+        TEST_ASSERT(ring.Size() == 1);
+        TEST_ASSERT(ring.TryDequeue(out2));
+        TEST_ASSERT(ring.Size() == 0);
+
+        TEST_ASSERT(out1 == cycle);
+        TEST_ASSERT(out2 == cycle + 1);
+    }
+    TEST_ASSERT(ring.Size() == 0);
+}
+
 int main()
 {
     std::cout << "=== Running SPSC Ring Buffer Test Suite ===" << std::endl;
     TestSingleItemPushPop();
     TestFullAndEmptyBoundaries();
     TestWrapAroundContinuity();
+    TestInterleavedSizeTracking();
     TestMultiThreadedStress();
     std::cout << "All SPSC Ring Buffer tests passed successfully." << std::endl;
     return 0;

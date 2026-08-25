@@ -279,6 +279,57 @@ int main() {
               << ", Max FPS: " << caps.max_fps << std::endl;
 
     // ------------------------------------------------------------------------
+    // Subtest 1.5: Bitrate & Configuration Fail-Closed Boundary Tests
+    // ------------------------------------------------------------------------
+    std::cout << "\n[*] [1.5/9] Executing Bitrate & Configuration Fail-Closed Boundary Tests..." << std::endl;
+    {
+        MoonshineEncoderConfig bad_cfg{};
+        bad_cfg.width = 1920;
+        bad_cfg.height = 1080;
+        bad_cfg.fps = 60;
+        bad_cfg.codec = supports_hevc ? 1 : 0;
+
+        // 1. Bitrate < 500 kbps (must fail closed)
+        bad_cfg.bitrate_kbps = 499;
+        ACTIVE_ASSERT(moonshine_encoder_create(1, device.Get(), &bad_cfg) == nullptr);
+
+        // 2. Bitrate > 150,000 kbps (must fail closed)
+        bad_cfg.bitrate_kbps = 150001;
+        ACTIVE_ASSERT(moonshine_encoder_create(1, device.Get(), &bad_cfg) == nullptr);
+
+        // 3. Peak bitrate < bitrate (when peak > 0) (must fail closed)
+        bad_cfg.bitrate_kbps = 10000;
+        bad_cfg.peak_bitrate_kbps = 5000;
+        ACTIVE_ASSERT(moonshine_encoder_create(1, device.Get(), &bad_cfg) == nullptr);
+
+        // 4. Peak bitrate > 150,000 kbps (must fail closed)
+        bad_cfg.bitrate_kbps = 10000;
+        bad_cfg.peak_bitrate_kbps = 150001;
+        ACTIVE_ASSERT(moonshine_encoder_create(1, device.Get(), &bad_cfg) == nullptr);
+
+        // 5. Dynamic reconfigure fail-closed on invalid bitrate
+        MoonshineEncoderConfig valid_cfg = bad_cfg;
+        valid_cfg.bitrate_kbps = 10000;
+        valid_cfg.peak_bitrate_kbps = 15000;
+        MoonshineEncoderHandle enc = moonshine_encoder_create(1, device.Get(), &valid_cfg);
+        ACTIVE_ASSERT(enc != nullptr);
+
+        MoonshineEncoderConfig invalid_reconfig = valid_cfg;
+        invalid_reconfig.bitrate_kbps = 300; // < 500 kbps
+        ACTIVE_ASSERT(moonshine_encoder_reconfigure(enc, &invalid_reconfig) == 0);
+
+        invalid_reconfig.bitrate_kbps = 200000; // > 150,000 kbps
+        ACTIVE_ASSERT(moonshine_encoder_reconfigure(enc, &invalid_reconfig) == 0);
+
+        invalid_reconfig.bitrate_kbps = 10000;
+        invalid_reconfig.peak_bitrate_kbps = 5000; // peak < bitrate
+        ACTIVE_ASSERT(moonshine_encoder_reconfigure(enc, &invalid_reconfig) == 0);
+
+        moonshine_encoder_destroy(enc);
+        std::cout << "  [+] Bitrate fail-closed boundary validation tests passed." << std::endl;
+    }
+
+    // ------------------------------------------------------------------------
     // Subtest A: Resolution Matrix Tests (720p, 1080p, 1440p, 4K)
     // ------------------------------------------------------------------------
     std::cout << "\n[*] [2/9] Executing Resolution Matrix Conformance..." << std::endl;

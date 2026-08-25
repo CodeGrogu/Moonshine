@@ -263,6 +263,10 @@ public static unsafe partial class MoonshineNativeMethods
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial void AudioGetMetrics(IntPtr handle, out ulong outFramesRendered, out uint outUnderruns);
 
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_audio_recover")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int AudioRecover(IntPtr handle);
+
     // ========================================================================
     // WASAPI Master Loopback Audio Capture APIs
     // ========================================================================
@@ -304,6 +308,11 @@ public static unsafe partial class MoonshineNativeMethods
         out uint outUnderruns,
         out uint outOverruns
     );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_audio_capture_recover")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int AudioCaptureRecover(IntPtr handle);
+
 
     // ========================================================================
     // WASAPI Microphone Audio Capture APIs

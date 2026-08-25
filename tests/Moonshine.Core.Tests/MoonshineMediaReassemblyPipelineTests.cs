@@ -484,4 +484,48 @@ public class MoonshineMediaReassemblyPipelineTests
         reassembledSpan.SequenceEqual(groundTruth).Should().BeTrue("Multi-block FEC reconstructed frame must match ground truth byte-for-byte");
         reassembly.Metrics.PacketsRecoveredFec.Should().Be(2);
     }
+
+    [Fact]
+    public unsafe void Fec_PartialParityLoss_ReconstructsWithRemainingParity()
+    {
+        // 4 Data Shards, 2 Parity Shards (can recover 1 lost data shard using 1 of the 2 parity shards)
+        int mtu = 1000;
+        int k = 4;
+        int m = 2;
+
+        var packetiser = new MoonshineVideoPacketiser(streamId: 1, sessionId: 100, mtuPayloadSize: mtu, fecDataShards: k, fecParityShards: m);
+        using var reassembly = new MoonshineMediaReassemblyPipeline(maxFrames: 16, fecDataShards: k, fecParityShards: m, mtuPayloadSize: mtu);
+
+        byte[] groundTruth = new byte[3450]; // 4 data packets (1000, 1000, 1000, 450) + 2 parity packets = 6 total packets
+        for (int i = 0; i < groundTruth.Length; i++)
+        {
+            groundTruth[i] = (byte)((i * 41 + 23) & 0xFF);
+        }
+
+        List<byte[]> allPackets = new();
+        packetiser.PacketiseFrame(groundTruth, frameIndex: 333, timestampUs: 333000, isKeyframe: true, isHdr10: false, d => allPackets.Add(d.ToArray()));
+
+        allPackets.Count.Should().Be(6); // 4 data + 2 parity
+
+        // Simulate network loss: Drop data packet 1 AND drop parity packet 0 (packet 4)!
+        // Only parity packet 1 (packet 5) arrives.
+        // Ingest: packet 0, packet 2, packet 3, parity 1 (packet 5)
+        reassembly.IngestDatagram(allPackets[0]).Should().Be(0);
+        reassembly.IngestDatagram(allPackets[2]).Should().Be(0);
+        reassembly.IngestDatagram(allPackets[3]).Should().Be(0);
+
+        // Parity 1 arrives: missingIndices contains data 1 (index 1) and parity 0 (index 4).
+        // Since 1 parity is available and only 1 data packet is lost, reconstruction must succeed!
+        int fecCompleteRes = reassembly.IngestDatagram(allPackets[5]);
+        fecCompleteRes.Should().Be(1, "FEC reconstruction must succeed when unreceived parity shards are correctly tracked as erasures");
+
+        int popRes = reassembly.TryPopCompletedFrame(out var poppedFrame);
+        popRes.Should().Be(1);
+        poppedFrame.FrameIndex.Should().Be(333);
+        poppedFrame.TotalBytes.Should().Be((uint)groundTruth.Length);
+
+        ReadOnlySpan<byte> reassembledSpan = new(poppedFrame.FrameBuffer, (int)poppedFrame.TotalBytes);
+        reassembledSpan.SequenceEqual(groundTruth).Should().BeTrue("Payload reconstructed with non-zero parity offset must match ground truth byte-for-byte");
+        reassembly.Metrics.PacketsRecoveredFec.Should().Be(1);
+    }
 }

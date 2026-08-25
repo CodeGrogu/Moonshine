@@ -256,6 +256,94 @@ void TestNegativeAndBoundaryValidation()
     TEST_ASSERT(jb_oversized.PushPacket(p) == -1);
 }
 
+void TestFrameIndexRollover()
+{
+    std::cout << "[Test] JitterBuffer sequence 2^32-1 -> 0 rollover..." << std::endl;
+    JitterBuffer jb(16);
+    uint8_t payload[100] = {1, 2, 3};
+
+    MoonshinePacketDesc p1{};
+    p1.frame_index = 0xFFFFFFFFu;
+    p1.total_packets = 1;
+    p1.packet_index = 0;
+    p1.payload_size = sizeof(payload);
+    p1.payload_ptr = payload;
+
+    TEST_ASSERT(jb.PushPacket(p1) == 1);
+    MoonshineFrameDesc f1{};
+    TEST_ASSERT(jb.PopFrame(f1) == 1);
+    TEST_ASSERT(f1.frame_index == 0xFFFFFFFFu);
+
+    // Frame 0xFFFFFFFF is now popped (last_popped_frame_index_ = 0xFFFFFFFF)
+    // Rolled over frame 0 must be accepted and NOT dropped
+    MoonshinePacketDesc p2{};
+    p2.frame_index = 0;
+    p2.total_packets = 1;
+    p2.packet_index = 0;
+    p2.payload_size = sizeof(payload);
+    p2.payload_ptr = payload;
+
+    TEST_ASSERT(jb.PushPacket(p2) == 1);
+    MoonshineFrameDesc f2{};
+    TEST_ASSERT(jb.PopFrame(f2) == 1);
+    TEST_ASSERT(f2.frame_index == 0);
+
+    // Stale frame 0xFFFFFFFF must be dropped
+    TEST_ASSERT(jb.PushPacket(p1) == 0);
+
+    // Frame 1 is accepted
+    MoonshinePacketDesc p3{};
+    p3.frame_index = 1;
+    p3.total_packets = 1;
+    p3.packet_index = 0;
+    p3.payload_size = sizeof(payload);
+    p3.payload_ptr = payload;
+
+    TEST_ASSERT(jb.PushPacket(p3) == 1);
+    MoonshineFrameDesc f3{};
+    TEST_ASSERT(jb.PopFrame(f3) == 1);
+    TEST_ASSERT(f3.frame_index == 1);
+}
+
+void TestOutOfOrderCompletionOrder()
+{
+    std::cout << "[Test] JitterBuffer PopFrame minimum frame_index priority..." << std::endl;
+    JitterBuffer jb(16);
+    uint8_t payload[100] = {42};
+
+    // Complete frame 12 first
+    MoonshinePacketDesc p12{};
+    p12.frame_index = 12;
+    p12.total_packets = 1;
+    p12.packet_index = 0;
+    p12.payload_size = sizeof(payload);
+    p12.payload_ptr = payload;
+    TEST_ASSERT(jb.PushPacket(p12) == 1);
+
+    // Complete frame 11 second
+    MoonshinePacketDesc p11{};
+    p11.frame_index = 11;
+    p11.total_packets = 1;
+    p11.packet_index = 0;
+    p11.payload_size = sizeof(payload);
+    p11.payload_ptr = payload;
+    TEST_ASSERT(jb.PushPacket(p11) == 1);
+
+    // PopFrame must return frame 11 first (minimum frame_index)
+    MoonshineFrameDesc out1{};
+    TEST_ASSERT(jb.PopFrame(out1) == 1);
+    TEST_ASSERT(out1.frame_index == 11);
+
+    // Then frame 12
+    MoonshineFrameDesc out2{};
+    TEST_ASSERT(jb.PopFrame(out2) == 1);
+    TEST_ASSERT(out2.frame_index == 12);
+
+    // No more frames
+    MoonshineFrameDesc out3{};
+    TEST_ASSERT(jb.PopFrame(out3) == 0);
+}
+
 int main()
 {
     std::cout << "=== Running Jitter Buffer Test Suite ===" << std::endl;
@@ -264,6 +352,8 @@ int main()
     TestVariableTailLengths();
     TestDuplicatePacketHandling();
     TestNegativeAndBoundaryValidation();
+    TestFrameIndexRollover();
+    TestOutOfOrderCompletionOrder();
     std::cout << "All Jitter Buffer tests passed successfully." << std::endl;
     return 0;
 }

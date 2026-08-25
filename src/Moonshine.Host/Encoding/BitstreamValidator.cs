@@ -64,13 +64,13 @@ public static class BitstreamValidator
             VideoCodec.Hevc or VideoCodec.HevcMain10 => ValidateHevcAccessUnit(bitstream),
             VideoCodec.Av1 => ValidateAv1AccessUnit(bitstream),
             _ => new AccessUnitValidationResult(
-                IsValid: bitstream.Length > 0,
-                HasStructurallyValidPayload: bitstream.Length > 0,
+                IsValid: false,
+                HasStructurallyValidPayload: false,
                 HasCodecHeaders: false,
                 HasRandomAccessMarker: false,
-                ContainsFrameData: bitstream.Length > 0,
-                IsCompleteAccessUnit: bitstream.Length > 0,
-                NaluCount: bitstream.Length > 0 ? 1 : 0,
+                ContainsFrameData: false,
+                IsCompleteAccessUnit: false,
+                NaluCount: 0,
                 HasParameterSets: false,
                 HasIdr: false,
                 HasRandomAccessPoint: false

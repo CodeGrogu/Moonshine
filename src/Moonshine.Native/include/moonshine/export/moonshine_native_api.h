@@ -427,6 +427,7 @@ MOONSHINE_API MoonshineAudioHandle MOONSHINE_CONV moonshine_audio_create_wasapi(
 MOONSHINE_API void MOONSHINE_CONV moonshine_audio_destroy(MoonshineAudioHandle handle);
 MOONSHINE_API int MOONSHINE_CONV moonshine_audio_submit_pcm(MoonshineAudioHandle handle, const float* pcm_data, uint32_t sample_count);
 MOONSHINE_API void MOONSHINE_CONV moonshine_audio_get_metrics(MoonshineAudioHandle handle, uint64_t* out_frames_rendered, uint32_t* out_underruns);
+MOONSHINE_API int MOONSHINE_CONV moonshine_audio_recover(MoonshineAudioHandle handle);
 
 // ============================================================================
 // WASAPI Master Loopback Audio Capture APIs
@@ -467,6 +468,11 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_audio_capture_get_metrics(
     uint32_t* out_underruns,
     uint32_t* out_overruns
 );
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_audio_capture_recover(
+    MoonshineAudioCaptureHandle handle
+);
+
 
 // ============================================================================
 // WASAPI Microphone Audio Capture APIs
@@ -1277,6 +1283,34 @@ static_assert(offsetof(MoonshineDisplayInfo, is_attached_to_desktop) == 28, "Moo
 static_assert(offsetof(MoonshineDisplayInfo, is_hdr) == 29, "MoonshineDisplayInfo::is_hdr offset mismatch");
 static_assert(offsetof(MoonshineDisplayInfo, bits_per_color) == 30, "MoonshineDisplayInfo::bits_per_color offset mismatch");
 static_assert(offsetof(MoonshineDisplayInfo, reserved) == 31, "MoonshineDisplayInfo::reserved offset mismatch");
+
+static_assert(sizeof(MoonshineDisplayModeDesc) == 32, "MoonshineDisplayModeDesc size mismatch");
+static_assert(offsetof(MoonshineDisplayModeDesc, width) == 0, "MoonshineDisplayModeDesc::width offset mismatch");
+static_assert(offsetof(MoonshineDisplayModeDesc, height) == 4, "MoonshineDisplayModeDesc::height offset mismatch");
+static_assert(offsetof(MoonshineDisplayModeDesc, refresh_rate_num) == 8, "MoonshineDisplayModeDesc::refresh_rate_num offset mismatch");
+static_assert(offsetof(MoonshineDisplayModeDesc, refresh_rate_den) == 12, "MoonshineDisplayModeDesc::refresh_rate_den offset mismatch");
+static_assert(offsetof(MoonshineDisplayModeDesc, format) == 16, "MoonshineDisplayModeDesc::format offset mismatch");
+static_assert(offsetof(MoonshineDisplayModeDesc, scaling) == 20, "MoonshineDisplayModeDesc::scaling offset mismatch");
+static_assert(offsetof(MoonshineDisplayModeDesc, scanline_ordering) == 24, "MoonshineDisplayModeDesc::scanline_ordering offset mismatch");
+static_assert(offsetof(MoonshineDisplayModeDesc, is_hdr) == 28, "MoonshineDisplayModeDesc::is_hdr offset mismatch");
+static_assert(offsetof(MoonshineDisplayModeDesc, reserved) == 29, "MoonshineDisplayModeDesc::reserved offset mismatch");
+
+static_assert(sizeof(MoonshineDisplayExtendedInfo) == 152, "MoonshineDisplayExtendedInfo size mismatch");
+static_assert(offsetof(MoonshineDisplayExtendedInfo, display_index) == 0, "MoonshineDisplayExtendedInfo::display_index offset mismatch");
+static_assert(offsetof(MoonshineDisplayExtendedInfo, adapter_index) == 4, "MoonshineDisplayExtendedInfo::adapter_index offset mismatch");
+static_assert(offsetof(MoonshineDisplayExtendedInfo, monitor_handle) == 8, "MoonshineDisplayExtendedInfo::monitor_handle offset mismatch");
+static_assert(offsetof(MoonshineDisplayExtendedInfo, desktop_left) == 16, "MoonshineDisplayExtendedInfo::desktop_left offset mismatch");
+static_assert(offsetof(MoonshineDisplayExtendedInfo, desktop_top) == 20, "MoonshineDisplayExtendedInfo::desktop_top offset mismatch");
+static_assert(offsetof(MoonshineDisplayExtendedInfo, desktop_right) == 24, "MoonshineDisplayExtendedInfo::desktop_right offset mismatch");
+static_assert(offsetof(MoonshineDisplayExtendedInfo, desktop_bottom) == 28, "MoonshineDisplayExtendedInfo::desktop_bottom offset mismatch");
+static_assert(offsetof(MoonshineDisplayExtendedInfo, dpi_scale) == 32, "MoonshineDisplayExtendedInfo::dpi_scale offset mismatch");
+static_assert(offsetof(MoonshineDisplayExtendedInfo, is_primary) == 36, "MoonshineDisplayExtendedInfo::is_primary offset mismatch");
+static_assert(offsetof(MoonshineDisplayExtendedInfo, is_attached_to_desktop) == 37, "MoonshineDisplayExtendedInfo::is_attached_to_desktop offset mismatch");
+static_assert(offsetof(MoonshineDisplayExtendedInfo, is_hdr) == 38, "MoonshineDisplayExtendedInfo::is_hdr offset mismatch");
+static_assert(offsetof(MoonshineDisplayExtendedInfo, bits_per_color) == 39, "MoonshineDisplayExtendedInfo::bits_per_color offset mismatch");
+static_assert(offsetof(MoonshineDisplayExtendedInfo, device_name) == 40, "MoonshineDisplayExtendedInfo::device_name offset mismatch");
+static_assert(offsetof(MoonshineDisplayExtendedInfo, friendly_name) == 72, "MoonshineDisplayExtendedInfo::friendly_name offset mismatch");
+static_assert(offsetof(MoonshineDisplayExtendedInfo, reserved) == 136, "MoonshineDisplayExtendedInfo::reserved offset mismatch");
 
 static_assert(sizeof(MoonshineVirtualDesktopBoundsC) == 16, "MoonshineVirtualDesktopBoundsC size mismatch");
 static_assert(offsetof(MoonshineVirtualDesktopBoundsC, x_virtual_screen) == 0, "MoonshineVirtualDesktopBoundsC::x_virtual_screen offset mismatch");

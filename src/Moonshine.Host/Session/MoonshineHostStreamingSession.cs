@@ -1116,39 +1116,39 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                         }
                         else if (packetHeader.MessageType == MoonshineMessageType.SetHostConfiguration)
                         {
-                            if (MoonshineProtocolCodec.TryReadHostConfiguration(datagram[MoonshineProtocolConstants.HeaderSize..], out var proposed) == MoonshineErrorCode.Success)
+                            if (_authenticator != null)
                             {
-                                if (_authenticator != null)
+                                if (packetHeader.PayloadSize != 80 || datagram.Length < MoonshineProtocolConstants.HeaderSize + 80)
                                 {
-                                    if (packetHeader.PayloadSize != 80 || datagram.Length < MoonshineProtocolConstants.HeaderSize + 80)
-                                    {
-                                        SendSetConfigurationResponse(result.RemoteEndPoint, packetHeader.SequenceNumber, MoonshineErrorCode.AuthenticationFailed, _configurationService.ConfigVersion);
-                                        continue;
-                                    }
-
-                                    if (!_authenticator.ValidateIncomingSequence(packetHeader.SequenceNumber, packetHeader.TimestampUs, out var status))
-                                    {
-                                        MoonshineErrorCode seqErr = status switch
-                                        {
-                                            SessionValidationStatus.DuplicateSequence => MoonshineErrorCode.DuplicateSequence,
-                                            SessionValidationStatus.StaleTimestamp => MoonshineErrorCode.StaleTimestamp,
-                                            _ => MoonshineErrorCode.AuthenticationFailed
-                                        };
-
-                                        SendSetConfigurationResponse(result.RemoteEndPoint, packetHeader.SequenceNumber, seqErr, _configurationService.ConfigVersion);
-                                        continue;
-                                    }
-
-                                    ReadOnlySpan<byte> signedContent = datagram[..(MoonshineProtocolConstants.HeaderSize + 48)];
-                                    ReadOnlySpan<byte> tag = datagram.Slice(MoonshineProtocolConstants.HeaderSize + 48, 32);
-
-                                    if (!_authenticator.VerifyMessageAuthTag(signedContent, tag))
-                                    {
-                                        SendSetConfigurationResponse(result.RemoteEndPoint, packetHeader.SequenceNumber, MoonshineErrorCode.AuthenticationFailed, _configurationService.ConfigVersion);
-                                        continue;
-                                    }
+                                    SendSetConfigurationResponse(result.RemoteEndPoint, packetHeader.SequenceNumber, MoonshineErrorCode.AuthenticationFailed, _configurationService.ConfigVersion);
+                                    continue;
                                 }
 
+                                if (!_authenticator.ValidateIncomingSequence(packetHeader.SequenceNumber, packetHeader.TimestampUs, out var status))
+                                {
+                                    MoonshineErrorCode seqErr = status switch
+                                    {
+                                        SessionValidationStatus.DuplicateSequence => MoonshineErrorCode.DuplicateSequence,
+                                        SessionValidationStatus.StaleTimestamp => MoonshineErrorCode.StaleTimestamp,
+                                        _ => MoonshineErrorCode.AuthenticationFailed
+                                    };
+
+                                    SendSetConfigurationResponse(result.RemoteEndPoint, packetHeader.SequenceNumber, seqErr, _configurationService.ConfigVersion);
+                                    continue;
+                                }
+
+                                ReadOnlySpan<byte> signedContent = datagram[..(MoonshineProtocolConstants.HeaderSize + 48)];
+                                ReadOnlySpan<byte> tag = datagram.Slice(MoonshineProtocolConstants.HeaderSize + 48, 32);
+
+                                if (!_authenticator.VerifyMessageAuthTag(signedContent, tag))
+                                {
+                                    SendSetConfigurationResponse(result.RemoteEndPoint, packetHeader.SequenceNumber, MoonshineErrorCode.AuthenticationFailed, _configurationService.ConfigVersion);
+                                    continue;
+                                }
+                            }
+
+                            if (MoonshineProtocolCodec.TryReadHostConfiguration(datagram[MoonshineProtocolConstants.HeaderSize..], out var proposed) == MoonshineErrorCode.Success)
+                            {
                                 bool success = _configurationService.TryApplyConfiguration(
                                     proposed,
                                     _config.AuthorisationLevel,

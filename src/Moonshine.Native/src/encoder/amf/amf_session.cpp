@@ -89,6 +89,14 @@ bool AmfSession::configure(const EncoderConfig& config) {
         return false;
     }
 
+    // Fail-closed boundary validation on bitrate and peak bitrate
+    if (config.bitrate_kbps < 500 || config.bitrate_kbps > 150000) {
+        return false;
+    }
+    if (config.peak_bitrate_kbps > 0 && (config.peak_bitrate_kbps < config.bitrate_kbps || config.peak_bitrate_kbps > 150000)) {
+        return false;
+    }
+
     if (_encoder) {
         _encoder->Drain();
         _encoder->Terminate();
@@ -96,12 +104,17 @@ bool AmfSession::configure(const EncoderConfig& config) {
         _encoder = nullptr;
     }
 
-    const wchar_t* component_id = AMFVideoEncoder_HEVC;
+    const wchar_t* component_id = nullptr;
     auto video_codec = static_cast<VideoCodec>(config.codec);
     if (video_codec == VideoCodec::H264) {
         component_id = AMFVideoEncoderVCE_AVC;
+    } else if (video_codec == VideoCodec::Hevc || video_codec == VideoCodec::HevcMain10) {
+        component_id = AMFVideoEncoder_HEVC;
     } else if (video_codec == VideoCodec::Av1) {
         component_id = AMFVideoEncoder_AV1;
+    } else {
+        // Fail closed on unknown or unsupported codec IDs
+        return false;
     }
 
     AMFComponent* pEncoder = nullptr;
@@ -266,6 +279,14 @@ bool AmfSession::encode(
 
 bool AmfSession::reconfigure(const EncoderConfig& new_config) {
     if (!_encoder) return false;
+
+    // Fail-closed boundary validation on bitrate and peak bitrate
+    if (new_config.bitrate_kbps < 500 || new_config.bitrate_kbps > 150000) {
+        return false;
+    }
+    if (new_config.peak_bitrate_kbps > 0 && (new_config.peak_bitrate_kbps < new_config.bitrate_kbps || new_config.peak_bitrate_kbps > 150000)) {
+        return false;
+    }
 
     std::lock_guard<std::mutex> lock(_mutex);
 

@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Runtime.InteropServices;
 using FluentAssertions;
 using Moonshine.Protocol.Contracts;
@@ -772,5 +773,175 @@ public class MoonshineProtocolContractsTests
         MoonshineErrorCode readResult = MoonshineProtocolCodec.TryReadConfigurationChanged(truncatedBuffer, out MoonshineConfigurationChangedPayload decoded);
         readResult.Should().Be(MoonshineErrorCode.BufferTooSmall);
         decoded.NewConfigVersion.Should().Be(0);
+    }
+
+    [Fact]
+    public void HeaderCodec_MessageSpecificPayloadMinimum_EnforcesStrictPayloadLength()
+    {
+        // 1. Hello envelope with declared payload size 10 (less than required 32 bytes)
+        byte[] helloBuffer = new byte[64];
+        BinaryPrimitives.WriteUInt32BigEndian(helloBuffer.AsSpan(0, 4), MoonshineProtocolConstants.Magic);
+        BinaryPrimitives.WriteUInt16BigEndian(helloBuffer.AsSpan(4, 2), MoonshineProtocolConstants.Version10);
+        BinaryPrimitives.WriteUInt16BigEndian(helloBuffer.AsSpan(6, 2), (ushort)MoonshineMessageType.Hello);
+        BinaryPrimitives.WriteUInt32BigEndian(helloBuffer.AsSpan(8, 4), 10); // Declares only 10 bytes
+
+        MoonshineErrorCode err = MoonshineProtocolCodec.TryReadHeader(helloBuffer, out MoonshinePacketHeader header);
+        err.Should().Be(MoonshineErrorCode.PayloadTruncated);
+
+        // 2. Video packet envelope with declared payload size 16 (less than 32-byte video header)
+        byte[] videoBuffer = new byte[64];
+        BinaryPrimitives.WriteUInt32BigEndian(videoBuffer.AsSpan(0, 4), MoonshineProtocolConstants.Magic);
+        BinaryPrimitives.WriteUInt16BigEndian(videoBuffer.AsSpan(4, 2), MoonshineProtocolConstants.Version10);
+        BinaryPrimitives.WriteUInt16BigEndian(videoBuffer.AsSpan(6, 2), (ushort)MoonshineMessageType.VideoPacket);
+        BinaryPrimitives.WriteUInt32BigEndian(videoBuffer.AsSpan(8, 4), 16);
+
+        err = MoonshineProtocolCodec.TryReadHeader(videoBuffer, out header);
+        err.Should().Be(MoonshineErrorCode.PayloadTruncated);
+    }
+
+    [Fact]
+    public void HelloPayload_ZeroVersion_ReturnsFalse()
+    {
+        byte[] zeroVerBuffer = new byte[32]; // Major = 0, Minor = 0
+        bool ok = MoonshineProtocolCodec.TryReadHello(zeroVerBuffer, out MoonshineHelloPayload hello);
+        ok.Should().BeFalse();
+    }
+
+    [Fact]
+    public void HelloResponsePayload_ZeroSessionIdOrVersion_ReturnsError()
+    {
+        byte[] buffer = new byte[48];
+        // 1. All zero -> UnsupportedVersion
+        MoonshineErrorCode err = MoonshineProtocolCodec.TryReadHelloResponse(buffer, out MoonshineHelloResponsePayload payload);
+        err.Should().Be(MoonshineErrorCode.UnsupportedVersion);
+
+        // 2. Valid version but zero session ID -> InvalidSession
+        BinaryPrimitives.WriteUInt16BigEndian(buffer.AsSpan(0, 2), 1);
+        err = MoonshineProtocolCodec.TryReadHelloResponse(buffer, out payload);
+        err.Should().Be(MoonshineErrorCode.InvalidSession);
+    }
+
+    [Fact]
+    public void SessionSetupPayload_InvalidParameters_ReturnsInvalidConfigurationParameter()
+    {
+        byte[] buffer = new byte[40];
+        // 1. Zero dimensions
+        MoonshineErrorCode err = MoonshineProtocolCodec.TryReadSessionSetup(buffer, out MoonshineSessionSetupPayload payload);
+        err.Should().Be(MoonshineErrorCode.InvalidConfigurationParameter);
+
+        // 2. Valid video but invalid audio channel count (e.g. 3 channels)
+        var setup = new MoonshineSessionSetupPayload
+        {
+            VideoWidth = 1920,
+            VideoHeight = 1080,
+            VideoFps = 60,
+            VideoCodec = MoonshineVideoCodec.Av1,
+            AudioCodec = MoonshineAudioCodec.Opus,
+            AudioChannels = 3, // Invalid channel count
+            AudioSampleRate = 48000,
+            MtuPayloadSize = 1188
+        };
+        MoonshineProtocolCodec.TryWriteSessionSetup(setup, buffer).Should().BeTrue();
+        err = MoonshineProtocolCodec.TryReadSessionSetup(buffer, out payload);
+        err.Should().Be(MoonshineErrorCode.InvalidConfigurationParameter);
+
+        // 3. Invalid audio sample rate (e.g. 4000 Hz)
+        setup = setup with { AudioChannels = 2, AudioSampleRate = 4000 };
+        MoonshineProtocolCodec.TryWriteSessionSetup(setup, buffer).Should().BeTrue();
+        err = MoonshineProtocolCodec.TryReadSessionSetup(buffer, out payload);
+        err.Should().Be(MoonshineErrorCode.InvalidConfigurationParameter);
+
+        // 4. Invalid MTU (< 576)
+        setup = setup with { AudioSampleRate = 48000, MtuPayloadSize = 500 };
+        MoonshineProtocolCodec.TryWriteSessionSetup(setup, buffer).Should().BeTrue();
+        err = MoonshineProtocolCodec.TryReadSessionSetup(buffer, out payload);
+        err.Should().Be(MoonshineErrorCode.InvalidConfigurationParameter);
+    }
+
+    [Fact]
+    public void SessionSetupResponse_ZeroStreamIds_ReturnsInvalidConfigurationParameter()
+    {
+        byte[] buffer = new byte[32];
+        var response = new MoonshineSessionSetupResponsePayload
+        {
+            StatusCode = MoonshineErrorCode.Success,
+            VideoStreamId = 0, // Invalid zero stream ID
+            AudioStreamId = 102,
+            NegotiatedMtu = 1188
+        };
+        MoonshineProtocolCodec.TryWriteSessionSetupResponse(response, buffer).Should().BeTrue();
+        MoonshineErrorCode err = MoonshineProtocolCodec.TryReadSessionSetupResponse(buffer, out MoonshineSessionSetupResponsePayload decoded);
+        err.Should().Be(MoonshineErrorCode.InvalidConfigurationParameter);
+    }
+
+    [Fact]
+    public void FeedbackLossStats_ZeroStreamId_ReturnsStreamNotFound()
+    {
+        byte[] buffer = new byte[40];
+        var feedback = new MoonshineFeedbackLossStatsPayload
+        {
+            StreamId = 0,
+            LastReceivedFrameIndex = 100
+        };
+        MoonshineProtocolCodec.TryWriteFeedbackLossStats(feedback, buffer).Should().BeTrue();
+        MoonshineErrorCode err = MoonshineProtocolCodec.TryReadFeedbackLossStats(buffer, out MoonshineFeedbackLossStatsPayload decoded);
+        err.Should().Be(MoonshineErrorCode.StreamNotFound);
+    }
+
+    [Fact]
+    public void IdrRequest_ZeroStreamIdOrReason_ReturnsExpectedErrors()
+    {
+        byte[] buffer = new byte[16];
+        // 1. Zero stream ID
+        var idr = new MoonshineIdrRequestPayload { StreamId = 0, ReasonCode = 1 };
+        MoonshineProtocolCodec.TryWriteIdrRequest(idr, buffer).Should().BeTrue();
+        MoonshineProtocolCodec.TryReadIdrRequest(buffer, out _).Should().Be(MoonshineErrorCode.StreamNotFound);
+
+        // 2. Zero reason code
+        idr = new MoonshineIdrRequestPayload { StreamId = 101, ReasonCode = 0 };
+        MoonshineProtocolCodec.TryWriteIdrRequest(idr, buffer).Should().BeTrue();
+        MoonshineProtocolCodec.TryReadIdrRequest(buffer, out _).Should().Be(MoonshineErrorCode.InvalidConfigurationParameter);
+    }
+
+    [Fact]
+    public void InputPayloads_DefensiveBounds_EnforceStrictFields()
+    {
+        // 1. Keyboard isDown > 1
+        byte[] kbd = new byte[12];
+        kbd[4] = 2; // Invalid isDown
+        MoonshineProtocolCodec.TryReadKeyboardInput(kbd, out _).Should().Be(MoonshineErrorCode.InvalidConfigurationParameter);
+
+        // 2. Mouse isAbsolute > 1
+        byte[] mouse = new byte[20];
+        mouse[14] = 3; // Invalid isAbsolute
+        MoonshineProtocolCodec.TryReadMouseInput(mouse, out _).Should().Be(MoonshineErrorCode.InvalidConfigurationParameter);
+
+        // 3. Gamepad index > 3
+        byte[] gamepad = new byte[24];
+        gamepad[0] = 5; // Invalid controller index
+        MoonshineProtocolCodec.TryReadGamepadInput(gamepad, out _).Should().Be(MoonshineErrorCode.InvalidConfigurationParameter);
+    }
+
+    [Fact]
+    public void HostConfiguration_InvalidParameters_ReturnsAppropriateErrors()
+    {
+        byte[] buffer = new byte[48];
+
+        // 1. Unknown codec
+        var config = new MoonshineHostConfigurationPayload
+        {
+            DisplayWidth = 1920,
+            DisplayHeight = 1080,
+            RefreshRateHz = 60,
+            PreferredCodec = MoonshineVideoCodec.Unknown,
+            AudioChannels = 2
+        };
+        MoonshineProtocolCodec.TryWriteHostConfiguration(config, buffer).Should().BeTrue();
+        MoonshineProtocolCodec.TryReadHostConfiguration(buffer, out _).Should().Be(MoonshineErrorCode.UnsupportedCodec);
+
+        // 2. Invalid audio channels (e.g. 5)
+        config = config with { PreferredCodec = MoonshineVideoCodec.Hevc, AudioChannels = 5 };
+        MoonshineProtocolCodec.TryWriteHostConfiguration(config, buffer).Should().BeTrue();
+        MoonshineProtocolCodec.TryReadHostConfiguration(buffer, out _).Should().Be(MoonshineErrorCode.InvalidConfigurationParameter);
     }
 }

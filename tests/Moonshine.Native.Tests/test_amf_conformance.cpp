@@ -242,6 +242,44 @@ int main() {
               << ", Max Resolution: " << caps.max_width << "x" << caps.max_height
               << ", Max FPS: " << caps.max_fps << std::endl;
 
+    // ------------------------------------------------------------------------
+    // Subtest 1.5: Bitrate & Unknown Codec Fail-Closed Boundary Tests
+    // ------------------------------------------------------------------------
+    std::cout << "\n[*] [1.5/9] Executing Bitrate & Codec Fail-Closed Boundary Tests..." << std::endl;
+    {
+        MoonshineEncoderConfig bad_cfg{};
+        bad_cfg.width = 1920;
+        bad_cfg.height = 1080;
+        bad_cfg.fps = 60;
+        bad_cfg.codec = 1; // HEVC
+
+        // 1. Bitrate < 500 kbps (must fail closed)
+        bad_cfg.bitrate_kbps = 499;
+        ACTIVE_ASSERT(moonshine_encoder_create(2, device.Get(), &bad_cfg) == nullptr);
+
+        // 2. Bitrate > 150,000 kbps (must fail closed)
+        bad_cfg.bitrate_kbps = 150001;
+        ACTIVE_ASSERT(moonshine_encoder_create(2, device.Get(), &bad_cfg) == nullptr);
+
+        // 3. Peak bitrate < bitrate (when peak > 0) (must fail closed)
+        bad_cfg.bitrate_kbps = 10000;
+        bad_cfg.peak_bitrate_kbps = 5000;
+        ACTIVE_ASSERT(moonshine_encoder_create(2, device.Get(), &bad_cfg) == nullptr);
+
+        // 4. Peak bitrate > 150,000 kbps (must fail closed)
+        bad_cfg.bitrate_kbps = 10000;
+        bad_cfg.peak_bitrate_kbps = 150001;
+        ACTIVE_ASSERT(moonshine_encoder_create(2, device.Get(), &bad_cfg) == nullptr);
+
+        // 5. Unknown / unsupported codec ID (must fail closed)
+        bad_cfg.bitrate_kbps = 10000;
+        bad_cfg.peak_bitrate_kbps = 15000;
+        bad_cfg.codec = 9999;
+        ACTIVE_ASSERT(moonshine_encoder_create(2, device.Get(), &bad_cfg) == nullptr);
+
+        std::cout << "  [+] AMF fail-closed boundary validation tests passed." << std::endl;
+    }
+
     // 3. Resolution Matrix
     std::cout << "\n[*] [2/9] Executing Resolution Matrix Conformance..." << std::endl;
     struct ResTest { uint32_t width; uint32_t height; const char* name; };

@@ -27,7 +27,7 @@ Write-Host "==========================================================" -Foregro
 Write-Host "Moonshine Windows 11 Build and Test [$Configuration]" -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
 
-& "$ScriptDir\verify_environment.ps1"
+. "$ScriptDir\verify_environment.ps1"
 if ($LASTEXITCODE -ne 0) { throw "Windows 11 toolchain verification failed." }
 if (-not $DotNetExe) { throw ".NET 9 SDK is absent. Install the version pinned in global.json." }
 
@@ -64,10 +64,18 @@ if (-not $hostDll) {
 Write-Host "[+] Managed Windows artifact verified: $($hostDll.FullName)" -ForegroundColor Green
 
 if (-not $SkipTests) {
+    Get-Process -Name testhost*, vstest* -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Milliseconds 250
     Get-ChildItem -Path "$RootDir\src", "$RootDir\tests" -Recurse -Directory | Where-Object {
         $_.FullName -match '[\\/]bin[\\/]'
     } | ForEach-Object {
-        Copy-Item $nativeDll $_.FullName -Force
+        try {
+            Copy-Item $nativeDll $_.FullName -Force -ErrorAction Stop
+        } catch {
+            Get-Process -Name testhost*, vstest* -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Milliseconds 200
+            Copy-Item $nativeDll $_.FullName -Force -ErrorAction SilentlyContinue
+        }
     }
 
     $env:PATH = "$(Split-Path -Parent $nativeDll);$env:PATH"

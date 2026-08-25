@@ -320,12 +320,12 @@ public class MoonshineRemoteHostControlClientTests
         isValid.Should().BeTrue();
 
         // Synthesise response from host
-        byte[] responsePacket = new byte[MoonshineProtocolConstants.HeaderSize + 8];
+        byte[] responsePacket = new byte[MoonshineProtocolConstants.HeaderSize + 40];
         var respHeader = new MoonshinePacketHeader(
             Magic: MoonshineProtocolConstants.Magic,
             Version: MoonshineProtocolConstants.Version10,
             MessageType: MoonshineMessageType.SetHostConfigurationResponse,
-            PayloadSize: 8,
+            PayloadSize: 40,
             SequenceNumber: header.SequenceNumber,
             SessionId: 0x9999,
             TimestampUs: (ulong)Stopwatch.GetTimestamp());
@@ -337,7 +337,8 @@ public class MoonshineRemoteHostControlClientTests
         };
 
         MoonshineProtocolCodec.TryWriteHeader(in respHeader, responsePacket);
-        MoonshineProtocolCodec.TryWriteSetHostConfigurationResponse(in setRespPayload, responsePacket.AsSpan(MoonshineProtocolConstants.HeaderSize));
+        MoonshineProtocolCodec.TryWriteSetHostConfigurationResponse(in setRespPayload, responsePacket.AsSpan(MoonshineProtocolConstants.HeaderSize, 8));
+        authenticator.ComputeMessageAuthTag(responsePacket.AsSpan(0, MoonshineProtocolConstants.HeaderSize + 8), responsePacket.AsSpan(MoonshineProtocolConstants.HeaderSize + 8, 32));
 
         client.ProcessIncomingControlMessage(responsePacket);
 
@@ -458,13 +459,13 @@ public class MoonshineRemoteHostControlClientTests
         bool isValid = authenticator.VerifyMessageAuthTag(signedContent, tag);
         isValid.Should().BeTrue();
 
-        // Synthesise response from host
-        byte[] responsePacket = new byte[MoonshineProtocolConstants.HeaderSize + 32];
+        // Synthesise response from host with HMAC tag
+        byte[] responsePacket = new byte[MoonshineProtocolConstants.HeaderSize + 64];
         var respHeader = new MoonshinePacketHeader(
             Magic: MoonshineProtocolConstants.Magic,
             Version: MoonshineProtocolConstants.Version10,
             MessageType: MoonshineMessageType.HostCapabilitiesResponse,
-            PayloadSize: 32,
+            PayloadSize: 64,
             SequenceNumber: header.SequenceNumber,
             SessionId: 0x1234,
             TimestampUs: (ulong)((Stopwatch.GetTimestamp() * 1_000_000L) / Stopwatch.Frequency));
@@ -478,7 +479,8 @@ public class MoonshineRemoteHostControlClientTests
         };
 
         MoonshineProtocolCodec.TryWriteHeader(in respHeader, responsePacket);
-        MoonshineProtocolCodec.TryWriteHostCapabilitiesResponse(in expectedPayload, responsePacket.AsSpan(MoonshineProtocolConstants.HeaderSize));
+        MoonshineProtocolCodec.TryWriteHostCapabilitiesResponse(in expectedPayload, responsePacket.AsSpan(MoonshineProtocolConstants.HeaderSize, 32));
+        authenticator.ComputeMessageAuthTag(responsePacket.AsSpan(0, MoonshineProtocolConstants.HeaderSize + 32), responsePacket.AsSpan(MoonshineProtocolConstants.HeaderSize + 32, 32));
 
         client.ProcessIncomingControlMessage(responsePacket);
 
@@ -527,13 +529,13 @@ public class MoonshineRemoteHostControlClientTests
         bool isValid = authenticator.VerifyMessageAuthTag(signedContent, tag);
         isValid.Should().BeTrue();
 
-        // Synthesise response from host
-        byte[] responsePacket = new byte[MoonshineProtocolConstants.HeaderSize + 48];
+        // Synthesise response from host with HMAC tag
+        byte[] responsePacket = new byte[MoonshineProtocolConstants.HeaderSize + 80];
         var respHeader = new MoonshinePacketHeader(
             Magic: MoonshineProtocolConstants.Magic,
             Version: MoonshineProtocolConstants.Version10,
             MessageType: MoonshineMessageType.HostConfigurationResponse,
-            PayloadSize: 48,
+            PayloadSize: 80,
             SequenceNumber: header.SequenceNumber,
             SessionId: 0x5678,
             TimestampUs: (ulong)((Stopwatch.GetTimestamp() * 1_000_000L) / Stopwatch.Frequency));
@@ -545,11 +547,13 @@ public class MoonshineRemoteHostControlClientTests
             DisplayHeight = 1440,
             RefreshRateHz = 120,
             TargetBitrateKbps = 35000,
-            PreferredCodec = MoonshineVideoCodec.Av1
+            PreferredCodec = MoonshineVideoCodec.Av1,
+            AudioChannels = 2
         };
 
         MoonshineProtocolCodec.TryWriteHeader(in respHeader, responsePacket);
-        MoonshineProtocolCodec.TryWriteHostConfiguration(in expectedPayload, responsePacket.AsSpan(MoonshineProtocolConstants.HeaderSize));
+        MoonshineProtocolCodec.TryWriteHostConfiguration(in expectedPayload, responsePacket.AsSpan(MoonshineProtocolConstants.HeaderSize, 48));
+        authenticator.ComputeMessageAuthTag(responsePacket.AsSpan(0, MoonshineProtocolConstants.HeaderSize + 48), responsePacket.AsSpan(MoonshineProtocolConstants.HeaderSize + 48, 32));
 
         client.ProcessIncomingControlMessage(responsePacket);
 

@@ -1,8 +1,12 @@
 #include "moonshine/video/dxgi_swapchain.hpp"
+#include <algorithm>
 #include <cstring>
 #include <iostream>
 
 #if defined(_WIN32)
+    #ifndef NOMINMAX
+    #define NOMINMAX
+    #endif
     #include <windows.h>
     #include <d3d11.h>
     #include <d3d11_1.h>
@@ -235,6 +239,11 @@ int DxgiSwapchain::Present(uint32_t sync_interval, uint32_t flags) {
     }
 
     HRESULT hr = swapchain1_->Present(sync_interval, present_flags);
+    if (hr == DXGI_STATUS_OCCLUDED) {
+        // Window is occluded (e.g. minimised or covered): handled cleanly without recording spurious presentation errors
+        return 0;
+    }
+
     if (FAILED(hr)) {
         presentation_errors_++;
         if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
@@ -354,6 +363,24 @@ int DxgiSwapchain::SetHdrMetadata(const MoonshineHdr10Metadata* metadata) {
 #if defined(_WIN32)
     if (!swapchain4_) return -1;
 
+    // Luminance bounds: 0 to 10,000 nits (100,000,000 in 0.0001 cd/m^2 units)
+    constexpr uint32_t kMaxMasteringLuminanceUnits = 100000000; // 10,000 nits * 10000
+    uint32_t max_lum = (metadata->max_mastering_luminance < kMaxMasteringLuminanceUnits)
+        ? metadata->max_mastering_luminance
+        : kMaxMasteringLuminanceUnits;
+    uint32_t min_lum = (metadata->min_mastering_luminance < max_lum)
+        ? metadata->min_mastering_luminance
+        : max_lum;
+    uint16_t max_cll = (metadata->max_content_light_level < 10000)
+        ? metadata->max_content_light_level
+        : static_cast<uint16_t>(10000);
+    uint16_t max_fall = (metadata->max_frame_average_light_level < 10000)
+        ? metadata->max_frame_average_light_level
+        : static_cast<uint16_t>(10000);
+    if (max_cll > 0 && max_fall > max_cll) {
+        max_fall = max_cll;
+    }
+
     DXGI_HDR_METADATA_HDR10 hdr10{};
     hdr10.RedPrimary[0] = metadata->red_primary[0];
     hdr10.RedPrimary[1] = metadata->red_primary[1];
@@ -363,10 +390,10 @@ int DxgiSwapchain::SetHdrMetadata(const MoonshineHdr10Metadata* metadata) {
     hdr10.BluePrimary[1] = metadata->blue_primary[1];
     hdr10.WhitePoint[0] = metadata->white_point[0];
     hdr10.WhitePoint[1] = metadata->white_point[1];
-    hdr10.MaxMasteringLuminance = metadata->max_mastering_luminance;
-    hdr10.MinMasteringLuminance = metadata->min_mastering_luminance;
-    hdr10.MaxContentLightLevel = metadata->max_content_light_level;
-    hdr10.MaxFrameAverageLightLevel = metadata->max_frame_average_light_level;
+    hdr10.MaxMasteringLuminance = max_lum;
+    hdr10.MinMasteringLuminance = min_lum;
+    hdr10.MaxContentLightLevel = max_cll;
+    hdr10.MaxFrameAverageLightLevel = max_fall;
 
     HRESULT hr = swapchain4_->SetHDRMetaData(DXGI_HDR_METADATA_TYPE_HDR10, sizeof(hdr10), &hdr10);
     return SUCCEEDED(hr) ? 0 : -1;

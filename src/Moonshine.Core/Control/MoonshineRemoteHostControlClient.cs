@@ -294,9 +294,34 @@ public sealed class MoonshineRemoteHostControlClient : IDisposable
             return;
         }
 
-        ReadOnlySpan<byte> payload = datagram[MoonshineProtocolConstants.HeaderSize..];
+        if (SessionId != 0 && header.SessionId != 0 && header.SessionId != SessionId)
+        {
+            return;
+        }
+
+        if (datagram.Length < MoonshineProtocolConstants.HeaderSize + header.PayloadSize)
+        {
+            return;
+        }
+
+        ReadOnlySpan<byte> payload = datagram.Slice(MoonshineProtocolConstants.HeaderSize, (int)header.PayloadSize);
+
+        if (_authenticator != null && header.PayloadSize > 32)
+        {
+            int authTagOffset = (int)header.PayloadSize - 32;
+            ReadOnlySpan<byte> signedPortion = datagram[..(MoonshineProtocolConstants.HeaderSize + authTagOffset)];
+            ReadOnlySpan<byte> expectedTag = payload[authTagOffset..];
+            Span<byte> computedTag = stackalloc byte[32];
+            _authenticator.ComputeMessageAuthTag(signedPortion, computedTag);
+            if (!computedTag.SequenceEqual(expectedTag))
+            {
+                return;
+            }
+            payload = payload[..authTagOffset];
+        }
 
         switch (header.MessageType)
+
         {
             case MoonshineMessageType.HostCapabilitiesResponse:
                 if (MoonshineProtocolCodec.TryReadHostCapabilitiesResponse(payload, out var capabilities) == MoonshineErrorCode.Success)

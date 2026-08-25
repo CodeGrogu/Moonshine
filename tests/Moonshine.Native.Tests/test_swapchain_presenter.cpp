@@ -1,6 +1,5 @@
 #include "moonshine/export/moonshine_native_api.h"
 #include <iostream>
-#include <cassert>
 
 #if defined(_WIN32)
     #include <windows.h>
@@ -113,7 +112,7 @@ int main() {
             int hdr_res = moonshine_swapchain_set_hdr(sc, 1);
             std::cout << "  SetHdr(1) result: " << hdr_res << std::endl;
 
-            // Test HDR metadata
+            // Test HDR metadata with normal valid values
             MoonshineHdr10Metadata meta{};
             meta.hdr_enabled = 1;
             meta.max_mastering_luminance = 10000000; // 1000 nits
@@ -121,7 +120,17 @@ int main() {
             meta.max_content_light_level = 1000;
             meta.max_frame_average_light_level = 400;
             int meta_res = moonshine_swapchain_set_hdr_metadata(sc, &meta);
-            std::cout << "  SetHdrMetadata result: " << meta_res << std::endl;
+            std::cout << "  SetHdrMetadata (valid) result: " << meta_res << std::endl;
+
+            // Test HDR metadata boundary clamping (exceeding 10,000 nits and min > max)
+            MoonshineHdr10Metadata clamped_meta{};
+            clamped_meta.hdr_enabled = 1;
+            clamped_meta.max_mastering_luminance = 200000000; // 20,000 nits (exceeds 10,000 nits bound -> clamped)
+            clamped_meta.min_mastering_luminance = 250000000; // Min > Max -> clamped to max
+            clamped_meta.max_content_light_level = 15000;     // Exceeds 10,000 nits -> clamped
+            clamped_meta.max_frame_average_light_level = 18000; // Exceeds max_cll -> clamped to max_cll
+            int clamped_meta_res = moonshine_swapchain_set_hdr_metadata(sc, &clamped_meta);
+            std::cout << "  SetHdrMetadata (clamped boundaries) result: " << clamped_meta_res << std::endl;
 
             // Query metrics
             MoonshineSwapchainMetrics metrics{};
@@ -145,3 +154,4 @@ int main() {
     std::cout << "[+] DXGI Swapchain & GPU Presenter native validation PASSED." << std::endl;
     return 0;
 }
+

@@ -3,6 +3,8 @@ using Moonshine.Core.Video;
 using Moonshine.Interop;
 using Xunit;
 
+[assembly: CollectionBehavior(DisableTestParallelization = true)]
+
 namespace Moonshine.Core.Tests;
 
 public class HardwareVideoDecoderPipelineTests

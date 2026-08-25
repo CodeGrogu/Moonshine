@@ -159,7 +159,7 @@ void TestExportAbiStructLayoutsAndErrorCodes()
     TEST_ASSERT(MOONSHINE_ERR_NOT_INITIALIZED == -10);
     TEST_ASSERT(MOONSHINE_ERR_FATAL == -11);
 
-    // Byte size checks
+    // Byte size checks for all 18 C-ABI structs
     TEST_ASSERT(sizeof(MoonshinePacketDesc) == 32);
     TEST_ASSERT(sizeof(MoonshineFrameDesc) == 24);
     TEST_ASSERT(sizeof(MoonshineDecoderCaps) == 20);
@@ -170,6 +170,14 @@ void TestExportAbiStructLayoutsAndErrorCodes()
     TEST_ASSERT(sizeof(MoonshineEncodedPacketDesc) == 24);
     TEST_ASSERT(sizeof(MoonshineVirtualAudioDriverStatusC) == 44);
     TEST_ASSERT(sizeof(MoonshineAudioIpcMetricsC) == 36);
+    TEST_ASSERT(sizeof(MoonshineAdapterInfo) == 160);
+    TEST_ASSERT(sizeof(MoonshineDisplayInfo) == 36);
+    TEST_ASSERT(sizeof(MoonshineDisplayModeDesc) == 32);
+    TEST_ASSERT(sizeof(MoonshineDisplayExtendedInfo) == 152);
+    TEST_ASSERT(sizeof(MoonshineVirtualDesktopBoundsC) == 16);
+    TEST_ASSERT(sizeof(MoonshineSwapchainMetrics) == 24);
+    TEST_ASSERT(sizeof(MoonshineGpuAdapter) == 184);
+    TEST_ASSERT(sizeof(MoonshineQsvDiagnosticReport) == 384);
 
     // Field offset checks
     TEST_ASSERT(offsetof(MoonshinePacketDesc, sequence_number) == 0);
@@ -180,6 +188,58 @@ void TestExportAbiStructLayoutsAndErrorCodes()
 
     TEST_ASSERT(offsetof(MoonshineHdr10Metadata, red_primary) == 0);
     TEST_ASSERT(offsetof(MoonshineHdr10Metadata, hdr_enabled) == 28);
+
+    TEST_ASSERT(offsetof(MoonshineDisplayModeDesc, width) == 0);
+    TEST_ASSERT(offsetof(MoonshineDisplayModeDesc, reserved) == 29);
+
+    TEST_ASSERT(offsetof(MoonshineDisplayExtendedInfo, display_index) == 0);
+    TEST_ASSERT(offsetof(MoonshineDisplayExtendedInfo, reserved) == 136);
+
+    TEST_ASSERT(offsetof(MoonshineGpuAdapter, index) == 0);
+    TEST_ASSERT(offsetof(MoonshineGpuAdapter, description) == 56);
+
+    TEST_ASSERT(offsetof(MoonshineQsvDiagnosticReport, adapter_found) == 0);
+    TEST_ASSERT(offsetof(MoonshineQsvDiagnosticReport, reserved) == 368);
+}
+
+void TestExportWasapiHandleSafety()
+{
+    std::cout << "[Test] C-ABI WasapiRenderer SafeHandleStore lifecycle and safety..." << std::endl;
+
+    // 1. Invalid / null handle robustness
+    TEST_ASSERT(moonshine_audio_submit_pcm(nullptr, nullptr, 0) == -1);
+    float samplePcm[64] = {0};
+    TEST_ASSERT(moonshine_audio_submit_pcm(nullptr, samplePcm, 64) == -1);
+    void* invalidHandle = reinterpret_cast<void*>(static_cast<uintptr_t>(0xDEADBEEFULL));
+    TEST_ASSERT(moonshine_audio_submit_pcm(invalidHandle, samplePcm, 64) == -1);
+
+    uint64_t rendered = 999;
+    uint32_t underruns = 999;
+    moonshine_audio_get_metrics(nullptr, &rendered, &underruns);
+    TEST_ASSERT(rendered == 999);
+    moonshine_audio_get_metrics(invalidHandle, &rendered, &underruns);
+    TEST_ASSERT(rendered == 999);
+
+    moonshine_audio_destroy(nullptr); // Safe no-op
+    moonshine_audio_destroy(invalidHandle); // Safe no-op
+
+    // 2. Real handle lifecycle
+    MoonshineAudioHandle handle = moonshine_audio_create_wasapi(48000, 2, 0);
+    if (handle) {
+        float pcm[256] = {0.1f};
+        int submitRes = moonshine_audio_submit_pcm(handle, pcm, 128);
+        TEST_ASSERT(submitRes == 0);
+
+        uint64_t frames = 0;
+        uint32_t under = 0;
+        moonshine_audio_get_metrics(handle, &frames, &under);
+        TEST_ASSERT(frames == 128);
+
+        moonshine_audio_destroy(handle);
+
+        // Post-destruction use-after-free protection via SafeHandleStore
+        TEST_ASSERT(moonshine_audio_submit_pcm(handle, pcm, 128) == -1);
+    }
 }
 
 int main()
@@ -191,6 +251,8 @@ int main()
     TestExportJitterLifecycle();
     TestExportVideoCaps();
     TestExportAbiStructLayoutsAndErrorCodes();
+    TestExportWasapiHandleSafety();
     std::cout << "All C-ABI Export tests passed successfully." << std::endl;
     return 0;
 }
+

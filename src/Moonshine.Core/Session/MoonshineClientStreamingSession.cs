@@ -423,22 +423,54 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
         // Send Hello & await HelloResponse
         await _controlSocket.SendToAsync(helloBuffer, SocketFlags.None, _hostControlEndpoint, handshakeCts.Token).ConfigureAwait(false);
 
-        SocketReceiveFromResult result = await _controlSocket.ReceiveFromAsync(respBuffer.AsMemory(), SocketFlags.None, remoteEp, handshakeCts.Token).ConfigureAwait(false);
-        if (result.ReceivedBytes < MoonshineProtocolConstants.HeaderSize + 48)
+        MoonshineHelloResponsePayload helloResp = default;
+        bool receivedHelloResp = false;
+
+        while (!receivedHelloResp && !handshakeCts.Token.IsCancellationRequested)
         {
-            throw new InvalidOperationException("Invalid HelloResponse received from host.");
+            SocketReceiveFromResult result = await _controlSocket.ReceiveFromAsync(respBuffer.AsMemory(), SocketFlags.None, remoteEp, handshakeCts.Token).ConfigureAwait(false);
+            if (result.ReceivedBytes < MoonshineProtocolConstants.HeaderSize)
+            {
+                continue;
+            }
+
+            MoonshineErrorCode err = MoonshineProtocolCodec.TryReadHeader(respBuffer.AsSpan(0, result.ReceivedBytes), out var respHeader);
+            if (err != MoonshineErrorCode.Success)
+            {
+                continue;
+            }
+
+            if (respHeader.MessageType == MoonshineMessageType.HelloResponse)
+            {
+                if (result.ReceivedBytes < MoonshineProtocolConstants.HeaderSize + 48)
+                {
+                    throw new InvalidOperationException("Invalid HelloResponse received from host.");
+                }
+
+                err = MoonshineProtocolCodec.TryReadHelloResponse(respBuffer.AsSpan(MoonshineProtocolConstants.HeaderSize, 48), out helloResp);
+                if (err != MoonshineErrorCode.Success || helloResp.ServerVersionMajor < 1)
+                {
+                    throw new InvalidOperationException("Incompatible host protocol version.");
+                }
+
+                receivedHelloResp = true;
+                break;
+            }
+            else if (respHeader.MessageType is MoonshineMessageType.KeepAlive or MoonshineMessageType.KeepAliveAck)
+            {
+                // Ignore interleaved keepalive during handshake
+                continue;
+            }
+            else
+            {
+                // Out-of-order unexpected handshake message
+                throw new InvalidOperationException($"Expected HelloResponse but received {respHeader.MessageType}.");
+            }
         }
 
-        MoonshineErrorCode err = MoonshineProtocolCodec.TryReadHeader(respBuffer.AsSpan(0, result.ReceivedBytes), out var respHeader);
-        if (err != MoonshineErrorCode.Success || respHeader.MessageType != MoonshineMessageType.HelloResponse)
+        if (!receivedHelloResp)
         {
-            throw new InvalidOperationException($"Expected HelloResponse but received {respHeader.MessageType}.");
-        }
-
-        err = MoonshineProtocolCodec.TryReadHelloResponse(respBuffer.AsSpan(MoonshineProtocolConstants.HeaderSize, 48), out var helloResp);
-        if (err != MoonshineErrorCode.Success || helloResp.ServerVersionMajor < 1)
-        {
-            throw new InvalidOperationException("Incompatible host protocol version.");
+            throw new TimeoutException("Timed out awaiting HelloResponse from host.");
         }
 
         // 2. Send SessionSetup
@@ -477,33 +509,62 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
         await _controlSocket.SendToAsync(setupBuffer, SocketFlags.None, _hostControlEndpoint, handshakeCts.Token).ConfigureAwait(false);
 
         // Await SessionSetupResponse
-        result = await _controlSocket.ReceiveFromAsync(respBuffer.AsMemory(), SocketFlags.None, remoteEp, handshakeCts.Token).ConfigureAwait(false);
-        if (result.ReceivedBytes < MoonshineProtocolConstants.HeaderSize + 32)
+        bool receivedSetupResp = false;
+        while (!receivedSetupResp && !handshakeCts.Token.IsCancellationRequested)
         {
-            throw new InvalidOperationException("Invalid SessionSetupResponse received from host.");
+            SocketReceiveFromResult result = await _controlSocket.ReceiveFromAsync(respBuffer.AsMemory(), SocketFlags.None, remoteEp, handshakeCts.Token).ConfigureAwait(false);
+            if (result.ReceivedBytes < MoonshineProtocolConstants.HeaderSize)
+            {
+                continue;
+            }
+
+            MoonshineErrorCode err = MoonshineProtocolCodec.TryReadHeader(respBuffer.AsSpan(0, result.ReceivedBytes), out var setupRespHeader);
+            if (err != MoonshineErrorCode.Success)
+            {
+                continue;
+            }
+
+            if (setupRespHeader.MessageType == MoonshineMessageType.SessionSetupResponse)
+            {
+                if (result.ReceivedBytes < MoonshineProtocolConstants.HeaderSize + 32)
+                {
+                    throw new InvalidOperationException("Invalid SessionSetupResponse received from host.");
+                }
+
+                err = MoonshineProtocolCodec.TryReadSessionSetupResponse(respBuffer.AsSpan(MoonshineProtocolConstants.HeaderSize, 32), out var setupResp);
+                if (err != MoonshineErrorCode.Success || setupResp.StatusCode != MoonshineErrorCode.Success)
+                {
+                    throw new InvalidOperationException($"Host rejected session setup with code {setupResp.StatusCode}.");
+                }
+
+                // Configure host destinations from response if specified
+                if (setupResp.HostUdpVideoPort > 0)
+                {
+                    _hostVideoEndpoint = new IPEndPoint(_config.HostAddress, setupResp.HostUdpVideoPort);
+                }
+                if (setupResp.HostUdpAudioPort > 0)
+                {
+                    _hostAudioEndpoint = new IPEndPoint(_config.HostAddress, setupResp.HostUdpAudioPort);
+                }
+
+                receivedSetupResp = true;
+                break;
+            }
+            else if (setupRespHeader.MessageType is MoonshineMessageType.KeepAlive or MoonshineMessageType.KeepAliveAck)
+            {
+                continue;
+            }
+            else
+            {
+                throw new InvalidOperationException($"Expected SessionSetupResponse but received {setupRespHeader.MessageType}.");
+            }
         }
 
-        err = MoonshineProtocolCodec.TryReadHeader(respBuffer.AsSpan(0, result.ReceivedBytes), out var setupRespHeader);
-        if (err != MoonshineErrorCode.Success || setupRespHeader.MessageType != MoonshineMessageType.SessionSetupResponse)
+        if (!receivedSetupResp)
         {
-            throw new InvalidOperationException($"Expected SessionSetupResponse but received {setupRespHeader.MessageType}.");
+            throw new TimeoutException("Timed out awaiting SessionSetupResponse from host.");
         }
 
-        err = MoonshineProtocolCodec.TryReadSessionSetupResponse(respBuffer.AsSpan(MoonshineProtocolConstants.HeaderSize, 32), out var setupResp);
-        if (err != MoonshineErrorCode.Success || setupResp.StatusCode != MoonshineErrorCode.Success)
-        {
-            throw new InvalidOperationException($"Host rejected session setup with code {setupResp.StatusCode}.");
-        }
-
-        // Configure host destinations from response if specified
-        if (setupResp.HostUdpVideoPort > 0)
-        {
-            _hostVideoEndpoint = new IPEndPoint(_config.HostAddress, setupResp.HostUdpVideoPort);
-        }
-        if (setupResp.HostUdpAudioPort > 0)
-        {
-            _hostAudioEndpoint = new IPEndPoint(_config.HostAddress, setupResp.HostUdpAudioPort);
-        }
     }
 
     private async Task VideoReceiveLoopAsync()

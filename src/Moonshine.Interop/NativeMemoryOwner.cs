@@ -64,7 +64,7 @@ public sealed unsafe class NativeBufferLease : IDisposable
 /// to provide zero-allocation IMemoryOwner and Span/Memory instances with strict lease/release lifetime semantics.
 /// Guarantees race-free deferred memory deallocation until all active leases have completed.
 /// </summary>
-public sealed unsafe class NativeMemoryOwner : MemoryManager<byte>
+public sealed unsafe class NativeMemoryOwner : MemoryManager<byte>, IDisposable
 {
     private readonly byte* _pointer;
     private readonly int _length;
@@ -165,6 +165,12 @@ public sealed unsafe class NativeMemoryOwner : MemoryManager<byte>
 
     public override void Unpin()
     {
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
     }
 
     protected override void Dispose(bool disposing)

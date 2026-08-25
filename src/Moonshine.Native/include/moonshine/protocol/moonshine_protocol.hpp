@@ -426,9 +426,35 @@ inline MoonshineErrorCode read_header(std::span<const uint8_t> source, Moonshine
         return MoonshineErrorCode::UnsupportedVersion;
     }
 
+    if (out_header.payload_size > 1048576) {
+        return MoonshineErrorCode::MalformedHeader;
+    }
+
     if (source.size() < sizeof(MoonshinePacketHeader) + out_header.payload_size) {
         return MoonshineErrorCode::PayloadTruncated;
     }
+
+    auto msg_type = static_cast<MoonshineMessageType>(out_header.message_type);
+    if (msg_type == MoonshineMessageType::Hello && out_header.payload_size < 32) return MoonshineErrorCode::PayloadTruncated;
+    if (msg_type == MoonshineMessageType::HelloResponse && out_header.payload_size < 48) return MoonshineErrorCode::PayloadTruncated;
+    if (msg_type == MoonshineMessageType::SessionSetup && out_header.payload_size < 40) return MoonshineErrorCode::PayloadTruncated;
+    if (msg_type == MoonshineMessageType::SessionSetupResponse && out_header.payload_size < 32) return MoonshineErrorCode::PayloadTruncated;
+    if (msg_type == MoonshineMessageType::FeedbackLossStats && out_header.payload_size < 40) return MoonshineErrorCode::PayloadTruncated;
+    if (msg_type == MoonshineMessageType::IdrRequest && out_header.payload_size < 16) return MoonshineErrorCode::PayloadTruncated;
+    if (msg_type == MoonshineMessageType::InputKeyboard && out_header.payload_size < 12) return MoonshineErrorCode::PayloadTruncated;
+    if (msg_type == MoonshineMessageType::InputMouse && out_header.payload_size < 20) return MoonshineErrorCode::PayloadTruncated;
+    if (msg_type == MoonshineMessageType::InputGamepad && out_header.payload_size < 24) return MoonshineErrorCode::PayloadTruncated;
+    if (msg_type == MoonshineMessageType::TelemetryReport && out_header.payload_size < 32) return MoonshineErrorCode::PayloadTruncated;
+    if (msg_type == MoonshineMessageType::GetHostCapabilities && out_header.payload_size < 4) return MoonshineErrorCode::PayloadTruncated;
+    if (msg_type == MoonshineMessageType::HostCapabilitiesResponse && out_header.payload_size < 32) return MoonshineErrorCode::PayloadTruncated;
+    if (msg_type == MoonshineMessageType::GetHostConfiguration && out_header.payload_size < 4) return MoonshineErrorCode::PayloadTruncated;
+    if (msg_type == MoonshineMessageType::HostConfigurationResponse && out_header.payload_size < 48) return MoonshineErrorCode::PayloadTruncated;
+    if (msg_type == MoonshineMessageType::SetHostConfiguration && out_header.payload_size < 48) return MoonshineErrorCode::PayloadTruncated;
+    if (msg_type == MoonshineMessageType::SetHostConfigurationResponse && out_header.payload_size < 8) return MoonshineErrorCode::PayloadTruncated;
+    if (msg_type == MoonshineMessageType::ConfigurationChanged && out_header.payload_size < 8) return MoonshineErrorCode::PayloadTruncated;
+    if (msg_type == MoonshineMessageType::VideoPacket && out_header.payload_size < 32) return MoonshineErrorCode::PayloadTruncated;
+    if (msg_type == MoonshineMessageType::AudioPacket && out_header.payload_size < 24) return MoonshineErrorCode::PayloadTruncated;
+    if (msg_type == MoonshineMessageType::MicPacket && out_header.payload_size < 20) return MoonshineErrorCode::PayloadTruncated;
 
     return MoonshineErrorCode::Success;
 }

@@ -64,6 +64,7 @@ private:
     const size_t max_frames_;
     std::vector<FrameSlot> slots_;
     uint32_t last_popped_frame_index_{0};
+    bool has_popped_frame_{false};
 };
 
 } // namespace moonshine::jitter

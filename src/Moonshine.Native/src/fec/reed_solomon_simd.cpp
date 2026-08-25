@@ -373,12 +373,13 @@ int ReedSolomonSimd::Reconstruct(
     const int* erased_indices,
     int erased_count
 ) noexcept {
-    if (!shards || !erased_indices) return -1;
-    if (shard_size <= 0) return -1;
+    if (!shards || shard_size <= 0) return -1;
     if (data_shards_count <= 0 || data_shards_count > kMaxDataShards) return -1;
     if (parity_shards_count <= 0 || parity_shards_count > kMaxParityShards) return -1;
     if ((data_shards_count + parity_shards_count) > 255) return -1;
-    if (erased_count <= 0) return -1;
+    if (!erased_indices && erased_count > 0) return -1;
+    if (erased_count < 0) return -1;
+    if (erased_count == 0) return 0;
 
     int total_shards = data_shards_count + parity_shards_count;
     if (erased_count > parity_shards_count) {
@@ -485,8 +486,12 @@ int ReedSolomonSimd::Reconstruct(
     const int* erased_indices,
     int erased_count
 ) noexcept {
-    if (!shards || !erased_indices || total_shards <= 0 || shard_size <= 0 || erased_count <= 0) {
+    if (!shards || total_shards <= 0 || shard_size <= 0 || erased_count < 0) {
         return -1;
+    }
+    if (!erased_indices && erased_count > 0) return -1;
+    if (erased_count == 0) {
+        return 0;
     }
     // Infer parity count as erased_count (or half if large)
     int parity_shards = erased_count;

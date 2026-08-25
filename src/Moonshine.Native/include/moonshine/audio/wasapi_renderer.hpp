@@ -28,6 +28,7 @@ public:
     ~WasapiRenderer();
 
     int Initialize();
+    int Recover();
     int SubmitPcm(const float* pcm_data, uint32_t sample_count);
     void GetMetrics(uint64_t& out_frames_rendered, uint32_t& out_underruns) const noexcept;
     void Shutdown();
@@ -47,6 +48,9 @@ private:
     uint64_t frames_rendered_{0};
     uint32_t underruns_{0};
     std::vector<float> staging_buffer_;
+    double resample_phase_{0.0};
+    std::vector<float> last_src_frame_{};
+    std::vector<float> resampled_buffer_{};
 
 #if defined(_WIN32)
     Microsoft::WRL::ComPtr<IMMDeviceEnumerator> enumerator_;
@@ -62,3 +66,4 @@ private:
 };
 
 } // namespace moonshine::audio
+

@@ -1,6 +1,13 @@
 #include "moonshine/export/moonshine_native_api.h"
-#include <cassert>
 #include <iostream>
+#include <cstdlib>
+
+#define TEST_ASSERT(expr) do { \
+    if (!(expr)) { \
+        std::cerr << "Assertion failed: " #expr " at " << __FILE__ << ":" << __LINE__ << std::endl; \
+        std::abort(); \
+    } \
+} while(0)
 
 int main() {
     std::cout << "[*] Running Native HDR10 & Colorimetry Tests..." << std::endl;
@@ -19,14 +26,14 @@ int main() {
         MoonshineHdr10Metadata cAbiCaps = {};
         int parseRes = moonshine_hdr_parse_capabilities(12, &cAbiCaps);
         (void)parseRes;
-        assert(parseRes == 1);
-        assert(cAbiCaps.hdr_enabled == 1);
-        assert(cAbiCaps.color_space == 1);
-        assert(cAbiCaps.max_mastering_luminance == 10000000);
-        assert(cAbiCaps.red_primary[0] == 35400);
-        assert(cAbiCaps.green_primary[1] == 39850);
-        assert(cAbiCaps.blue_primary[0] == 6550);
-        assert(cAbiCaps.white_point[0] == 15635);
+        TEST_ASSERT(parseRes == 1);
+        TEST_ASSERT(cAbiCaps.hdr_enabled == 1);
+        TEST_ASSERT(cAbiCaps.color_space == 1);
+        TEST_ASSERT(cAbiCaps.max_mastering_luminance == 10000000);
+        TEST_ASSERT(cAbiCaps.red_primary[0] == 35400);
+        TEST_ASSERT(cAbiCaps.green_primary[1] == 39850);
+        TEST_ASSERT(cAbiCaps.blue_primary[0] == 6550);
+        TEST_ASSERT(cAbiCaps.white_point[0] == 15635);
         std::cout << "    [+] C-ABI HDR Capabilities parse verified: BT.2020 PQ" << std::endl;
     }
 
@@ -37,7 +44,7 @@ int main() {
             std::cout << "    [+] C-ABI Color Converter created: 3840x2160 RGB10A2 -> P010" << std::endl;
             int convRes = moonshine_color_converter_convert(convHandle, nullptr, nullptr);
             (void)convRes;
-            assert(convRes == -1); // Null textures rejected safely
+            TEST_ASSERT(convRes == -1); // Null textures rejected safely
             moonshine_color_converter_destroy(convHandle);
         } else {
             std::cout << "    [+] C-ABI Color Converter not available on headless environment" << std::endl;

@@ -95,6 +95,19 @@ public sealed class MoonshineAudioPipeline : IDisposable
         }
     }
 
+    /// <summary>
+    /// Recovers the native WASAPI audio render endpoint after device invalidation or disconnection.
+    /// </summary>
+    public bool Recover()
+    {
+        lock (_lock)
+        {
+            if (_disposed || _audioHandle == IntPtr.Zero) return false;
+            return MoonshineNativeMethods.AudioRecover(_audioHandle) == 0;
+        }
+    }
+
+
     public void Dispose()
     {
         lock (_lock)

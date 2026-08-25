@@ -307,6 +307,12 @@ void TestNegativeAndDefensiveValidation()
     // 5. Exceeding max data/parity shards
     TEST_ASSERT(codec.Reconstruct(ptrs2, 65, 1, kShardSize, erased1, 1) != 0);
     TEST_ASSERT(codec.Reconstruct(ptrs2, 1, 33, kShardSize, erased1, 1) != 0);
+
+    // 6. Zero erased count (0% loss parity)
+    TEST_ASSERT(codec.Reconstruct(ptrs2, 1, 1, kShardSize, nullptr, 0) == 0);
+    TEST_ASSERT(codec.Reconstruct(ptrs2, 1, 1, kShardSize, erased1, 0) == 0);
+    TEST_ASSERT(codec.Reconstruct(ptrs2, 2, kShardSize, nullptr, 0) == 0);
+    TEST_ASSERT(codec.Reconstruct(ptrs2, 2, kShardSize, erased1, 0) == 0);
 }
 
 void TestExhaustiveGfMultiplicationConsistency()

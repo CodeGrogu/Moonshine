@@ -68,9 +68,7 @@ public:
      * @brief Returns approximate number of items in the buffer.
      */
     size_t Size() const noexcept {
-        const size_t current_head = head_.load(std::memory_order_relaxed);
-        const size_t current_tail = tail_.load(std::memory_order_relaxed);
-        return current_tail >= current_head ? (current_tail - current_head) : 0;
+        return tail_.load(std::memory_order_relaxed) - head_.load(std::memory_order_relaxed);
     }
 
     /**

@@ -1,5 +1,4 @@
 #include "moonshine/export/moonshine_native_api.h"
-#include <cassert>
 #include <iostream>
 #include <cstdlib>
 

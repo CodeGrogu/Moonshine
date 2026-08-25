@@ -516,13 +516,47 @@ public static class MoonshineProtocolCodec
             return MoonshineErrorCode.UnsupportedVersion;
         }
 
-        if (source.Length < MoonshineProtocolConstants.HeaderSize + payloadSize)
+        if (messageType == 0 || !Enum.IsDefined<MoonshineMessageType>((MoonshineMessageType)messageType))
+        {
+            return MoonshineErrorCode.MalformedHeader;
+        }
+
+        if (payloadSize > 1_048_576) // 1 MB envelope ceiling
+        {
+            return MoonshineErrorCode.MalformedHeader;
+        }
+
+        if ((ulong)source.Length < (ulong)MoonshineProtocolConstants.HeaderSize + payloadSize)
         {
             return MoonshineErrorCode.PayloadTruncated;
         }
 
+        // Validate message-specific payload minimum bounds
+        var msgType = (MoonshineMessageType)messageType;
+        if (msgType == MoonshineMessageType.Hello && payloadSize < 32) return MoonshineErrorCode.PayloadTruncated;
+        if (msgType == MoonshineMessageType.HelloResponse && payloadSize < 48) return MoonshineErrorCode.PayloadTruncated;
+        if (msgType == MoonshineMessageType.SessionSetup && payloadSize < 40) return MoonshineErrorCode.PayloadTruncated;
+        if (msgType == MoonshineMessageType.SessionSetupResponse && payloadSize < 32) return MoonshineErrorCode.PayloadTruncated;
+        if (msgType == MoonshineMessageType.FeedbackLossStats && payloadSize < 40) return MoonshineErrorCode.PayloadTruncated;
+        if (msgType == MoonshineMessageType.IdrRequest && payloadSize < 16) return MoonshineErrorCode.PayloadTruncated;
+        if (msgType == MoonshineMessageType.InputKeyboard && payloadSize < 12) return MoonshineErrorCode.PayloadTruncated;
+        if (msgType == MoonshineMessageType.InputMouse && payloadSize < 20) return MoonshineErrorCode.PayloadTruncated;
+        if (msgType == MoonshineMessageType.InputGamepad && payloadSize < 24) return MoonshineErrorCode.PayloadTruncated;
+        if (msgType == MoonshineMessageType.TelemetryReport && payloadSize < 32) return MoonshineErrorCode.PayloadTruncated;
+        if (msgType == MoonshineMessageType.GetHostCapabilities && payloadSize < 4) return MoonshineErrorCode.PayloadTruncated;
+        if (msgType == MoonshineMessageType.HostCapabilitiesResponse && payloadSize < 32) return MoonshineErrorCode.PayloadTruncated;
+        if (msgType == MoonshineMessageType.GetHostConfiguration && payloadSize < 4) return MoonshineErrorCode.PayloadTruncated;
+        if (msgType == MoonshineMessageType.HostConfigurationResponse && payloadSize < 48) return MoonshineErrorCode.PayloadTruncated;
+        if (msgType == MoonshineMessageType.SetHostConfiguration && payloadSize < 48) return MoonshineErrorCode.PayloadTruncated;
+        if (msgType == MoonshineMessageType.SetHostConfigurationResponse && payloadSize < 8) return MoonshineErrorCode.PayloadTruncated;
+        if (msgType == MoonshineMessageType.ConfigurationChanged && payloadSize < 8) return MoonshineErrorCode.PayloadTruncated;
+        if (msgType == MoonshineMessageType.VideoPacket && payloadSize < 32) return MoonshineErrorCode.PayloadTruncated;
+        if (msgType == MoonshineMessageType.AudioPacket && payloadSize < 24) return MoonshineErrorCode.PayloadTruncated;
+        if (msgType == MoonshineMessageType.MicPacket && payloadSize < 20) return MoonshineErrorCode.PayloadTruncated;
+
         return MoonshineErrorCode.Success;
     }
+
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool TryWriteVideoHeader(in MoonshineVideoPacketHeader videoHeader, Span<byte> destination)
@@ -584,12 +618,22 @@ public static class MoonshineProtocolCodec
         hello = default;
         if (source.Length < 32) return false;
 
+        ushort clientMajor = BinaryPrimitives.ReadUInt16BigEndian(source[..2]);
+        ushort clientMinor = BinaryPrimitives.ReadUInt16BigEndian(source[2..4]);
+        uint caps = BinaryPrimitives.ReadUInt32BigEndian(source[4..8]);
+        ulong nonce = BinaryPrimitives.ReadUInt64BigEndian(source[8..16]);
+
+        if (clientMajor == 0 && clientMinor == 0)
+        {
+            return false;
+        }
+
         hello = new MoonshineHelloPayload
         {
-            ClientVersionMajor = BinaryPrimitives.ReadUInt16BigEndian(source[..2]),
-            ClientVersionMinor = BinaryPrimitives.ReadUInt16BigEndian(source[2..4]),
-            CapabilitiesMask = (MoonshineCapabilities)BinaryPrimitives.ReadUInt32BigEndian(source[4..8]),
-            ClientNonce = BinaryPrimitives.ReadUInt64BigEndian(source[8..16]),
+            ClientVersionMajor = clientMajor,
+            ClientVersionMinor = clientMinor,
+            CapabilitiesMask = (MoonshineCapabilities)caps,
+            ClientNonce = nonce,
             ClientUuid = new MoonshineUuid128(source[16..32])
         };
 
@@ -617,11 +661,14 @@ public static class MoonshineProtocolCodec
         payload = default;
         if (source.Length < 12) return MoonshineErrorCode.BufferTooSmall;
 
+        byte isDown = source[4];
+        if (isDown > 1) return MoonshineErrorCode.InvalidConfigurationParameter;
+
         payload = new MoonshineInputKeyboardPayload
         {
             KeyCode = BinaryPrimitives.ReadUInt16BigEndian(source[..2]),
             ScanCode = BinaryPrimitives.ReadUInt16BigEndian(source[2..4]),
-            IsDown = source[4],
+            IsDown = isDown,
             Modifiers = source[5],
             Reserved = BinaryPrimitives.ReadUInt16BigEndian(source[6..8]),
             TimestampOffsetUs = BinaryPrimitives.ReadUInt32BigEndian(source[8..12])
@@ -653,6 +700,9 @@ public static class MoonshineProtocolCodec
         payload = default;
         if (source.Length < 20) return MoonshineErrorCode.BufferTooSmall;
 
+        byte isAbsolute = source[14];
+        if (isAbsolute > 1) return MoonshineErrorCode.InvalidConfigurationParameter;
+
         payload = new MoonshineInputMousePayload
         {
             X = BinaryPrimitives.ReadInt32BigEndian(source[..4]),
@@ -660,7 +710,7 @@ public static class MoonshineProtocolCodec
             WheelDeltaY = BinaryPrimitives.ReadInt16BigEndian(source[8..10]),
             WheelDeltaX = BinaryPrimitives.ReadInt16BigEndian(source[10..12]),
             ButtonFlags = BinaryPrimitives.ReadUInt16BigEndian(source[12..14]),
-            IsAbsolute = source[14],
+            IsAbsolute = isAbsolute,
             Reserved = source[15],
             TimestampOffsetUs = BinaryPrimitives.ReadUInt32BigEndian(source[16..20])
         };
@@ -696,9 +746,12 @@ public static class MoonshineProtocolCodec
         payload = default;
         if (source.Length < 24) return MoonshineErrorCode.BufferTooSmall;
 
+        byte gamepadIndex = source[0];
+        if (gamepadIndex > 3) return MoonshineErrorCode.InvalidConfigurationParameter;
+
         payload = new MoonshineInputGamepadPayload
         {
-            GamepadIndex = source[0],
+            GamepadIndex = gamepadIndex,
             Reserved = source[1],
             ButtonMask = BinaryPrimitives.ReadUInt16BigEndian(source[2..4]),
             LeftTrigger = source[4],
@@ -740,9 +793,12 @@ public static class MoonshineProtocolCodec
         payload = default;
         if (source.Length < 40) return MoonshineErrorCode.BufferTooSmall;
 
+        uint streamId = BinaryPrimitives.ReadUInt32BigEndian(source[..4]);
+        if (streamId == 0) return MoonshineErrorCode.StreamNotFound;
+
         payload = new MoonshineFeedbackLossStatsPayload
         {
-            StreamId = BinaryPrimitives.ReadUInt32BigEndian(source[..4]),
+            StreamId = streamId,
             LastReceivedFrameIndex = BinaryPrimitives.ReadUInt64BigEndian(source[4..12]),
             PacketsReceived = BinaryPrimitives.ReadUInt32BigEndian(source[12..16]),
             PacketsLost = BinaryPrimitives.ReadUInt32BigEndian(source[16..20]),
@@ -779,16 +835,35 @@ public static class MoonshineProtocolCodec
         payload = default;
         if (source.Length < 48) return MoonshineErrorCode.BufferTooSmall;
 
+        ushort serverMajor = BinaryPrimitives.ReadUInt16BigEndian(source[..2]);
+        ushort serverMinor = BinaryPrimitives.ReadUInt16BigEndian(source[2..4]);
+        uint caps = BinaryPrimitives.ReadUInt32BigEndian(source[4..8]);
+        ulong sessionId = BinaryPrimitives.ReadUInt64BigEndian(source[8..16]);
+        ulong serverNonce = BinaryPrimitives.ReadUInt64BigEndian(source[16..24]);
+        var salt = new MoonshineUuid128(source[24..40]);
+        uint leaseSec = BinaryPrimitives.ReadUInt32BigEndian(source[40..44]);
+        uint reserved = BinaryPrimitives.ReadUInt32BigEndian(source[44..48]);
+
+        if (serverMajor == 0 && serverMinor == 0)
+        {
+            return MoonshineErrorCode.UnsupportedVersion;
+        }
+
+        if (sessionId == 0)
+        {
+            return MoonshineErrorCode.InvalidSession;
+        }
+
         payload = new MoonshineHelloResponsePayload
         {
-            ServerVersionMajor = BinaryPrimitives.ReadUInt16BigEndian(source[..2]),
-            ServerVersionMinor = BinaryPrimitives.ReadUInt16BigEndian(source[2..4]),
-            NegotiatedCapabilities = (MoonshineCapabilities)BinaryPrimitives.ReadUInt32BigEndian(source[4..8]),
-            AssignedSessionId = BinaryPrimitives.ReadUInt64BigEndian(source[8..16]),
-            ServerNonce = BinaryPrimitives.ReadUInt64BigEndian(source[16..24]),
-            ChallengeSalt = new MoonshineUuid128(source[24..40]),
-            SessionLeaseSeconds = BinaryPrimitives.ReadUInt32BigEndian(source[40..44]),
-            Reserved = BinaryPrimitives.ReadUInt32BigEndian(source[44..48])
+            ServerVersionMajor = serverMajor,
+            ServerVersionMinor = serverMinor,
+            NegotiatedCapabilities = (MoonshineCapabilities)caps,
+            AssignedSessionId = sessionId,
+            ServerNonce = serverNonce,
+            ChallengeSalt = salt,
+            SessionLeaseSeconds = leaseSec,
+            Reserved = reserved
         };
 
         return MoonshineErrorCode.Success;
@@ -824,23 +899,48 @@ public static class MoonshineProtocolCodec
         payload = default;
         if (source.Length < 40) return MoonshineErrorCode.BufferTooSmall;
 
+        uint videoWidth = BinaryPrimitives.ReadUInt32BigEndian(source[..4]);
+        uint videoHeight = BinaryPrimitives.ReadUInt32BigEndian(source[4..8]);
+        uint videoFps = BinaryPrimitives.ReadUInt32BigEndian(source[8..12]);
+        uint videoBitrateKbps = BinaryPrimitives.ReadUInt32BigEndian(source[12..16]);
+        var videoCodec = (MoonshineVideoCodec)source[16];
+        var videoColorFormat = (MoonshineColorFormat)source[17];
+        byte audioChannels = source[18];
+        var audioCodec = (MoonshineAudioCodec)source[19];
+        uint audioSampleRate = BinaryPrimitives.ReadUInt32BigEndian(source[20..24]);
+        uint audioBitrateKbps = BinaryPrimitives.ReadUInt32BigEndian(source[24..28]);
+        ushort clientUdpVideoPort = BinaryPrimitives.ReadUInt16BigEndian(source[28..30]);
+        ushort clientUdpAudioPort = BinaryPrimitives.ReadUInt16BigEndian(source[30..32]);
+        ushort clientUdpFeedbackPort = BinaryPrimitives.ReadUInt16BigEndian(source[32..34]);
+        ushort reserved = BinaryPrimitives.ReadUInt16BigEndian(source[34..36]);
+        uint mtuPayloadSize = BinaryPrimitives.ReadUInt32BigEndian(source[36..40]);
+
+        if (videoWidth == 0 || videoWidth > 16384 || videoHeight == 0 || videoHeight > 16384 || videoFps == 0 || videoFps > 1000 ||
+            videoCodec == MoonshineVideoCodec.Unknown || audioCodec == MoonshineAudioCodec.Unknown ||
+            (audioChannels != 1 && audioChannels != 2 && audioChannels != 6 && audioChannels != 8) ||
+            audioSampleRate < 8000 || audioSampleRate > 384000 ||
+            mtuPayloadSize < 576 || mtuPayloadSize > 65507)
+        {
+            return MoonshineErrorCode.InvalidConfigurationParameter;
+        }
+
         payload = new MoonshineSessionSetupPayload
         {
-            VideoWidth = BinaryPrimitives.ReadUInt32BigEndian(source[..4]),
-            VideoHeight = BinaryPrimitives.ReadUInt32BigEndian(source[4..8]),
-            VideoFps = BinaryPrimitives.ReadUInt32BigEndian(source[8..12]),
-            VideoBitrateKbps = BinaryPrimitives.ReadUInt32BigEndian(source[12..16]),
-            VideoCodec = (MoonshineVideoCodec)source[16],
-            VideoColorFormat = (MoonshineColorFormat)source[17],
-            AudioChannels = source[18],
-            AudioCodec = (MoonshineAudioCodec)source[19],
-            AudioSampleRate = BinaryPrimitives.ReadUInt32BigEndian(source[20..24]),
-            AudioBitrateKbps = BinaryPrimitives.ReadUInt32BigEndian(source[24..28]),
-            ClientUdpVideoPort = BinaryPrimitives.ReadUInt16BigEndian(source[28..30]),
-            ClientUdpAudioPort = BinaryPrimitives.ReadUInt16BigEndian(source[30..32]),
-            ClientUdpFeedbackPort = BinaryPrimitives.ReadUInt16BigEndian(source[32..34]),
-            Reserved = BinaryPrimitives.ReadUInt16BigEndian(source[34..36]),
-            MtuPayloadSize = BinaryPrimitives.ReadUInt32BigEndian(source[36..40])
+            VideoWidth = videoWidth,
+            VideoHeight = videoHeight,
+            VideoFps = videoFps,
+            VideoBitrateKbps = videoBitrateKbps,
+            VideoCodec = videoCodec,
+            VideoColorFormat = videoColorFormat,
+            AudioChannels = audioChannels,
+            AudioCodec = audioCodec,
+            AudioSampleRate = audioSampleRate,
+            AudioBitrateKbps = audioBitrateKbps,
+            ClientUdpVideoPort = clientUdpVideoPort,
+            ClientUdpAudioPort = clientUdpAudioPort,
+            ClientUdpFeedbackPort = clientUdpFeedbackPort,
+            Reserved = reserved,
+            MtuPayloadSize = mtuPayloadSize
         };
 
         return MoonshineErrorCode.Success;
@@ -871,22 +971,42 @@ public static class MoonshineProtocolCodec
         payload = default;
         if (source.Length < 32) return MoonshineErrorCode.BufferTooSmall;
 
+        var statusCode = (MoonshineErrorCode)BinaryPrimitives.ReadUInt32BigEndian(source[..4]);
+        uint videoStreamId = BinaryPrimitives.ReadUInt32BigEndian(source[4..8]);
+        uint audioStreamId = BinaryPrimitives.ReadUInt32BigEndian(source[8..12]);
+        uint feedbackStreamId = BinaryPrimitives.ReadUInt32BigEndian(source[12..16]);
+        ushort hostUdpVideoPort = BinaryPrimitives.ReadUInt16BigEndian(source[16..18]);
+        ushort hostUdpAudioPort = BinaryPrimitives.ReadUInt16BigEndian(source[18..20]);
+        ushort hostUdpFeedbackPort = BinaryPrimitives.ReadUInt16BigEndian(source[20..22]);
+        ushort hostUdpInputPort = BinaryPrimitives.ReadUInt16BigEndian(source[22..24]);
+        uint negotiatedMtu = BinaryPrimitives.ReadUInt32BigEndian(source[24..28]);
+        uint reserved = BinaryPrimitives.ReadUInt32BigEndian(source[28..32]);
+
+        if (statusCode == MoonshineErrorCode.Success)
+        {
+            if (videoStreamId == 0 || audioStreamId == 0 || negotiatedMtu < 576 || negotiatedMtu > 65507)
+            {
+                return MoonshineErrorCode.InvalidConfigurationParameter;
+            }
+        }
+
         payload = new MoonshineSessionSetupResponsePayload
         {
-            StatusCode = (MoonshineErrorCode)BinaryPrimitives.ReadUInt32BigEndian(source[..4]),
-            VideoStreamId = BinaryPrimitives.ReadUInt32BigEndian(source[4..8]),
-            AudioStreamId = BinaryPrimitives.ReadUInt32BigEndian(source[8..12]),
-            FeedbackStreamId = BinaryPrimitives.ReadUInt32BigEndian(source[12..16]),
-            HostUdpVideoPort = BinaryPrimitives.ReadUInt16BigEndian(source[16..18]),
-            HostUdpAudioPort = BinaryPrimitives.ReadUInt16BigEndian(source[18..20]),
-            HostUdpFeedbackPort = BinaryPrimitives.ReadUInt16BigEndian(source[20..22]),
-            HostUdpInputPort = BinaryPrimitives.ReadUInt16BigEndian(source[22..24]),
-            NegotiatedMtu = BinaryPrimitives.ReadUInt32BigEndian(source[24..28]),
-            Reserved = BinaryPrimitives.ReadUInt32BigEndian(source[28..32])
+            StatusCode = statusCode,
+            VideoStreamId = videoStreamId,
+            AudioStreamId = audioStreamId,
+            FeedbackStreamId = feedbackStreamId,
+            HostUdpVideoPort = hostUdpVideoPort,
+            HostUdpAudioPort = hostUdpAudioPort,
+            HostUdpFeedbackPort = hostUdpFeedbackPort,
+            HostUdpInputPort = hostUdpInputPort,
+            NegotiatedMtu = negotiatedMtu,
+            Reserved = reserved
         };
 
         return MoonshineErrorCode.Success;
     }
+
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool TryWriteTelemetryReport(in MoonshineTelemetryReportPayload payload, Span<byte> destination)
@@ -944,11 +1064,17 @@ public static class MoonshineProtocolCodec
         payload = default;
         if (source.Length < 16) return MoonshineErrorCode.BufferTooSmall;
 
+        uint streamId = BinaryPrimitives.ReadUInt32BigEndian(source[..4]);
+        uint reasonCode = BinaryPrimitives.ReadUInt32BigEndian(source[12..16]);
+
+        if (streamId == 0) return MoonshineErrorCode.StreamNotFound;
+        if (reasonCode == 0) return MoonshineErrorCode.InvalidConfigurationParameter;
+
         payload = new MoonshineIdrRequestPayload
         {
-            StreamId = BinaryPrimitives.ReadUInt32BigEndian(source[..4]),
+            StreamId = streamId,
             LastValidFrameIndex = BinaryPrimitives.ReadUInt64BigEndian(source[4..12]),
-            ReasonCode = BinaryPrimitives.ReadUInt32BigEndian(source[12..16])
+            ReasonCode = reasonCode
         };
 
         return MoonshineErrorCode.Success;
@@ -1068,25 +1194,54 @@ public static class MoonshineProtocolCodec
         payload = default;
         if (source.Length < 48) return MoonshineErrorCode.BufferTooSmall;
 
+        uint configVersion = BinaryPrimitives.ReadUInt32BigEndian(source[..4]);
+        uint displayWidth = BinaryPrimitives.ReadUInt32BigEndian(source[4..8]);
+        uint displayHeight = BinaryPrimitives.ReadUInt32BigEndian(source[8..12]);
+        uint refreshRateHz = BinaryPrimitives.ReadUInt32BigEndian(source[12..16]);
+        uint targetBitrateKbps = BinaryPrimitives.ReadUInt32BigEndian(source[16..20]);
+        uint maxBitrateKbps = BinaryPrimitives.ReadUInt32BigEndian(source[20..24]);
+        var preferredCodec = (MoonshineVideoCodec)source[24];
+        byte hdr10Enabled = source[25];
+        byte audioChannels = source[26];
+        byte audioQualityMode = source[27];
+        uint audioBitrateKbps = BinaryPrimitives.ReadUInt32BigEndian(source[28..32]);
+        ushort inputPollingRateHz = BinaryPrimitives.ReadUInt16BigEndian(source[32..34]);
+        byte micPassthroughEnabled = source[34];
+        byte virtualAudioDriverEnabled = source[35];
+        uint res1 = BinaryPrimitives.ReadUInt32BigEndian(source[36..40]);
+        uint res2 = BinaryPrimitives.ReadUInt32BigEndian(source[40..44]);
+        uint res3 = BinaryPrimitives.ReadUInt32BigEndian(source[44..48]);
+
+        if (displayWidth == 0 || displayWidth > 16384 || displayHeight == 0 || displayHeight > 16384 || refreshRateHz == 0 || refreshRateHz > 1000 ||
+            (audioChannels != 1 && audioChannels != 2 && audioChannels != 6 && audioChannels != 8))
+        {
+            return MoonshineErrorCode.InvalidConfigurationParameter;
+        }
+
+        if (preferredCodec == MoonshineVideoCodec.Unknown)
+        {
+            return MoonshineErrorCode.UnsupportedCodec;
+        }
+
         payload = new MoonshineHostConfigurationPayload
         {
-            ConfigVersion = BinaryPrimitives.ReadUInt32BigEndian(source[..4]),
-            DisplayWidth = BinaryPrimitives.ReadUInt32BigEndian(source[4..8]),
-            DisplayHeight = BinaryPrimitives.ReadUInt32BigEndian(source[8..12]),
-            RefreshRateHz = BinaryPrimitives.ReadUInt32BigEndian(source[12..16]),
-            TargetBitrateKbps = BinaryPrimitives.ReadUInt32BigEndian(source[16..20]),
-            MaxBitrateKbps = BinaryPrimitives.ReadUInt32BigEndian(source[20..24]),
-            PreferredCodec = (MoonshineVideoCodec)source[24],
-            Hdr10Enabled = source[25],
-            AudioChannels = source[26],
-            AudioQualityMode = source[27],
-            AudioBitrateKbps = BinaryPrimitives.ReadUInt32BigEndian(source[28..32]),
-            InputPollingRateHz = BinaryPrimitives.ReadUInt16BigEndian(source[32..34]),
-            MicPassthroughEnabled = source[34],
-            VirtualAudioDriverEnabled = source[35],
-            Reserved1 = BinaryPrimitives.ReadUInt32BigEndian(source[36..40]),
-            Reserved2 = BinaryPrimitives.ReadUInt32BigEndian(source[40..44]),
-            Reserved3 = BinaryPrimitives.ReadUInt32BigEndian(source[44..48])
+            ConfigVersion = configVersion,
+            DisplayWidth = displayWidth,
+            DisplayHeight = displayHeight,
+            RefreshRateHz = refreshRateHz,
+            TargetBitrateKbps = targetBitrateKbps,
+            MaxBitrateKbps = maxBitrateKbps,
+            PreferredCodec = preferredCodec,
+            Hdr10Enabled = hdr10Enabled,
+            AudioChannels = audioChannels,
+            AudioQualityMode = audioQualityMode,
+            AudioBitrateKbps = audioBitrateKbps,
+            InputPollingRateHz = inputPollingRateHz,
+            MicPassthroughEnabled = micPassthroughEnabled,
+            VirtualAudioDriverEnabled = virtualAudioDriverEnabled,
+            Reserved1 = res1,
+            Reserved2 = res2,
+            Reserved3 = res3
         };
 
         return MoonshineErrorCode.Success;
