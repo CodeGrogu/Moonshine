@@ -119,4 +119,50 @@ public unsafe class StructLayoutTests
         int size = sizeof(MoonshineDecoderCaps);
         size.Should().Be(20);
     }
+
+    [Fact]
+    public void MoonshineGpuAdapter_HasExactExpectedSizeAndLayout()
+    {
+        sizeof(MoonshineGpuAdapter).Should().Be(184);
+        Marshal.SizeOf<MoonshineGpuAdapter>().Should().Be(184);
+
+        Marshal.OffsetOf<MoonshineGpuAdapter>(nameof(MoonshineGpuAdapter.Index)).ToInt32().Should().Be(0);
+        Marshal.OffsetOf<MoonshineGpuAdapter>(nameof(MoonshineGpuAdapter.VendorId)).ToInt32().Should().Be(4);
+        Marshal.OffsetOf<MoonshineGpuAdapter>(nameof(MoonshineGpuAdapter.DeviceId)).ToInt32().Should().Be(8);
+        Marshal.OffsetOf<MoonshineGpuAdapter>(nameof(MoonshineGpuAdapter.SubsystemId)).ToInt32().Should().Be(12);
+        Marshal.OffsetOf<MoonshineGpuAdapter>(nameof(MoonshineGpuAdapter.Revision)).ToInt32().Should().Be(16);
+        Marshal.OffsetOf<MoonshineGpuAdapter>(nameof(MoonshineGpuAdapter.IsSoftware)).ToInt32().Should().Be(20);
+        Marshal.OffsetOf<MoonshineGpuAdapter>(nameof(MoonshineGpuAdapter.HasOutput)).ToInt32().Should().Be(24);
+        Marshal.OffsetOf<MoonshineGpuAdapter>(nameof(MoonshineGpuAdapter.Reserved)).ToInt32().Should().Be(28);
+        Marshal.OffsetOf<MoonshineGpuAdapter>(nameof(MoonshineGpuAdapter.AdapterLuid)).ToInt32().Should().Be(32);
+        Marshal.OffsetOf<MoonshineGpuAdapter>(nameof(MoonshineGpuAdapter.DedicatedVideoMemory)).ToInt32().Should().Be(40);
+        Marshal.OffsetOf<MoonshineGpuAdapter>(nameof(MoonshineGpuAdapter.SharedSystemMemory)).ToInt32().Should().Be(48);
+        Marshal.OffsetOf<MoonshineGpuAdapter>(nameof(MoonshineGpuAdapter.Description)).ToInt32().Should().Be(56);
+    }
+
+    [Fact]
+    public void MoonshineQsvDiagnosticReport_HasExactExpectedSizeAndLayout()
+    {
+        sizeof(MoonshineQsvDiagnosticReport).Should().Be(256);
+        Marshal.SizeOf<MoonshineQsvDiagnosticReport>().Should().Be(256);
+
+        Marshal.OffsetOf<MoonshineQsvDiagnosticReport>(nameof(MoonshineQsvDiagnosticReport.AdapterFound)).ToInt32().Should().Be(0);
+        Marshal.OffsetOf<MoonshineQsvDiagnosticReport>(nameof(MoonshineQsvDiagnosticReport.AdapterDeviceId)).ToInt32().Should().Be(4);
+        Marshal.OffsetOf<MoonshineQsvDiagnosticReport>(nameof(MoonshineQsvDiagnosticReport.D3D11DeviceCreated)).ToInt32().Should().Be(8);
+        Marshal.OffsetOf<MoonshineQsvDiagnosticReport>(nameof(MoonshineQsvDiagnosticReport.D3D11VendorVerified)).ToInt32().Should().Be(12);
+        Marshal.OffsetOf<MoonshineQsvDiagnosticReport>(nameof(MoonshineQsvDiagnosticReport.VplDllLoaded)).ToInt32().Should().Be(16);
+        Marshal.OffsetOf<MoonshineQsvDiagnosticReport>(nameof(MoonshineQsvDiagnosticReport.VplSessionCreated)).ToInt32().Should().Be(20);
+        Marshal.OffsetOf<MoonshineQsvDiagnosticReport>(nameof(MoonshineQsvDiagnosticReport.D3D11HandleBound)).ToInt32().Should().Be(24);
+        Marshal.OffsetOf<MoonshineQsvDiagnosticReport>(nameof(MoonshineQsvDiagnosticReport.H264Supported)).ToInt32().Should().Be(28);
+        Marshal.OffsetOf<MoonshineQsvDiagnosticReport>(nameof(MoonshineQsvDiagnosticReport.HevcSupported)).ToInt32().Should().Be(32);
+        Marshal.OffsetOf<MoonshineQsvDiagnosticReport>(nameof(MoonshineQsvDiagnosticReport.Av1Supported)).ToInt32().Should().Be(36);
+        Marshal.OffsetOf<MoonshineQsvDiagnosticReport>(nameof(MoonshineQsvDiagnosticReport.EncoderInitialized)).ToInt32().Should().Be(40);
+        Marshal.OffsetOf<MoonshineQsvDiagnosticReport>(nameof(MoonshineQsvDiagnosticReport.FrameEncoded)).ToInt32().Should().Be(44);
+        Marshal.OffsetOf<MoonshineQsvDiagnosticReport>(nameof(MoonshineQsvDiagnosticReport.BitstreamValid)).ToInt32().Should().Be(48);
+        Marshal.OffsetOf<MoonshineQsvDiagnosticReport>(nameof(MoonshineQsvDiagnosticReport.DecoderLoopbackPassed)).ToInt32().Should().Be(52);
+        Marshal.OffsetOf<MoonshineQsvDiagnosticReport>(nameof(MoonshineQsvDiagnosticReport.LastMfxStatus)).ToInt32().Should().Be(56);
+        Marshal.OffsetOf<MoonshineQsvDiagnosticReport>(nameof(MoonshineQsvDiagnosticReport.LastHResult)).ToInt32().Should().Be(60);
+        Marshal.OffsetOf<MoonshineQsvDiagnosticReport>(nameof(MoonshineQsvDiagnosticReport.AdapterDescription)).ToInt32().Should().Be(64);
+        Marshal.OffsetOf<MoonshineQsvDiagnosticReport>(nameof(MoonshineQsvDiagnosticReport.VplDllName)).ToInt32().Should().Be(192);
+    }
 }

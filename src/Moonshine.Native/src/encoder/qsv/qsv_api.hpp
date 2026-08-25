@@ -1,6 +1,7 @@
 #pragma once
 
 #include "encoder/qsv/qsv_types.hpp"
+#include <string>
 
 namespace moonshine::encoder::qsv {
 
@@ -20,6 +21,7 @@ public:
     [[nodiscard]] bool is_loaded() const noexcept;
     [[nodiscard]] bool is_vpl() const noexcept;
     [[nodiscard]] mfxVersion version() const noexcept;
+    [[nodiscard]] const std::string& resolved_dll_name() const noexcept;
 
     // oneVPL 2.x Function pointers
     MFXLoad_Fn MFXLoad{nullptr};
@@ -53,6 +55,7 @@ private:
     mfxVersion _version{};
     bool _loaded{false};
     bool _is_vpl{false};
+    std::string _resolved_dll_name;
 };
 
 } // namespace moonshine::encoder::qsv

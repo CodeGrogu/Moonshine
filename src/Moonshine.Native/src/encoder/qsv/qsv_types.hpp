@@ -63,6 +63,13 @@ enum : uint32_t {
     MFX_IMPL_VIA_VAAPI                  = 0x0300
 };
 
+enum : uint32_t {
+    MFX_ACCEL_MODE_NA                   = 0,
+    MFX_ACCEL_MODE_VIA_D3D9             = 1,
+    MFX_ACCEL_MODE_VIA_D3D11            = 2,
+    MFX_ACCEL_MODE_VIA_VAAPI            = 3
+};
+
 typedef int32_t mfxHandleType;
 
 enum : int32_t {

@@ -5,6 +5,7 @@
 
 #if defined(_WIN32)
 #include <d3d11.h>
+#include <d3d11_4.h>
 #include <dxgi.h>
 #include <wrl/client.h>
 using Microsoft::WRL::ComPtr;
@@ -85,27 +86,53 @@ bool QsvSession::open(QsvApi& api, void* d3d_device) {
     _api = &api;
     _d3d_device = d3d_device;
 
-    if (api.is_vpl() && api.MFXLoad && api.MFXCreateConfig && api.MFXCreateSession) {
+    if (api.is_vpl() && api.MFXLoad && api.MFXCreateSession) {
         // Modern oneVPL 2.x session initialization architecture
         mfxLoader loader = api.MFXLoad();
         if (loader) {
-            mfxConfig cfg = api.MFXCreateConfig(loader);
-            if (cfg && api.MFXSetConfigFilterProperty) {
-                mfxVariant var{};
-                var.Type = MFX_VARIANT_TYPE_U32;
-                var.Data.U32 = MFX_IMPL_TYPE_HARDWARE;
-                api.MFXSetConfigFilterProperty(cfg, reinterpret_cast<const uint8_t*>("mfxImplDescription.Impl"), var);
+            if (api.MFXCreateConfig && api.MFXSetConfigFilterProperty) {
+                mfxConfig cfg = api.MFXCreateConfig(loader);
+                if (cfg) {
+                    mfxVariant var{};
+                    var.Type = MFX_VARIANT_TYPE_U32;
+                    var.Data.U32 = MFX_IMPL_TYPE_HARDWARE;
+                    api.MFXSetConfigFilterProperty(cfg, reinterpret_cast<const uint8_t*>("mfxImplDescription.Impl"), var);
 
-                mfxVariant accelVar{};
-                accelVar.Type = MFX_VARIANT_TYPE_U32;
-                accelVar.Data.U32 = MFX_IMPL_VIA_D3D11;
-                api.MFXSetConfigFilterProperty(cfg, reinterpret_cast<const uint8_t*>("mfxImplDescription.AccelerationMode"), accelVar);
+                    mfxVariant accelVar{};
+                    accelVar.Type = MFX_VARIANT_TYPE_U32;
+                    accelVar.Data.U32 = MFX_ACCEL_MODE_VIA_D3D11;
+                    api.MFXSetConfigFilterProperty(cfg, reinterpret_cast<const uint8_t*>("mfxImplDescription.AccelerationMode"), accelVar);
+                }
             }
 
-            mfxStatus sts = api.MFXCreateSession(loader, 0, &_session);
+            mfxStatus sts = MFX_ERR_NOT_FOUND;
+            for (uint32_t implIdx = 0; implIdx < 8; ++implIdx) {
+                sts = api.MFXCreateSession(loader, implIdx, &_session);
+                _last_status = sts;
+                if (sts == MFX_ERR_NONE && _session) {
+                    break;
+                }
+            }
+
+            if (sts != MFX_ERR_NONE || !_session) {
+                // Try without config filter properties (enumerate all installed runtimes)
+                api.MFXUnload(loader);
+                _session = nullptr;
+                loader = api.MFXLoad();
+                if (loader) {
+                    for (uint32_t implIdx = 0; implIdx < 8; ++implIdx) {
+                        sts = api.MFXCreateSession(loader, implIdx, &_session);
+                        _last_status = sts;
+                        if (sts == MFX_ERR_NONE && _session) {
+                            break;
+                        }
+                    }
+                }
+            }
+
             if (sts == MFX_ERR_NONE && _session) {
                 _loader = loader;
-            } else {
+            } else if (loader) {
                 api.MFXUnload(loader);
                 _loader = nullptr;
                 _session = nullptr;
@@ -122,9 +149,11 @@ bool QsvSession::open(QsvApi& api, void* d3d_device) {
         initPar.GPUCopy = 1;
 
         mfxStatus sts = api.MFXInitEx(initPar, &_session);
+        _last_status = sts;
         if (sts != MFX_ERR_NONE || !_session) {
             initPar.Implementation = MFX_IMPL_AUTO_ANY;
             sts = api.MFXInitEx(initPar, &_session);
+            _last_status = sts;
             if (sts != MFX_ERR_NONE || !_session) {
                 close();
                 return false;
@@ -137,13 +166,26 @@ bool QsvSession::open(QsvApi& api, void* d3d_device) {
         return false;
     }
 
+#if defined(_WIN32)
+    auto* dev = static_cast<ID3D11Device*>(d3d_device);
+    Microsoft::WRL::ComPtr<ID3D11Multithread> multithread;
+    if (SUCCEEDED(dev->QueryInterface(IID_PPV_ARGS(&multithread)))) {
+        multithread->SetMultithreadProtected(TRUE);
+    }
+#endif
+
     mfxStatus sts = api.MFXVideoCORE_SetHandle(_session, MFX_HANDLE_D3D11_DEVICE, d3d_device);
+    _last_status = sts;
     if (sts != MFX_ERR_NONE) {
         close();
         return false;
     }
 
     return true;
+}
+
+mfxStatus QsvSession::last_status() const noexcept {
+    return _last_status;
 }
 
 bool QsvSession::configure(const EncoderConfig& config) {
@@ -167,18 +209,19 @@ bool QsvSession::configure(const EncoderConfig& config) {
     _params.mfx.CodecId = codec_id;
     _params.mfx.TargetUsage = static_cast<uint16_t>(_usage == QsvTargetUsage::BestSpeed ? MFX_TARGETUSAGE_BEST_SPEED : (_usage == QsvTargetUsage::Balanced ? MFX_TARGETUSAGE_BALANCED : MFX_TARGETUSAGE_BEST_QUALITY));
     _params.mfx.TargetKbps = static_cast<uint16_t>(std::min<uint32_t>(config.bitrate_kbps, 65535));
-    uint32_t peak = config.peak_bitrate_kbps > 0 ? config.peak_bitrate_kbps : config.bitrate_kbps;
-    _params.mfx.MaxKbps = static_cast<uint16_t>(std::min<uint32_t>(peak, 65535));
+    _params.mfx.MaxKbps = _params.mfx.TargetKbps;
     _params.mfx.RateControlMethod = MFX_RATECONTROL_CBR;
-    _params.mfx.LowPower = _low_power_vdenc ? 1 : 0;
+    _params.mfx.BufferSizeInKB = static_cast<uint16_t>(std::max<uint32_t>(100, config.bitrate_kbps / 8));
+    _params.mfx.InitialDelayInKB = static_cast<uint16_t>(_params.mfx.BufferSizeInKB / 2);
+    _params.mfx.LowPower = 0;
     _params.mfx.GopRefDist = 1; // Zero B-frames
-    _params.mfx.GopPicSize = static_cast<uint16_t>(config.gop_length > 0 ? config.gop_length : 0xFFFF);
+    _params.mfx.GopPicSize = static_cast<uint16_t>(config.gop_length > 0 ? config.gop_length : 60);
     _params.mfx.IdrInterval = 0;
     _params.mfx.NumSlice = 1;
 
     _params.mfx.FrameInfo.FourCC = (config.codec == static_cast<uint32_t>(VideoCodec::HevcMain10)) ? MFX_FOURCC_P010 : MFX_FOURCC_NV12;
     _params.mfx.FrameInfo.Width = static_cast<uint16_t>((config.width + 15) & ~15);
-    _params.mfx.FrameInfo.Height = static_cast<uint16_t>((config.height + 31) & ~31);
+    _params.mfx.FrameInfo.Height = static_cast<uint16_t>((config.height + 15) & ~15);
     _params.mfx.FrameInfo.CropX = 0;
     _params.mfx.FrameInfo.CropY = 0;
     _params.mfx.FrameInfo.CropW = static_cast<uint16_t>(config.width);
@@ -209,25 +252,27 @@ bool QsvSession::configure(const EncoderConfig& config) {
         _ext_opt2.IntRefQPDelta = static_cast<int16_t>(_intra_refresh_qp_delta);
     }
 
-    _ext_buffers[0] = reinterpret_cast<mfxExtBuffer*>(&_ext_opt);
-    _ext_buffers[1] = reinterpret_cast<mfxExtBuffer*>(&_ext_opt2);
-    _params.ExtParam = _ext_buffers;
-    _params.NumExtParam = 2;
+    _params.ExtParam = nullptr;
+    _params.NumExtParam = 0;
 
+    mfxVideoParam inParams = _params;
     if (_api->MFXVideoENCODE_Query) {
-        _api->MFXVideoENCODE_Query(_session, &_params, &_params);
+        _api->MFXVideoENCODE_Query(_session, &inParams, &_params);
     }
 
     mfxStatus sts = _api->MFXVideoENCODE_Init(_session, &_params);
+    _last_status = sts;
     if (sts < MFX_ERR_NONE) {
-        // Fallback without extended buffers and with standard power mode
-        _params.ExtParam = nullptr;
-        _params.NumExtParam = 0;
-        _params.mfx.LowPower = 0;
-        if (_api->MFXVideoENCODE_Query) {
-            _api->MFXVideoENCODE_Query(_session, &_params, &_params);
+        // Try with H.264 if HEVC was attempted
+        if (codec_id != MFX_CODEC_AVC) {
+            _params.mfx.CodecId = MFX_CODEC_AVC;
+            inParams = _params;
+            if (_api->MFXVideoENCODE_Query) {
+                _api->MFXVideoENCODE_Query(_session, &inParams, &_params);
+            }
+            sts = _api->MFXVideoENCODE_Init(_session, &_params);
+            _last_status = sts;
         }
-        sts = _api->MFXVideoENCODE_Init(_session, &_params);
         if (sts < MFX_ERR_NONE) {
             return false;
         }

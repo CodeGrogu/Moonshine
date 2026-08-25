@@ -121,6 +121,48 @@ typedef struct MoonshineAdapterInfo {
 } MoonshineAdapterInfo;
 
 /**
+ * @brief Blittable descriptor representing comprehensive physical GPU adapter hardware inventory.
+ */
+typedef struct MoonshineGpuAdapter {
+    uint32_t index;                     // Adapter index in DXGI enumeration (0, 1, ...)
+    uint32_t vendor_id;                 // PCI Vendor ID (e.g. 0x10DE = NVIDIA, 0x8086 = Intel, 0x1002 = AMD)
+    uint32_t device_id;                 // PCI Device ID
+    uint32_t subsystem_id;              // PCI Subsystem ID
+    uint32_t revision;                  // PCI Revision number
+    uint32_t is_software;               // 1 if software adapter (e.g. Microsoft Basic Render Driver), 0 for physical hardware
+    uint32_t has_output;                // 1 if adapter has connected or active display outputs, 0 if headless/secondary
+    uint32_t reserved;                  // Explicit 32-bit padding for strict 64-bit alignment
+    uint64_t adapter_luid;              // Locally Unique Identifier (LUID)
+    uint64_t dedicated_video_memory;    // Dedicated video memory in bytes
+    uint64_t shared_system_memory;       // Shared system memory in bytes
+    char     description[128];          // Device description UTF-8 string
+} MoonshineGpuAdapter;
+
+/**
+ * @brief Blittable descriptor representing granular Intel QuickSync / oneVPL hardware diagnostic report.
+ */
+typedef struct MoonshineQsvDiagnosticReport {
+    uint32_t adapter_found;             // 1 if Intel adapter (0x8086) found in DXGI enumeration, 0 otherwise
+    uint32_t adapter_device_id;         // PCI Device ID of Intel adapter
+    uint32_t d3d11_device_created;      // 1 if ID3D11Device successfully created on Intel adapter, 0 otherwise
+    uint32_t d3d11_vendor_verified;     // 1 if D3D11 device QI/GetAdapter reports 0x8086, 0 otherwise
+    uint32_t vpl_dll_loaded;            // 1 if oneVPL / MSDK DLL loaded, 0 otherwise
+    uint32_t vpl_session_created;       // 1 if MFXCreateSession / MFXInitEx succeeded, 0 otherwise
+    uint32_t d3d11_handle_bound;        // 1 if MFXVideoCORE_SetHandle(D3D11) succeeded, 0 otherwise
+    uint32_t h264_supported;            // 1 if H.264 / AVC encoder query succeeded, 0 otherwise
+    uint32_t hevc_supported;            // 1 if HEVC / H.265 encoder query succeeded, 0 otherwise
+    uint32_t av1_supported;             // 1 if AV1 encoder query succeeded, 0 otherwise
+    uint32_t encoder_initialized;       // 1 if MFXVideoENCODE_Init succeeded, 0 otherwise
+    uint32_t frame_encoded;             // 1 if MFXVideoENCODE_EncodeFrameAsync produced bitstream, 0 otherwise
+    uint32_t bitstream_valid;           // 1 if NALU start codes / headers validated, 0 otherwise
+    uint32_t decoder_loopback_passed;   // 1 if D3D11 video decoder reconstructed frame, 0 otherwise
+    int32_t  last_mfx_status;           // Last mfxStatus return code from oneVPL API
+    int32_t  last_hresult;              // Last HRESULT return code from DirectX API
+    char     adapter_description[128];  // Intel adapter description string
+    char     vpl_dll_name[64];          // Resolved DLL name
+} MoonshineQsvDiagnosticReport;
+
+/**
  * @brief Blittable descriptor representing a physical display output.
  */
 typedef struct MoonshineDisplayInfo {
@@ -772,6 +814,11 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_capture_get_adapter_info(
     uint32_t adapter_index,
     MoonshineAdapterInfo* out_info
 );
+MOONSHINE_API int MOONSHINE_CONV moonshine_gpu_enumerate_adapters(
+    MoonshineGpuAdapter* out_adapters,
+    uint32_t max_count,
+    uint32_t* out_count
+);
 MOONSHINE_API uint32_t MOONSHINE_CONV moonshine_capture_get_display_count(uint32_t adapter_index);
 MOONSHINE_API int MOONSHINE_CONV moonshine_capture_get_display_info(
     uint32_t adapter_index,
@@ -1007,6 +1054,10 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_qsv_set_intra_refresh(
     int32_t qp_delta
 );
 
+MOONSHINE_API int MOONSHINE_CONV moonshine_qsv_run_diagnostics(
+    MoonshineQsvDiagnosticReport* out_report
+);
+
 // ============================================================================
 // Windows Mouse & Keyboard Input Injector APIs
 // ============================================================================
@@ -1223,6 +1274,40 @@ static_assert(sizeof(MoonshineSwapchainMetrics) == 24, "MoonshineSwapchainMetric
 static_assert(offsetof(MoonshineSwapchainMetrics, frames_presented) == 0, "MoonshineSwapchainMetrics::frames_presented offset mismatch");
 static_assert(offsetof(MoonshineSwapchainMetrics, presentation_errors) == 8, "MoonshineSwapchainMetrics::presentation_errors offset mismatch");
 static_assert(offsetof(MoonshineSwapchainMetrics, dropped_frames) == 16, "MoonshineSwapchainMetrics::dropped_frames offset mismatch");
+
+static_assert(sizeof(MoonshineGpuAdapter) == 184, "MoonshineGpuAdapter size mismatch");
+static_assert(offsetof(MoonshineGpuAdapter, index) == 0, "MoonshineGpuAdapter::index offset mismatch");
+static_assert(offsetof(MoonshineGpuAdapter, vendor_id) == 4, "MoonshineGpuAdapter::vendor_id offset mismatch");
+static_assert(offsetof(MoonshineGpuAdapter, device_id) == 8, "MoonshineGpuAdapter::device_id offset mismatch");
+static_assert(offsetof(MoonshineGpuAdapter, subsystem_id) == 12, "MoonshineGpuAdapter::subsystem_id offset mismatch");
+static_assert(offsetof(MoonshineGpuAdapter, revision) == 16, "MoonshineGpuAdapter::revision offset mismatch");
+static_assert(offsetof(MoonshineGpuAdapter, is_software) == 20, "MoonshineGpuAdapter::is_software offset mismatch");
+static_assert(offsetof(MoonshineGpuAdapter, has_output) == 24, "MoonshineGpuAdapter::has_output offset mismatch");
+static_assert(offsetof(MoonshineGpuAdapter, reserved) == 28, "MoonshineGpuAdapter::reserved offset mismatch");
+static_assert(offsetof(MoonshineGpuAdapter, adapter_luid) == 32, "MoonshineGpuAdapter::adapter_luid offset mismatch");
+static_assert(offsetof(MoonshineGpuAdapter, dedicated_video_memory) == 40, "MoonshineGpuAdapter::dedicated_video_memory offset mismatch");
+static_assert(offsetof(MoonshineGpuAdapter, shared_system_memory) == 48, "MoonshineGpuAdapter::shared_system_memory offset mismatch");
+static_assert(offsetof(MoonshineGpuAdapter, description) == 56, "MoonshineGpuAdapter::description offset mismatch");
+
+static_assert(sizeof(MoonshineQsvDiagnosticReport) == 256, "MoonshineQsvDiagnosticReport size mismatch");
+static_assert(offsetof(MoonshineQsvDiagnosticReport, adapter_found) == 0, "MoonshineQsvDiagnosticReport::adapter_found offset mismatch");
+static_assert(offsetof(MoonshineQsvDiagnosticReport, adapter_device_id) == 4, "MoonshineQsvDiagnosticReport::adapter_device_id offset mismatch");
+static_assert(offsetof(MoonshineQsvDiagnosticReport, d3d11_device_created) == 8, "MoonshineQsvDiagnosticReport::d3d11_device_created offset mismatch");
+static_assert(offsetof(MoonshineQsvDiagnosticReport, d3d11_vendor_verified) == 12, "MoonshineQsvDiagnosticReport::d3d11_vendor_verified offset mismatch");
+static_assert(offsetof(MoonshineQsvDiagnosticReport, vpl_dll_loaded) == 16, "MoonshineQsvDiagnosticReport::vpl_dll_loaded offset mismatch");
+static_assert(offsetof(MoonshineQsvDiagnosticReport, vpl_session_created) == 20, "MoonshineQsvDiagnosticReport::vpl_session_created offset mismatch");
+static_assert(offsetof(MoonshineQsvDiagnosticReport, d3d11_handle_bound) == 24, "MoonshineQsvDiagnosticReport::d3d11_handle_bound offset mismatch");
+static_assert(offsetof(MoonshineQsvDiagnosticReport, h264_supported) == 28, "MoonshineQsvDiagnosticReport::h264_supported offset mismatch");
+static_assert(offsetof(MoonshineQsvDiagnosticReport, hevc_supported) == 32, "MoonshineQsvDiagnosticReport::hevc_supported offset mismatch");
+static_assert(offsetof(MoonshineQsvDiagnosticReport, av1_supported) == 36, "MoonshineQsvDiagnosticReport::av1_supported offset mismatch");
+static_assert(offsetof(MoonshineQsvDiagnosticReport, encoder_initialized) == 40, "MoonshineQsvDiagnosticReport::encoder_initialized offset mismatch");
+static_assert(offsetof(MoonshineQsvDiagnosticReport, frame_encoded) == 44, "MoonshineQsvDiagnosticReport::frame_encoded offset mismatch");
+static_assert(offsetof(MoonshineQsvDiagnosticReport, bitstream_valid) == 48, "MoonshineQsvDiagnosticReport::bitstream_valid offset mismatch");
+static_assert(offsetof(MoonshineQsvDiagnosticReport, decoder_loopback_passed) == 52, "MoonshineQsvDiagnosticReport::decoder_loopback_passed offset mismatch");
+static_assert(offsetof(MoonshineQsvDiagnosticReport, last_mfx_status) == 56, "MoonshineQsvDiagnosticReport::last_mfx_status offset mismatch");
+static_assert(offsetof(MoonshineQsvDiagnosticReport, last_hresult) == 60, "MoonshineQsvDiagnosticReport::last_hresult offset mismatch");
+static_assert(offsetof(MoonshineQsvDiagnosticReport, adapter_description) == 64, "MoonshineQsvDiagnosticReport::adapter_description offset mismatch");
+static_assert(offsetof(MoonshineQsvDiagnosticReport, vpl_dll_name) == 192, "MoonshineQsvDiagnosticReport::vpl_dll_name offset mismatch");
 
 #endif
 

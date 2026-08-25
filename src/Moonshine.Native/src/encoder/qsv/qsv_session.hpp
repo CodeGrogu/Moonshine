@@ -40,6 +40,7 @@ public:
     [[nodiscard]] bool is_open() const noexcept;
     [[nodiscard]] bool is_configured() const noexcept;
     [[nodiscard]] const EncoderConfig& config() const noexcept;
+    [[nodiscard]] mfxStatus last_status() const noexcept;
 
     void set_target_usage(QsvTargetUsage usage, bool low_power_vdenc) noexcept;
     void set_intra_refresh(bool enabled, uint32_t cycle_size, int32_t qp_delta) noexcept;
@@ -49,6 +50,7 @@ private:
     void* _d3d_device{nullptr};
     mfxLoader _loader{nullptr};
     mfxSession _session{nullptr};
+    mfxStatus _last_status{MFX_ERR_NONE};
     mfxVideoParam _params{};
     mfxExtCodingOption _ext_opt{};
     mfxExtCodingOption2 _ext_opt2{};

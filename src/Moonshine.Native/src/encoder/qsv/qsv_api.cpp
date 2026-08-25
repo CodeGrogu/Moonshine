@@ -114,32 +114,29 @@ bool QsvApi::load() {
     }
 
 #if defined(_WIN32)
-    static std::wstring s_resolved_dll;
-    static std::once_flag s_probe_flag;
+    const wchar_t* dll_names[] = {
+        L"libvpl.dll",
+        L"vpl.dll",
+        L"libmfxhw64.dll",
+        L"mfxplugin64_hw.dll",
+        L"mfx64.dll",
+        L"libmfx64.dll"
+    };
 
-    std::call_once(s_probe_flag, []() {
-        const wchar_t* dll_names[] = {
-            L"vpl.dll",
-            L"libvpl.dll",
-            L"mfx64.dll",
-            L"libmfx64.dll"
-        };
-
-        for (const auto* name : dll_names) {
-            HMODULE mod = LoadLibraryExW(name, nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
-            if (mod) {
-                s_resolved_dll = name;
-                FreeLibrary(mod);
-                break;
-            }
+    for (const auto* name : dll_names) {
+        HMODULE mod = LoadLibraryExW(name, nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+        if (!mod) {
+            mod = LoadLibraryW(name);
         }
-    });
-
-    if (s_resolved_dll.empty()) {
-        return false;
+        if (mod) {
+            _module = mod;
+            char utf8_name[128] = {};
+            WideCharToMultiByte(CP_UTF8, 0, name, -1, utf8_name, sizeof(utf8_name) - 1, nullptr, nullptr);
+            _resolved_dll_name = utf8_name;
+            break;
+        }
     }
 
-    _module = LoadLibraryExW(s_resolved_dll.c_str(), nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!_module) {
         return false;
     }
@@ -218,6 +215,7 @@ void QsvApi::unload() {
     _version = {};
     _loaded = false;
     _is_vpl = false;
+    _resolved_dll_name.clear();
 }
 
 bool QsvApi::is_loaded() const noexcept {
@@ -230,6 +228,10 @@ bool QsvApi::is_vpl() const noexcept {
 
 mfxVersion QsvApi::version() const noexcept {
     return _version;
+}
+
+const std::string& QsvApi::resolved_dll_name() const noexcept {
+    return _resolved_dll_name;
 }
 
 } // namespace moonshine::encoder::qsv

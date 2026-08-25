@@ -170,6 +170,12 @@ add_executable(test_swapchain_presenter
 target_link_libraries(test_swapchain_presenter PRIVATE Moonshine.Native $<$<BOOL:${WIN32}>:d3d11 dxgi>)
 add_test(NAME test_swapchain_presenter COMMAND test_swapchain_presenter)
 
+add_executable(test_gpu_inventory
+    test_gpu_inventory.cpp
+)
+target_link_libraries(test_gpu_inventory PRIVATE Moonshine.Native $<$<BOOL:${WIN32}>:d3d11 dxgi>)
+add_test(NAME test_gpu_inventory COMMAND test_gpu_inventory)
+
 if(WIN32)
     add_custom_command(TARGET test_c_abi_export POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different

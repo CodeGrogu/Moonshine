@@ -1,0 +1,86 @@
+﻿using System.Runtime.InteropServices;
+using System.Text;
+using Moonshine.Interop;
+
+namespace Moonshine.Core.Hardware;
+
+/// <summary>
+/// Managed representation of a physical GPU adapter in the Windows 11 host system.
+/// </summary>
+public sealed record GpuAdapterInfo(
+    uint Index,
+    uint VendorId,
+    uint DeviceId,
+    uint SubsystemId,
+    uint Revision,
+    bool IsSoftware,
+    bool HasOutput,
+    ulong AdapterLuid,
+    ulong DedicatedVideoMemoryBytes,
+    ulong SharedSystemMemoryBytes,
+    string Description
+)
+{
+    public bool IsNvidia => VendorId == 0x10DE;
+    public bool IsIntel => VendorId == 0x8086;
+    public bool IsAmd => VendorId == 0x1002;
+}
+
+/// <summary>
+/// Hardware inventory engine that enumerates all physical DXGI adapters across the host machine.
+/// Decouples system-wide GPU inventory from device-specific encoder suitability.
+/// </summary>
+public static class GpuAdapterInventory
+{
+    /// <summary>
+    /// Enumerates all DXGI adapters present on the Windows 11 system.
+    /// </summary>
+    public static unsafe IReadOnlyList<GpuAdapterInfo> EnumerateAdapters()
+    {
+        uint totalCount = 0;
+        int queryRes = MoonshineNativeMethods.GpuEnumerateAdapters(null, 0, out totalCount);
+        if (queryRes != 0 || totalCount == 0)
+        {
+            return Array.Empty<GpuAdapterInfo>();
+        }
+
+        Span<MoonshineGpuAdapter> rawAdapters = stackalloc MoonshineGpuAdapter[(int)totalCount];
+        fixed (MoonshineGpuAdapter* ptr = rawAdapters)
+        {
+            int fillRes = MoonshineNativeMethods.GpuEnumerateAdapters(ptr, totalCount, out totalCount);
+            if (fillRes != 0)
+            {
+                return Array.Empty<GpuAdapterInfo>();
+            }
+        }
+
+        var results = new List<GpuAdapterInfo>((int)totalCount);
+        for (int i = 0; i < totalCount; i++)
+        {
+            ref readonly var raw = ref rawAdapters[i];
+            string description;
+            fixed (byte* descPtr = raw.Description)
+            {
+                int len = 0;
+                while (len < 128 && descPtr[len] != 0) len++;
+                description = Encoding.UTF8.GetString(descPtr, len);
+            }
+
+            results.Add(new GpuAdapterInfo(
+                Index: raw.Index,
+                VendorId: raw.VendorId,
+                DeviceId: raw.DeviceId,
+                SubsystemId: raw.SubsystemId,
+                Revision: raw.Revision,
+                IsSoftware: raw.IsSoftware != 0,
+                HasOutput: raw.HasOutput != 0,
+                AdapterLuid: raw.AdapterLuid,
+                DedicatedVideoMemoryBytes: raw.DedicatedVideoMemory,
+                SharedSystemMemoryBytes: raw.SharedSystemMemory,
+                Description: description
+            ));
+        }
+
+        return results;
+    }
+}

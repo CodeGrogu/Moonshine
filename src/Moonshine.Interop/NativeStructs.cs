@@ -87,6 +87,52 @@ public unsafe struct MoonshineAdapterInfo
 }
 
 /// <summary>
+/// Exact binary match for MoonshineGpuAdapter (C-ABI, 184 bytes, 8-byte aligned).
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 8)]
+public unsafe struct MoonshineGpuAdapter
+{
+    public uint Index;
+    public uint VendorId;
+    public uint DeviceId;
+    public uint SubsystemId;
+    public uint Revision;
+    public uint IsSoftware;
+    public uint HasOutput;
+    public uint Reserved;
+    public ulong AdapterLuid;
+    public ulong DedicatedVideoMemory;
+    public ulong SharedSystemMemory;
+    public fixed byte Description[128];
+}
+
+/// <summary>
+/// Exact binary match for MoonshineQsvDiagnosticReport (C-ABI, 256 bytes, 8-byte aligned).
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 8)]
+public unsafe struct MoonshineQsvDiagnosticReport
+{
+    public uint AdapterFound;
+    public uint AdapterDeviceId;
+    public uint D3D11DeviceCreated;
+    public uint D3D11VendorVerified;
+    public uint VplDllLoaded;
+    public uint VplSessionCreated;
+    public uint D3D11HandleBound;
+    public uint H264Supported;
+    public uint HevcSupported;
+    public uint Av1Supported;
+    public uint EncoderInitialized;
+    public uint FrameEncoded;
+    public uint BitstreamValid;
+    public uint DecoderLoopbackPassed;
+    public int LastMfxStatus;
+    public int LastHResult;
+    public fixed byte AdapterDescription[128];
+    public fixed byte VplDllName[64];
+}
+
+/// <summary>
 /// Exact binary match for MoonshineDisplayInfo (C-ABI, 36 bytes).
 /// </summary>
 [StructLayout(LayoutKind.Sequential, Pack = 1)]

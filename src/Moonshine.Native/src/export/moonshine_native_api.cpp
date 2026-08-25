@@ -26,6 +26,8 @@
 #include "moonshine/encoder/nvenc_video_encoder.hpp"
 #include "moonshine/encoder/amf_video_encoder.hpp"
 #include "moonshine/encoder/qsv_video_encoder.hpp"
+#include "encoder/qsv/qsv_api.hpp"
+#include "encoder/qsv/qsv_session.hpp"
 #include "moonshine/input/windows_input_injector.h"
 
 #include <unordered_map>
@@ -1292,6 +1294,76 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_capture_get_adapter_info(
 #endif
 }
 
+MOONSHINE_API int MOONSHINE_CONV moonshine_gpu_enumerate_adapters(
+    MoonshineGpuAdapter* out_adapters,
+    uint32_t max_count,
+    uint32_t* out_count
+) {
+    if (out_count) *out_count = 0;
+#if defined(_WIN32)
+    Microsoft::WRL::ComPtr<IDXGIFactory1> factory;
+    if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) {
+        return -1;
+    }
+
+    uint32_t count = 0;
+    Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
+    for (UINT i = 0; factory->EnumAdapters1(i, &adapter) != DXGI_ERROR_NOT_FOUND; ++i) {
+        DXGI_ADAPTER_DESC1 desc{};
+        if (FAILED(adapter->GetDesc1(&desc))) {
+            continue;
+        }
+
+        if (out_adapters && count < max_count) {
+            auto& out = out_adapters[count];
+            std::memset(&out, 0, sizeof(MoonshineGpuAdapter));
+            out.index = i;
+            out.vendor_id = desc.VendorId;
+            out.device_id = desc.DeviceId;
+            out.subsystem_id = desc.SubSysId;
+            out.revision = desc.Revision;
+            out.is_software = (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) ? 1 : 0;
+
+            Microsoft::WRL::ComPtr<IDXGIOutput> output;
+            out.has_output = (adapter->EnumOutputs(0, &output) != DXGI_ERROR_NOT_FOUND) ? 1 : 0;
+
+            ULARGE_INTEGER luidVal{};
+            luidVal.LowPart = desc.AdapterLuid.LowPart;
+            luidVal.HighPart = desc.AdapterLuid.HighPart;
+            out.adapter_luid = luidVal.QuadPart;
+
+            out.dedicated_video_memory = static_cast<uint64_t>(desc.DedicatedVideoMemory);
+            out.shared_system_memory = static_cast<uint64_t>(desc.SharedSystemMemory);
+
+            WideCharToMultiByte(CP_UTF8, 0, desc.Description, -1, out.description, sizeof(out.description) - 1, nullptr, nullptr);
+            out.description[sizeof(out.description) - 1] = '\0';
+        }
+        count++;
+    }
+
+    if (out_count) *out_count = count;
+    return 0;
+#else
+    if (out_adapters && max_count >= 1) {
+        auto& out = out_adapters[0];
+        std::memset(&out, 0, sizeof(MoonshineGpuAdapter));
+        out.index = 0;
+        out.vendor_id = 0x10DE;
+        out.device_id = 0x1F15;
+        out.subsystem_id = 0;
+        out.revision = 0;
+        out.is_software = 0;
+        out.has_output = 1;
+        out.adapter_luid = 1;
+        out.dedicated_video_memory = 8ULL * 1024 * 1024 * 1024;
+        out.shared_system_memory = 16ULL * 1024 * 1024 * 1024;
+        std::strncpy(out.description, "Mock Physical GPU Adapter", sizeof(out.description) - 1);
+    }
+    if (out_count) *out_count = 1;
+    return 0;
+#endif
+}
+
 MOONSHINE_API uint32_t MOONSHINE_CONV moonshine_capture_get_display_count(uint32_t adapter_index) {
 #if defined(_WIN32)
     Microsoft::WRL::ComPtr<IDXGIFactory1> factory;
@@ -2076,6 +2148,175 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_qsv_set_intra_refresh(
         return active->set_intra_refresh(enable != 0, cycle_size, qp_delta) ? 1 : 0;
     }
     return 1;
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_qsv_run_diagnostics(
+    MoonshineQsvDiagnosticReport* out_report
+) {
+    if (!out_report) return -1;
+    std::memset(out_report, 0, sizeof(MoonshineQsvDiagnosticReport));
+
+#if defined(_WIN32)
+    // 1. Adapter Discovery
+    Microsoft::WRL::ComPtr<IDXGIFactory1> factory;
+    if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) {
+        out_report->last_hresult = -1;
+        return 0;
+    }
+
+    Microsoft::WRL::ComPtr<IDXGIAdapter1> intel_adapter;
+    Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
+    for (UINT i = 0; factory->EnumAdapters1(i, &adapter) != DXGI_ERROR_NOT_FOUND; ++i) {
+        DXGI_ADAPTER_DESC1 desc{};
+        if (SUCCEEDED(adapter->GetDesc1(&desc))) {
+            if (desc.VendorId == 0x8086) {
+                intel_adapter = adapter;
+                out_report->adapter_found = 1;
+                out_report->adapter_device_id = desc.DeviceId;
+                WideCharToMultiByte(CP_UTF8, 0, desc.Description, -1, out_report->adapter_description, sizeof(out_report->adapter_description) - 1, nullptr, nullptr);
+                break;
+            }
+        }
+    }
+
+    if (!intel_adapter) {
+        return 0;
+    }
+
+    // 2. Direct3D 11 Device Creation on Intel Adapter
+    const UINT create_flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT;
+    const D3D_FEATURE_LEVEL feature_levels[] = {
+        D3D_FEATURE_LEVEL_11_1,
+        D3D_FEATURE_LEVEL_11_0
+    };
+    D3D_FEATURE_LEVEL fl{};
+    Microsoft::WRL::ComPtr<ID3D11Device> d3d_device;
+    Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
+
+    HRESULT hr = D3D11CreateDevice(
+        intel_adapter.Get(),
+        D3D_DRIVER_TYPE_UNKNOWN,
+        nullptr,
+        create_flags,
+        feature_levels,
+        2,
+        D3D11_SDK_VERSION,
+        &d3d_device,
+        &fl,
+        &context
+    );
+
+    out_report->last_hresult = static_cast<int32_t>(hr);
+    if (FAILED(hr) || !d3d_device) {
+        return 0;
+    }
+    out_report->d3d11_device_created = 1;
+
+    // 3. Verify Created Device Belongs to Intel
+    Microsoft::WRL::ComPtr<IDXGIDevice> dxgi_dev;
+    if (SUCCEEDED(d3d_device->QueryInterface(IID_PPV_ARGS(&dxgi_dev)))) {
+        Microsoft::WRL::ComPtr<IDXGIAdapter> dev_adapter;
+        if (SUCCEEDED(dxgi_dev->GetAdapter(&dev_adapter))) {
+            DXGI_ADAPTER_DESC dev_desc{};
+            if (SUCCEEDED(dev_adapter->GetDesc(&dev_desc)) && dev_desc.VendorId == 0x8086) {
+                out_report->d3d11_vendor_verified = 1;
+            }
+        }
+    }
+
+    // 4. oneVPL / MSDK Symbol Probe
+    encoder::qsv::QsvApi api;
+    if (api.load()) {
+        out_report->vpl_dll_loaded = 1;
+        std::snprintf(out_report->vpl_dll_name, sizeof(out_report->vpl_dll_name), "%s", api.resolved_dll_name().c_str());
+    } else {
+        return 0;
+    }
+
+    // 5. Codec Capability Queries
+    out_report->h264_supported = encoder::QsvVideoEncoder::query_codec_support(encoder::VideoCodec::H264) ? 1 : 0;
+    out_report->hevc_supported = encoder::QsvVideoEncoder::query_codec_support(encoder::VideoCodec::Hevc) ? 1 : 0;
+    out_report->av1_supported = encoder::QsvVideoEncoder::query_codec_support(encoder::VideoCodec::Av1) ? 1 : 0;
+
+    // 6. oneVPL Session Initialisation & D3D11 Binding
+    encoder::qsv::QsvSession session;
+    if (session.open(api, d3d_device.Get())) {
+        out_report->vpl_session_created = 1;
+        out_report->d3d11_handle_bound = 1;
+    } else {
+        out_report->last_mfx_status = static_cast<int32_t>(session.last_status());
+        api.unload();
+        return 0;
+    }
+
+    // 7. Configure Encoder
+    encoder::EncoderConfig cfg{};
+    cfg.width = 1920;
+    cfg.height = 1080;
+    cfg.fps = 60;
+    cfg.bitrate_kbps = 5000;
+    cfg.peak_bitrate_kbps = 5000;
+    cfg.codec = static_cast<uint32_t>(out_report->hevc_supported ? encoder::VideoCodec::Hevc : encoder::VideoCodec::H264);
+    cfg.rc_mode = 0;
+    cfg.gop_length = 0;
+
+    if (session.configure(cfg)) {
+        out_report->encoder_initialized = 1;
+    } else {
+        out_report->last_mfx_status = static_cast<int32_t>(session.last_status());
+        session.close();
+        api.unload();
+        return 0;
+    }
+
+    // 8. Test Encode Frame
+    D3D11_TEXTURE2D_DESC tex_desc{};
+    tex_desc.Width = 1920;
+    tex_desc.Height = 1080;
+    tex_desc.MipLevels = 1;
+    tex_desc.ArraySize = 1;
+    tex_desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    tex_desc.SampleDesc.Count = 1;
+    tex_desc.Usage = D3D11_USAGE_DEFAULT;
+    tex_desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> test_texture;
+    if (SUCCEEDED(d3d_device->CreateTexture2D(&tex_desc, nullptr, &test_texture))) {
+        encoder::EncodedPacketDesc desc{};
+        std::vector<uint8_t> bitstream(1024 * 1024);
+        uint32_t written = 0;
+
+        if (session.encode(test_texture.Get(), true, 0, 0, desc, bitstream.data(), static_cast<uint32_t>(bitstream.size()), written)) {
+            out_report->frame_encoded = 1;
+            if (written >= 4 && (bitstream[0] == 0 && bitstream[1] == 0 && (bitstream[2] == 1 || (bitstream[2] == 0 && bitstream[3] == 1)))) {
+                out_report->bitstream_valid = 1;
+
+                // 9. Decoder Loopback Verification
+                auto* dec = new (std::nothrow) video::D3D11VideoDecoder();
+                if (dec && dec->Initialize(nullptr, 1920, 1080, static_cast<video::VideoCodec>(cfg.codec)) == 0) {
+                    MoonshineFrameDesc frame_desc{};
+                    frame_desc.frame_index = 0;
+                    frame_desc.total_bytes = written;
+                    frame_desc.packet_count = 1;
+                    frame_desc.is_keyframe = desc.is_keyframe ? 1 : 0;
+                    frame_desc.frame_buffer = bitstream.data();
+
+                    if (dec->SubmitFrame(frame_desc) == 0) {
+                        out_report->decoder_loopback_passed = 1;
+                    }
+                }
+                delete dec;
+            }
+        }
+    }
+
+    session.close();
+    api.unload();
+    return 0;
+#else
+    (void)out_report;
+    return -1;
+#endif
 }
 
 // ============================================================================

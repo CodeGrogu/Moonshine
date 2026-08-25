@@ -711,6 +711,14 @@ public static unsafe partial class MoonshineNativeMethods
         out MoonshineAdapterInfo outInfo
     );
 
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_gpu_enumerate_adapters")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static unsafe partial int GpuEnumerateAdapters(
+        MoonshineGpuAdapter* outAdapters,
+        uint maxCount,
+        out uint outCount
+    );
+
     [LibraryImport(LibraryName, EntryPoint = "moonshine_capture_get_display_count")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial uint CaptureGetDisplayCount(uint adapterIndex);
@@ -948,5 +956,11 @@ public static unsafe partial class MoonshineNativeMethods
         int enable,
         uint cycleSize,
         int qpDelta
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_qsv_run_diagnostics")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int QsvRunDiagnostics(
+        out MoonshineQsvDiagnosticReport outReport
     );
 }
