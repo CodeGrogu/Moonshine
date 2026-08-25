@@ -193,6 +193,51 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
 
 ---
 
+### [TODO-011] Real Media FEC Reed-Solomon Packet Recovery & Wire Erasure Resilience
+* **Status**: `Completed`
+* **Priority**: `P0`
+* **Prerequisites**: None
+* **Scope**: `src/Moonshine.Core/` and `src/Moonshine.Native/`
+* **Objective**: Integrate the SIMD GF($2^8$) Reed-Solomon FEC codec into media packet recovery across data and parity erasure patterns, recovering lost video/audio packets within the configured loss budget.
+* **Acceptance Criteria**:
+  - [x] Recover lost data shards using Reed-Solomon parity matrix across simulated packet loss.
+  - [x] Reject unrecoverable loss patterns fail-closed without corrupting pipeline buffers.
+  - [x] 100% CTest and xUnit pass rate across FEC suites (`test_fec_simd`, `FecNativeTests`).
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T01:47:08Z | Commit: 045a82d | Proof: 100% pass across test_fec_simd and FecNativeTests with SIMD GF(2^8) Reed-Solomon recovery -->
+
+---
+
+### [TODO-012] End-to-End Real Desktop GPU Surface Ingestion to Hardware Encoders (NVENC/AMF/QSV)
+* **Status**: `Completed`
+* **Priority**: `P0`
+* **Prerequisites**: None
+* **Scope**: `src/Moonshine.Native/` and `src/Moonshine.Host/`
+* **Objective**: Pipe real desktop captured GPU textures directly into NVENC/AMF/QSV hardware encoder pipelines, handling dynamic format conversions (NV12/P010) and device loss events.
+* **Acceptance Criteria**:
+  - [x] Submit real Direct3D 11 desktop texture surfaces directly into hardware encoder pipelines.
+  - [x] Handle dynamic reconfiguration (resolution, bitrate, framerate) on active sessions.
+  - [x] 100% pass rate in `HardwareVideoEncoderConformanceTests.cs` and native encoder suites.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T01:48:00Z | Commit: 045a82d | Proof: 100% pass in HardwareVideoEncoderConformanceTests on physical RTX 2060 GPU and WGC/DXGI desktop capture suites -->
+
+---
+
+### [TODO-013] Low-Latency Direct3D 11 Hardware Video Decoder Bitstream Buffer Submission
+* **Status**: `Completed`
+* **Priority**: `P0`
+* **Prerequisites**: None
+* **Scope**: `src/Moonshine.Native/src/video/d3d11_video_decoder.cpp` and `tests/`
+* **Objective**: Enforce complete decoder buffer submission (`GetDecoderBuffer`, `SubmitDecoderBuffers`, `DecoderEndFrame`), rejecting truncated or malformed bitstreams fail-closed while outputting decoded frames into GPU textures.
+* **Acceptance Criteria**:
+  - [x] Submit valid hardware-encoded bitstreams to Direct3D 11 video decoder and verify decoded GPU output textures.
+  - [x] Reject malformed/truncated bitstream buffers fail-closed without buffer overruns.
+  - [x] 100% pass rate across `test_video_decoder` and `VideoNativeTests`.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T01:47:20Z | Commit: 045a82d | Proof: 100% pass across test_video_decoder and VideoNativeTests with verified GPU surface readback -->
+
+---
+
 # Moonshine TODO
 
 > **Purpose:** This is the implementation and verification checklist for Moonshine after the fresh deep audit of `dd7955b26d7208f543b8092b17a4ed175dbfbc31` on 26 August 2026.
