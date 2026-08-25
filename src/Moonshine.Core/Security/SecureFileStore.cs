@@ -187,6 +187,48 @@ public static partial class SecureFileStore
         fileInfo.SetAccessControl(fileSecurity);
     }
 
+    /// <summary>
+    /// Applies strict owner-only Discretionary Access Control List (DACL) to the specified directory.
+    /// Inheritance is explicitly disabled, granting FullControl exclusively to CurrentUser and SYSTEM,
+    /// with ContainerInherit and ObjectInherit flags so child key files automatically inherit strict protection.
+    /// </summary>
+    public static void ApplyStrictDirectoryDacl(string directoryPath)
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        ArgumentException.ThrowIfNullOrWhiteSpace(directoryPath);
+
+        var dirInfo = new DirectoryInfo(directoryPath);
+        if (!dirInfo.Exists)
+        {
+            dirInfo.Create();
+        }
+
+        var dirSecurity = new DirectorySecurity();
+        dirSecurity.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+
+        var currentUserSid = WindowsIdentity.GetCurrent().User
+            ?? throw new InvalidOperationException("Unable to resolve current Windows user SID.");
+
+        dirSecurity.AddAccessRule(new FileSystemAccessRule(
+            currentUserSid,
+            FileSystemRights.FullControl,
+            InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+            PropagationFlags.None,
+            AccessControlType.Allow
+        ));
+
+        var systemSid = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+        dirSecurity.AddAccessRule(new FileSystemAccessRule(
+            systemSid,
+            FileSystemRights.FullControl,
+            InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+            PropagationFlags.None,
+            AccessControlType.Allow
+        ));
+
+        dirInfo.SetAccessControl(dirSecurity);
+    }
+
     private static void AtomicReplaceWindows(string tempPath, string destinationPath)
     {
         if (File.Exists(destinationPath))

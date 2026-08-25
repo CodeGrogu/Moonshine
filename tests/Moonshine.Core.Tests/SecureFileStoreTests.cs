@@ -159,4 +159,49 @@ public sealed class SecureFileStoreTests : IDisposable
         string[] tempFiles = Directory.GetFiles(_testDirectory, "*.tmp.*");
         tempFiles.Should().BeEmpty();
     }
+
+    [Fact]
+    [SupportedOSPlatform("windows")]
+    public void SecureFileStore_ApplyStrictDirectoryDacl_DisablesInheritanceAndGrantsExclusiveAccess()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        string subDir = Path.Combine(_testDirectory, "Keys_Dacl_Test");
+        SecureFileStore.ApplyStrictDirectoryDacl(subDir);
+
+        Directory.Exists(subDir).Should().BeTrue();
+
+        var dirInfo = new DirectoryInfo(subDir);
+        DirectorySecurity security = dirInfo.GetAccessControl(AccessControlSections.Access);
+
+        // Invariant 1: Inheritance is disabled and protected
+        security.AreAccessRulesProtected.Should().BeTrue();
+
+        // Invariant 2: Explicit rules contain only CurrentUser and SYSTEM
+        var explicitRules = security.GetAccessRules(includeExplicit: true, includeInherited: false, typeof(SecurityIdentifier))
+            .Cast<FileSystemAccessRule>()
+            .ToList();
+
+        explicitRules.Should().HaveCount(2);
+
+        var currentUserSid = WindowsIdentity.GetCurrent().User!;
+        var systemSid = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+
+        var userRule = explicitRules.SingleOrDefault(r => r.IdentityReference.Value == currentUserSid.Value);
+        userRule.Should().NotBeNull();
+        userRule!.FileSystemRights.Should().HaveFlag(FileSystemRights.FullControl);
+
+        var systemRule = explicitRules.SingleOrDefault(r => r.IdentityReference.Value == systemSid.Value);
+        systemRule.Should().NotBeNull();
+        systemRule!.FileSystemRights.Should().HaveFlag(FileSystemRights.FullControl);
+
+        // Invariant 3: Prohibited broad identities are stripped
+        var everyoneSid = new SecurityIdentifier(WellKnownSidType.WorldSid, null);
+        var authUsersSid = new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null);
+        var builtInUsersSid = new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null);
+
+        explicitRules.Any(r => r.IdentityReference.Value == everyoneSid.Value).Should().BeFalse();
+        explicitRules.Any(r => r.IdentityReference.Value == authUsersSid.Value).Should().BeFalse();
+        explicitRules.Any(r => r.IdentityReference.Value == builtInUsersSid.Value).Should().BeFalse();
+    }
 }
