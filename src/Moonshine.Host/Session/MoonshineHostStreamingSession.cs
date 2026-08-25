@@ -150,8 +150,10 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
         }
         else if (_encoderEngine != null && _encoderEngine.IsActive && IsStreaming)
         {
-            // Operational is reported ONLY when the backend is a real hardware-accelerated encoder that has produced valid output.
-            // Synthetic test or placeholder encoders report Available, NEVER Operational.
+            // Hardware Encoder Operational Invariant:
+            // No encoder may report Operational based solely on device discovery, API availability, session creation,
+            // successful configuration, or frame submission. Operational requires a successfully validated encoded bitstream
+            // produced from a real input frame by the selected vendor backend.
             // The AND-gate (ImplementationKind == HardwareAccelerated && HasProducedValidOutput) is strictly load-bearing for operational safety across all vendors and must never be bypassed.
             if (_encoderEngine.ImplementationKind == EncoderImplementationKind.HardwareAccelerated && _encoderEngine.HasProducedValidOutput)
             {

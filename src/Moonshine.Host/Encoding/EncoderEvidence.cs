@@ -2,7 +2,13 @@ namespace Moonshine.Host.Encoding;
 
 /// <summary>
 /// Authoritative execution evidence collected from the physical video encoder pipeline.
-/// Used to deterministically evaluate ComponentReadiness.
+/// Used to deterministically evaluate <c>ComponentReadiness</c>.
+/// <para>
+/// Hardware Encoder Operational Invariant:
+/// No encoder may report Operational based solely on device discovery, API availability,
+/// session creation, successful configuration, or frame submission. Operational requires a successfully
+/// validated encoded bitstream produced from a real input frame by the selected vendor backend.
+/// </para>
 /// </summary>
 public readonly record struct EncoderEvidence(
     bool ApiAvailable,

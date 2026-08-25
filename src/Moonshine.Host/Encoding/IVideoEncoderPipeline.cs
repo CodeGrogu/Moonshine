@@ -4,6 +4,12 @@ namespace Moonshine.Host.Encoding;
 
 /// <summary>
 /// Polymorphic interface for Hardware Video Encoder Pipelines.
+/// <para>
+/// Hardware Encoder Operational Invariant:
+/// No encoder may report Operational based solely on device discovery, API availability,
+/// session creation, successful configuration, or frame submission. Operational requires a successfully
+/// validated encoded bitstream produced from a real input frame by the selected vendor backend.
+/// </para>
 /// </summary>
 public interface IVideoEncoderPipeline : IDisposable
 {
@@ -16,6 +22,11 @@ public interface IVideoEncoderPipeline : IDisposable
     bool IsActive { get; }
     EncoderImplementationKind ImplementationKind { get; }
     bool IsHardwareAccelerated { get; }
+
+    /// <summary>
+    /// Gets whether the encoder backend has submitted real input frames and produced structurally valid, non-empty encoded output.
+    /// Invariant: Required for reporting <c>ComponentReadiness.Operational</c>.
+    /// </summary>
     bool HasProducedValidOutput { get; }
     Type ImplementationType { get; }
     EncoderRuntimeState RuntimeState { get; }

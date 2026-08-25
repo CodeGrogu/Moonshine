@@ -40,7 +40,7 @@ Every test accepted into the Moonshine repository must assert on real, concrete 
 - Tests that only assert `Assert.True(true)`, `Assert.NotNull(result)`, or `Assert.DoesNotThrow` are rejected.
 - For data reconstruction subsystems (FEC, sequence unwrappers, jitter buffers, ring buffers): tests must deliberately corrupt or drop known inputs, reconstruct them, and assert byte-for-byte identity against the ground truth.
 - **Active Native Test Assertions**: Native C++ test sources must not use standard `<cassert>` `assert(...)` macros that are compiled out under `NDEBUG` in Release configurations. All test conditions must use active assertion macros (such as `REQUIRE(expr)` or `TEST_ASSERT(expr)`) that evaluate and fail deterministically across both Debug and Release builds.
-- **Hardware Encoder Operational Invariant**: A hardware encoder must never be considered operational because a vendor API, DLL, session, encoder object, or input surface exists. Operational status (`ComponentReadiness.Operational`) requires successful submission of real captured GPU content and validated encoded output from the vendor encoder.
+- **Hardware Encoder Operational Invariant**: No encoder may report Operational based solely on device discovery, API availability, session creation, successful configuration, or frame submission. Operational requires a successfully validated encoded bitstream produced from a real input frame by the selected vendor backend (`ComponentReadiness.Operational`).
 
 ### Rule 4: Standing Pre-Commit Preflight Sweep
 Before every commit, execute the canonical repository preflight scanner (`scripts/preflight.ps1`). The script enforces zero-tolerance checks for:

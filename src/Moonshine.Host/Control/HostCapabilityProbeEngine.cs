@@ -10,6 +10,12 @@ using PhysicalAdapterInfo = DisplayAdapterInfo;
 
 /// <summary>
 /// Defines the readiness lifecycle status of an individual host subsystem component.
+/// <para>
+/// Hardware Encoder Operational Invariant:
+/// No encoder may report <see cref="Operational"/> based solely on device discovery, API availability,
+/// session creation, successful configuration, or frame submission. Operational requires a successfully
+/// validated encoded bitstream produced from a real input frame by the selected vendor backend.
+/// </para>
 /// </summary>
 public enum ComponentReadiness
 {
