@@ -36,10 +36,15 @@ if ($taskMatches.Count -eq 0) {
 
 $tasks = @{}
 $taskOrder = @()
+$duplicateErrors = @()
 
 foreach ($match in $taskMatches) {
     $taskId = $match.Groups[1].Value
     $taskTitle = $match.Groups[2].Value.Trim()
+    
+    if ($tasks.ContainsKey($taskId)) {
+        $duplicateErrors += "Duplicate task identifier detected in backlog: [$taskId]"
+    }
     
     $tasks[$taskId] = [PSCustomObject]@{
         Id = $taskId
@@ -53,6 +58,14 @@ foreach ($match in $taskMatches) {
         RawBlock = ""
     }
     $taskOrder += $taskId
+}
+
+if ($duplicateErrors.Count -gt 0) {
+    Write-Host "[!] Duplicate Task Identifier Errors Detected:" -ForegroundColor Red
+    foreach ($dup in $duplicateErrors) {
+        Write-Host "  - $dup" -ForegroundColor Red
+    }
+    exit 1
 }
 
 # Parse sections for each task
