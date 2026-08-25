@@ -102,6 +102,52 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
 
 ---
 
+### [TODO-005] Protocol Security: Timestamp Freshness & Replay Window Validation
+* **Status**: `Completed`
+* **Priority**: `P0`
+* **Prerequisites**: None
+* **Scope**: `src/Moonshine.Protocol/` and `tests/Moonshine.Protocol.Tests/`
+* **Objective**: Enforce timestamp freshness checks (rejecting timestamps older than the past window or in the future) and RFC 1982 modular sequence arithmetic in `MoonshineProtocolStateMachine` and authenticated message processing.
+* **Acceptance Criteria**:
+  - [x] Reject packets with timestamps older than maximum past window (5000 ms).
+  - [x] Reject packets with timestamps newer than future skew tolerance (1000 ms).
+  - [x] Validate RFC 1982 modular sequence comparisons across 16-bit and 32-bit rollover boundaries.
+  - [x] 100% pass rate in `Moonshine.Protocol.Tests`.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T01:32:44Z | Commit: 607e724 | Proof: 152/152 tests passed in Moonshine.Protocol.Tests covering RFC 1982 modular arithmetic and state-machine freshness boundaries -->
+
+---
+
+### [TODO-006] Protocol Security: Authenticated State-Changing Control & Role Authorization Pipeline
+* **Status**: `Pending`
+* **Priority**: `P0`
+* **Prerequisites**: None
+* **Scope**: `src/Moonshine.Core/` and `src/Moonshine.Protocol/`
+* **Objective**: Make authentication mandatory for state-changing control requests, reject unauthenticated configuration attempts, and enforce single-pipeline authorization.
+* **Acceptance Criteria**:
+  - [ ] Enforce mandatory authentication on state-changing control methods (`SetHostConfiguration`, `StopStream`).
+  - [ ] Verify unauthenticated attempts fail closed with `InvalidAuthentication` or `AccessDenied`.
+  - [ ] Add unit and integration tests in `Moonshine.Core.Tests`.
+* **Evidence**:
+  - <!-- PENDING: Provenance tag will be added upon completion -->
+
+---
+
+### [TODO-007] Cryptographic Key Storage & Windows ACL Access Control Verification
+* **Status**: `Pending`
+* **Priority**: `P0`
+* **Prerequisites**: None
+* **Scope**: `src/Moonshine.Core/Security/` and `tests/Moonshine.Core.Tests/`
+* **Objective**: Enforce Windows filesystem ACLs on private key storage with `FileSystemAccessRule`, disabling inheritance and restricting read/write strictly to `CurrentUser` and `SYSTEM`.
+* **Acceptance Criteria**:
+  - [ ] Validate Windows ACL configuration disables inheritance on persistent key directories.
+  - [ ] Assert broad principals (`Users`, `Everyone`, `Authenticated Users`) are stripped from key ACLs.
+  - [ ] Add integration test in `Moonshine.Core.Tests` verifying keyfile ACLs on Windows 11.
+* **Evidence**:
+  - <!-- PENDING: Provenance tag will be added upon completion -->
+
+---
+
 # Moonshine TODO
 
 > **Purpose:** This is the implementation and verification checklist for Moonshine after the fresh deep audit of `dd7955b26d7208f543b8092b17a4ed175dbfbc31` on 26 August 2026.
