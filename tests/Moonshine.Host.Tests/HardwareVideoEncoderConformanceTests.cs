@@ -63,6 +63,67 @@ public class HardwareVideoEncoderConformanceTests
     }
 
     [Fact]
+    public unsafe void NvencPipeline_Direct3D11DecoderLoopback_SuccessfullyDecodesAndAcceptsKeyframe()
+    {
+        IntPtr dev = MoonshineNativeMethods.D3D11CreateDevice(0x10DE);
+        if (dev == IntPtr.Zero) return;
+
+        IntPtr tex = MoonshineNativeMethods.D3D11CreateTexture(dev, 1920, 1080, 0);
+        if (tex == IntPtr.Zero)
+        {
+            MoonshineNativeMethods.D3D11DestroyDevice(dev);
+            return;
+        }
+
+        IntPtr decoder = MoonshineNativeMethods.VideoCreateD3D11(IntPtr.Zero, 1920, 1080, 1); // 1 = HEVC
+
+        try
+        {
+            using var pipeline = new NvencHardwareEncoderPipeline(1920, 1080, d3dDevice: dev);
+            if (!pipeline.IsActive) return;
+
+            byte[] buffer = new byte[1024 * 1024];
+            bool encodeOk = pipeline.TryEncodeFrame(tex, true, out var desc, buffer, out int written);
+            encodeOk.Should().BeTrue();
+            written.Should().BeGreaterThan(0);
+            desc.IsKeyframe.Should().Be(1);
+
+            if (decoder != IntPtr.Zero)
+            {
+                fixed (byte* pBuf = buffer)
+                {
+                    var frameDesc = new MoonshineFrameDesc
+                    {
+                        FrameIndex = (uint)desc.FrameIndex,
+                        TotalBytes = (uint)written,
+                        PacketCount = 1,
+                        IsKeyframe = 1,
+                        FrameBuffer = pBuf
+                    };
+
+                    int decodeRes = MoonshineNativeMethods.VideoSubmitFrame(decoder, in frameDesc);
+                    decodeRes.Should().Be(0);
+
+                    IntPtr decodedTex = MoonshineNativeMethods.VideoGetTexture(decoder);
+                    decodedTex.Should().NotBe(IntPtr.Zero);
+
+                    // Record decoder acceptance backed by real hardware decode verification
+                    pipeline.RecordDecoderAcceptance(desc.FrameIndex);
+                    pipeline.Evidence.DecoderAccepted.Should().BeTrue();
+                    pipeline.Evidence.DecoderAcceptanceHealthy.Should().BeTrue();
+                    pipeline.Evidence.LastDecoderAcceptedFrameId.Should().Be(desc.FrameIndex);
+                }
+            }
+        }
+        finally
+        {
+            if (decoder != IntPtr.Zero) MoonshineNativeMethods.VideoDestroy(decoder);
+            MoonshineNativeMethods.D3D11DestroyTexture(tex);
+            MoonshineNativeMethods.D3D11DestroyDevice(dev);
+        }
+    }
+
+    [Fact]
     public void NvencPipeline_Dispose_TransitionsStateToDisposedAndPreventsEncoding()
     {
         var pipeline = new NvencHardwareEncoderPipeline(1920, 1080);

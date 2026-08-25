@@ -46,6 +46,7 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
     private ulong _firstValidFrameId;
     private ulong _lastValidFrameId;
     private bool _hasValidFrame;
+    private bool _hasDecoderAcceptance;
 
     public uint Width => _width;
     public uint Height => _height;
@@ -80,8 +81,10 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
         {
             ulong lastValid = Volatile.Read(ref _lastValidFrameId);
             ulong lastAccepted = Volatile.Read(ref _lastDecoderAcceptedFrameId);
-            bool latestMatch = lastAccepted != 0 && lastAccepted == lastValid;
-            bool healthy = EncoderEvidencePolicy.IsDecoderAcceptanceHealthy(_disposed, _handle != IntPtr.Zero, lastValid, lastAccepted);
+            bool hasAccepted = Volatile.Read(ref _hasDecoderAcceptance);
+            bool hasValid = Volatile.Read(ref _hasValidFrame);
+            bool latestMatch = hasAccepted && hasValid && lastAccepted == lastValid;
+            bool healthy = EncoderEvidencePolicy.IsDecoderAcceptanceHealthy(_disposed, _handle != IntPtr.Zero, hasValid, lastValid, hasAccepted, lastAccepted);
 
             return new EncoderEvidence(
                 ApiAvailable: _handle != IntPtr.Zero,
@@ -96,7 +99,9 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
                 LastValidFrameId: lastValid,
                 LastDecoderAcceptedFrameId: lastAccepted,
                 DecoderAcceptedLatestFrame: latestMatch,
-                DecoderAcceptanceHealthy: healthy
+                DecoderAcceptanceHealthy: healthy,
+                HasDecoderAcceptance: hasAccepted,
+                HasValidFrame: hasValid
             );
         }
     }
@@ -273,14 +278,21 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
         out int bytesWritten
     )
     {
-        ulong frameId = Interlocked.Increment(ref _submittedFrameCounter);
-        ulong timestampUs = MoonshineMediaClock.GetCurrentTimestampMicroseconds();
-        return TryEncodeFrame(d3dTexture, frameId, timestampUs, forceIdr, out desc, outBitstream, out bytesWritten);
+        lock (_lock)
+        {
+            ulong frameId = Interlocked.Increment(ref _submittedFrameCounter);
+            ulong timestampUs = MoonshineMediaClock.GetCurrentTimestampMicroseconds();
+            return TryEncodeFrame(d3dTexture, frameId, timestampUs, forceIdr, out desc, outBitstream, out bytesWritten);
+        }
     }
 
     public void RecordDecoderAcceptance(ulong frameId)
     {
-        Volatile.Write(ref _lastDecoderAcceptedFrameId, frameId);
+        lock (_lock)
+        {
+            Volatile.Write(ref _hasDecoderAcceptance, true);
+            Volatile.Write(ref _lastDecoderAcceptedFrameId, frameId);
+        }
     }
 
     public EncodeSubmissionResult SubmitFrame(
@@ -349,9 +361,12 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
         out int bytesWritten
     )
     {
-        ulong frameId = Interlocked.Increment(ref _submittedFrameCounter);
-        ulong timestampUs = MoonshineMediaClock.GetCurrentTimestampMicroseconds();
-        return SubmitFrame(d3dTexture, frameId, timestampUs, forceIdr, outBitstream, out bytesWritten);
+        lock (_lock)
+        {
+            ulong frameId = Interlocked.Increment(ref _submittedFrameCounter);
+            ulong timestampUs = MoonshineMediaClock.GetCurrentTimestampMicroseconds();
+            return SubmitFrame(d3dTexture, frameId, timestampUs, forceIdr, outBitstream, out bytesWritten);
+        }
     }
 
     public bool TryPollPacket(
@@ -432,6 +447,8 @@ public sealed class HardwareVideoEncoderPipeline : IVideoEncoderPipeline
             if (_disposed) return;
             _disposed = true;
             _runtimeState = EncoderRuntimeState.Disposed;
+            Volatile.Write(ref _hasDecoderAcceptance, false);
+            Volatile.Write(ref _hasValidFrame, false);
             Volatile.Write(ref _lastDecoderAcceptedFrameId, 0);
             Volatile.Write(ref _lastValidFrameId, 0);
 

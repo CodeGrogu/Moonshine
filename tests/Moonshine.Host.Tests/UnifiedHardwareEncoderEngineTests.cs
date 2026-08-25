@@ -1,3 +1,6 @@
+using System;
+using System.Threading;
+using System.Threading.Tasks;
 using FluentAssertions;
 using Moonshine.Host.Encoding;
 using Moonshine.Interop;
@@ -82,7 +85,7 @@ public class UnifiedHardwareEncoderEngineTests
     }
 
     [Fact]
-    public void UnifiedHardwareEncoderEngine_AutoSelection_WithHardwareDevice_SelectsVendorAndEncodesRealFrames()
+    public unsafe void UnifiedHardwareEncoderEngine_AutoSelection_WithHardwareDevice_SelectsVendorAndEncodesRealFrames()
     {
         IntPtr dev = MoonshineNativeMethods.D3D11CreateDevice(0);
         if (dev == IntPtr.Zero) return;
@@ -93,6 +96,8 @@ public class UnifiedHardwareEncoderEngineTests
             MoonshineNativeMethods.D3D11DestroyDevice(dev);
             return;
         }
+
+        IntPtr decoder = MoonshineNativeMethods.VideoCreateD3D11(IntPtr.Zero, 1920, 1080, (uint)VideoCodec.Hevc);
 
         try
         {
@@ -111,7 +116,7 @@ public class UnifiedHardwareEncoderEngineTests
             engine.RuntimeState.Should().Be(EncoderRuntimeState.Ready);
             engine.Vendor.Should().NotBe(EncoderVendor.Auto);
 
-            Span<byte> bitstream = stackalloc byte[1024 * 512];
+            byte[] bitstream = new byte[1024 * 1024];
             var sub1 = engine.SubmitFrame(tex, true, bitstream, out int written1);
             sub1.Submitted.Should().BeTrue();
             sub1.OutputAvailable.Should().BeTrue();
@@ -119,8 +124,30 @@ public class UnifiedHardwareEncoderEngineTests
             written1.Should().BeGreaterThan(0);
             sub1.Result.Should().Be(EncoderResult.Success);
 
-            // Record decoder acceptance for frame 1
-            engine.RecordDecoderAcceptance(sub1.PacketDesc.FrameIndex);
+            if (decoder != IntPtr.Zero)
+            {
+                fixed (byte* pBuf = bitstream)
+                {
+                    var frameDesc = new MoonshineFrameDesc
+                    {
+                        FrameIndex = (uint)sub1.PacketDesc.FrameIndex,
+                        TotalBytes = (uint)written1,
+                        PacketCount = 1,
+                        IsKeyframe = 1,
+                        FrameBuffer = pBuf
+                    };
+                    int decRes = MoonshineNativeMethods.VideoSubmitFrame(decoder, in frameDesc);
+                    decRes.Should().Be(0);
+                    IntPtr decTex = MoonshineNativeMethods.VideoGetTexture(decoder);
+                    decTex.Should().NotBe(IntPtr.Zero);
+
+                    // Record decoder acceptance for frame 1 backed by real decoder output
+                    engine.RecordDecoderAcceptance(sub1.PacketDesc.FrameIndex);
+                    engine.Evidence.DecoderAccepted.Should().BeTrue();
+                    engine.Evidence.DecoderAcceptanceHealthy.Should().BeTrue();
+                }
+            }
+
             engine.FramesEncoded.Should().Be(1);
             engine.KeyframesEmitted.Should().Be(1);
 
@@ -137,6 +164,7 @@ public class UnifiedHardwareEncoderEngineTests
         }
         finally
         {
+            if (decoder != IntPtr.Zero) MoonshineNativeMethods.VideoDestroy(decoder);
             MoonshineNativeMethods.D3D11DestroyTexture(tex);
             MoonshineNativeMethods.D3D11DestroyDevice(dev);
         }
@@ -186,52 +214,75 @@ public class UnifiedHardwareEncoderEngineTests
     }
 
     [Fact]
-    public void UnifiedHardwareEncoderEngine_MultiInstance_Concurrency_SoakTest()
+    public async Task UnifiedHardwareEncoderEngine_MultiInstance_Concurrency_SoakTest()
     {
-        IntPtr dev = MoonshineNativeMethods.D3D11CreateDevice(0);
-        if (dev == IntPtr.Zero) return;
+        IntPtr dev1 = MoonshineNativeMethods.D3D11CreateDevice(0);
+        IntPtr dev2 = MoonshineNativeMethods.D3D11CreateDevice(0);
+        if (dev1 == IntPtr.Zero || dev2 == IntPtr.Zero)
+        {
+            if (dev1 != IntPtr.Zero) MoonshineNativeMethods.D3D11DestroyDevice(dev1);
+            if (dev2 != IntPtr.Zero) MoonshineNativeMethods.D3D11DestroyDevice(dev2);
+            return;
+        }
 
-        IntPtr tex1 = MoonshineNativeMethods.D3D11CreateTexture(dev, 1920, 1080, 0);
-        IntPtr tex2 = MoonshineNativeMethods.D3D11CreateTexture(dev, 1280, 720, 0);
+        IntPtr tex1 = MoonshineNativeMethods.D3D11CreateTexture(dev1, 1920, 1080, 0);
+        IntPtr tex2 = MoonshineNativeMethods.D3D11CreateTexture(dev2, 1280, 720, 0);
         if (tex1 == IntPtr.Zero || tex2 == IntPtr.Zero)
         {
             if (tex1 != IntPtr.Zero) MoonshineNativeMethods.D3D11DestroyTexture(tex1);
             if (tex2 != IntPtr.Zero) MoonshineNativeMethods.D3D11DestroyTexture(tex2);
-            MoonshineNativeMethods.D3D11DestroyDevice(dev);
+            MoonshineNativeMethods.D3D11DestroyDevice(dev1);
+            MoonshineNativeMethods.D3D11DestroyDevice(dev2);
             return;
         }
 
         try
         {
-            using var engine1 = new UnifiedHardwareEncoderEngine(1920, 1080, 60, 20000, VideoCodec.Hevc, preferredVendor: EncoderVendor.Auto, d3dDevice: dev);
-            using var engine2 = new UnifiedHardwareEncoderEngine(1280, 720, 60, 10000, VideoCodec.H264, preferredVendor: EncoderVendor.Auto, d3dDevice: dev);
+            using var engine1 = new UnifiedHardwareEncoderEngine(1920, 1080, 60, 20000, VideoCodec.Hevc, preferredVendor: EncoderVendor.Auto, d3dDevice: dev1);
+            using var engine2 = new UnifiedHardwareEncoderEngine(1280, 720, 60, 10000, VideoCodec.H264, preferredVendor: EncoderVendor.Auto, d3dDevice: dev2);
 
             if (!engine1.IsActive || !engine2.IsActive) return;
 
-            byte[] buffer1 = new byte[1024 * 1024 * 2];
-            byte[] buffer2 = new byte[1024 * 1024 * 2];
+            using var startBarrier = new ManualResetEventSlim(false);
 
-            for (int i = 0; i < 5; i++)
+            var task1 = Task.Run(() =>
             {
-                var res1 = engine1.SubmitFrame(tex1, i == 0, buffer1, out int written1);
-                res1.Submitted.Should().BeTrue();
-                written1.Should().BeGreaterThan(0);
-                engine1.RecordDecoderAcceptance(res1.PacketDesc.FrameIndex);
+                startBarrier.Wait();
+                byte[] buffer1 = new byte[1024 * 1024 * 2];
+                for (int i = 0; i < 10; i++)
+                {
+                    var res1 = engine1.SubmitFrame(tex1, i == 0, buffer1, out int written1);
+                    res1.Submitted.Should().BeTrue();
+                    written1.Should().BeGreaterThan(0);
+                    engine1.RecordDecoderAcceptance(res1.PacketDesc.FrameIndex);
+                }
+            });
 
-                var res2 = engine2.SubmitFrame(tex2, i == 0, buffer2, out int written2);
-                res2.Submitted.Should().BeTrue();
-                written2.Should().BeGreaterThan(0);
-                engine2.RecordDecoderAcceptance(res2.PacketDesc.FrameIndex);
-            }
+            var task2 = Task.Run(() =>
+            {
+                startBarrier.Wait();
+                byte[] buffer2 = new byte[1024 * 1024 * 2];
+                for (int i = 0; i < 10; i++)
+                {
+                    var res2 = engine2.SubmitFrame(tex2, i == 0, buffer2, out int written2);
+                    res2.Submitted.Should().BeTrue();
+                    written2.Should().BeGreaterThan(0);
+                    engine2.RecordDecoderAcceptance(res2.PacketDesc.FrameIndex);
+                }
+            });
 
-            engine1.FramesEncoded.Should().Be(5);
-            engine2.FramesEncoded.Should().Be(5);
+            startBarrier.Set();
+            await Task.WhenAll(task1, task2);
+
+            engine1.FramesEncoded.Should().Be(10);
+            engine2.FramesEncoded.Should().Be(10);
         }
         finally
         {
             MoonshineNativeMethods.D3D11DestroyTexture(tex1);
             MoonshineNativeMethods.D3D11DestroyTexture(tex2);
-            MoonshineNativeMethods.D3D11DestroyDevice(dev);
+            MoonshineNativeMethods.D3D11DestroyDevice(dev1);
+            MoonshineNativeMethods.D3D11DestroyDevice(dev2);
         }
     }
 }

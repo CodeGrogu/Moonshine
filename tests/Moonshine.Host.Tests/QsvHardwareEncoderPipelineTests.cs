@@ -1,3 +1,4 @@
+using System;
 using FluentAssertions;
 using Moonshine.Host.Encoding;
 using Moonshine.Interop;
@@ -225,5 +226,26 @@ public class QsvHardwareEncoderPipelineTests
             MoonshineNativeMethods.D3D11DestroyTexture(tex);
             MoonshineNativeMethods.D3D11DestroyDevice(dev);
         }
+    }
+
+    [Theory]
+    [InlineData(0u)]
+    [InlineData(499u)]
+    [InlineData(150001u)]
+    [InlineData(200000u)]
+    public void QsvHardwareEncoderPipeline_Constructor_BitrateOutOfBounds_ThrowsArgumentOutOfRangeException(uint invalidBitrate)
+    {
+        var act = () => new QsvHardwareEncoderPipeline(1920, 1080, bitrateKbps: invalidBitrate);
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Theory]
+    [InlineData(499u)]
+    [InlineData(150001u)]
+    public void QsvHardwareEncoderPipeline_ReconfigureBitrate_OutOfBounds_ReturnsFalse(uint invalidBitrate)
+    {
+        using var pipeline = new QsvHardwareEncoderPipeline(1920, 1080, bitrateKbps: 20000);
+        bool result = pipeline.ReconfigureBitrate(invalidBitrate, invalidBitrate);
+        result.Should().BeFalse();
     }
 }

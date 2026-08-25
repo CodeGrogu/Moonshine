@@ -47,6 +47,7 @@ public sealed class AmfHardwareEncoderPipeline : IVideoEncoderPipeline
     private ulong _firstValidFrameId;
     private ulong _lastValidFrameId;
     private bool _hasValidFrame;
+    private bool _hasDecoderAcceptance;
 
     public uint Width => _width;
     public uint Height => _height;
@@ -83,8 +84,10 @@ public sealed class AmfHardwareEncoderPipeline : IVideoEncoderPipeline
         {
             ulong lastValid = Volatile.Read(ref _lastValidFrameId);
             ulong lastAccepted = Volatile.Read(ref _lastDecoderAcceptedFrameId);
-            bool latestMatch = lastAccepted != 0 && lastAccepted == lastValid;
-            bool healthy = EncoderEvidencePolicy.IsDecoderAcceptanceHealthy(_disposed, _handle != IntPtr.Zero, lastValid, lastAccepted);
+            bool hasAccepted = Volatile.Read(ref _hasDecoderAcceptance);
+            bool hasValid = Volatile.Read(ref _hasValidFrame);
+            bool latestMatch = hasAccepted && hasValid && lastAccepted == lastValid;
+            bool healthy = EncoderEvidencePolicy.IsDecoderAcceptanceHealthy(_disposed, _handle != IntPtr.Zero, hasValid, lastValid, hasAccepted, lastAccepted);
 
             return new EncoderEvidence(
                 ApiAvailable: _handle != IntPtr.Zero,
@@ -99,7 +102,9 @@ public sealed class AmfHardwareEncoderPipeline : IVideoEncoderPipeline
                 LastValidFrameId: lastValid,
                 LastDecoderAcceptedFrameId: lastAccepted,
                 DecoderAcceptedLatestFrame: latestMatch,
-                DecoderAcceptanceHealthy: healthy
+                DecoderAcceptanceHealthy: healthy,
+                HasDecoderAcceptance: hasAccepted,
+                HasValidFrame: hasValid
             );
         }
     }
@@ -231,15 +236,12 @@ public sealed class AmfHardwareEncoderPipeline : IVideoEncoderPipeline
                             Volatile.Write(ref _accessUnitValid, true);
                             Volatile.Write(ref _hasProducedValidOutput, true);
 
-                            if (frameId != 0)
+                            if (!_hasValidFrame)
                             {
-                                if (!_hasValidFrame)
-                                {
-                                    Volatile.Write(ref _firstValidFrameId, frameId);
-                                    _hasValidFrame = true;
-                                }
-                                Volatile.Write(ref _lastValidFrameId, frameId);
+                                Volatile.Write(ref _firstValidFrameId, frameId);
+                                Volatile.Write(ref _hasValidFrame, true);
                             }
+                            Volatile.Write(ref _lastValidFrameId, frameId);
 
                             bool isKeyframe = auResult.HasCodecHeaders || auResult.HasRandomAccessMarker || auResult.HasParameterSets || auResult.HasIdr || auResult.HasRandomAccessPoint;
                             desc.IsKeyframe = (byte)(isKeyframe ? 1 : desc.IsKeyframe);
@@ -269,9 +271,12 @@ public sealed class AmfHardwareEncoderPipeline : IVideoEncoderPipeline
         out int bytesWritten
     )
     {
-        ulong frameId = Interlocked.Increment(ref _submittedFrameCounter);
-        ulong timestampUs = MoonshineMediaClock.GetCurrentTimestampMicroseconds();
-        return TryEncodeFrame(d3dTexture, frameId, timestampUs, forceIdr, out desc, outBitstream, out bytesWritten);
+        lock (_lock)
+        {
+            ulong frameId = Interlocked.Increment(ref _submittedFrameCounter);
+            ulong timestampUs = MoonshineMediaClock.GetCurrentTimestampMicroseconds();
+            return TryEncodeFrame(d3dTexture, frameId, timestampUs, forceIdr, out desc, outBitstream, out bytesWritten);
+        }
     }
 
     public void NotifyDecoderAcceptedFrame(ulong frameId)
@@ -279,8 +284,9 @@ public sealed class AmfHardwareEncoderPipeline : IVideoEncoderPipeline
         lock (_lock)
         {
             if (_disposed) return;
+            Volatile.Write(ref _hasDecoderAcceptance, true);
             ulong currentLast = Volatile.Read(ref _lastDecoderAcceptedFrameId);
-            if (frameId > currentLast)
+            if (frameId >= currentLast)
             {
                 Volatile.Write(ref _lastDecoderAcceptedFrameId, frameId);
             }
@@ -345,9 +351,12 @@ public sealed class AmfHardwareEncoderPipeline : IVideoEncoderPipeline
         out int bytesWritten
     )
     {
-        ulong frameId = Interlocked.Increment(ref _submittedFrameCounter);
-        ulong timestampUs = MoonshineMediaClock.GetCurrentTimestampMicroseconds();
-        return SubmitFrame(d3dTexture, frameId, timestampUs, forceIdr, outBitstream, out bytesWritten);
+        lock (_lock)
+        {
+            ulong frameId = Interlocked.Increment(ref _submittedFrameCounter);
+            ulong timestampUs = MoonshineMediaClock.GetCurrentTimestampMicroseconds();
+            return SubmitFrame(d3dTexture, frameId, timestampUs, forceIdr, outBitstream, out bytesWritten);
+        }
     }
 
     public bool ReconfigureBitrate(uint bitrateKbps, uint peakBitrateKbps)
@@ -466,6 +475,8 @@ public sealed class AmfHardwareEncoderPipeline : IVideoEncoderPipeline
             if (_disposed) return;
             _disposed = true;
             _runtimeState = EncoderRuntimeState.Disposed;
+            Volatile.Write(ref _hasDecoderAcceptance, false);
+            Volatile.Write(ref _hasValidFrame, false);
             Volatile.Write(ref _lastDecoderAcceptedFrameId, 0);
             Volatile.Write(ref _lastValidFrameId, 0);
 

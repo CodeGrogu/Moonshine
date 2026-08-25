@@ -741,6 +741,7 @@ public class HardwareVideoEncoderPipelineTests
         private ulong _lastValidFrameId;
         private ulong _lastDecoderAcceptedFrameId;
         private bool _hasValidFrame;
+        private bool _hasDecoderAcceptance;
 
         public bool HasNativeHandle
         {
@@ -768,8 +769,10 @@ public class HardwareVideoEncoderPipelineTests
             {
                 ulong lastValid = _lastValidFrameId;
                 ulong lastAccepted = _lastDecoderAcceptedFrameId;
-                bool latestMatch = lastAccepted != 0 && lastAccepted == lastValid;
-                bool healthy = EncoderEvidencePolicy.IsDecoderAcceptanceHealthy(_disposed, _hasNativeHandle, lastValid, lastAccepted);
+                bool hasAccepted = _hasDecoderAcceptance;
+                bool hasValid = _hasValidFrame;
+                bool latestMatch = hasAccepted && hasValid && lastAccepted == lastValid;
+                bool healthy = EncoderEvidencePolicy.IsDecoderAcceptanceHealthy(_disposed, _hasNativeHandle, hasValid, lastValid, hasAccepted, lastAccepted);
 
                 return new EncoderEvidence(
                     ApiAvailable: _hasNativeHandle,
@@ -784,7 +787,9 @@ public class HardwareVideoEncoderPipelineTests
                     LastValidFrameId: lastValid,
                     LastDecoderAcceptedFrameId: lastAccepted,
                     DecoderAcceptedLatestFrame: latestMatch,
-                    DecoderAcceptanceHealthy: healthy
+                    DecoderAcceptanceHealthy: healthy,
+                    HasDecoderAcceptance: hasAccepted,
+                    HasValidFrame: hasValid
                 );
             }
         }
@@ -850,6 +855,7 @@ public class HardwareVideoEncoderPipelineTests
 
         public void RecordDecoderAcceptance(ulong frameId)
         {
+            _hasDecoderAcceptance = true;
             _lastDecoderAcceptedFrameId = frameId;
         }
 
@@ -918,6 +924,8 @@ public class HardwareVideoEncoderPipelineTests
         {
             _disposed = true;
             _hasNativeHandle = false;
+            _hasDecoderAcceptance = false;
+            _hasValidFrame = false;
             _lastDecoderAcceptedFrameId = 0;
             _lastValidFrameId = 0;
         }

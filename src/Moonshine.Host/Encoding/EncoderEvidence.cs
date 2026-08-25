@@ -17,5 +17,7 @@ public readonly record struct EncoderEvidence(
     ulong LastValidFrameId,
     ulong LastDecoderAcceptedFrameId = 0,
     bool DecoderAcceptedLatestFrame = false,
-    bool DecoderAcceptanceHealthy = false
+    bool DecoderAcceptanceHealthy = false,
+    bool HasDecoderAcceptance = false,
+    bool HasValidFrame = false
 );

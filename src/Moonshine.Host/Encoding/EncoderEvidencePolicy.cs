@@ -29,10 +29,32 @@ public static class EncoderEvidencePolicy
     /// </summary>
     /// <param name="isDisposed">Whether the encoder instance is disposed.</param>
     /// <param name="hasHandle">Whether the native encoder handle is valid and active.</param>
+    /// <param name="hasValidFrame">Whether at least one valid encoded frame has been emitted by the pipeline.</param>
     /// <param name="lastValidFrameId">The identifier of the latest valid encoded frame emitted by the pipeline.</param>
+    /// <param name="hasDecoderAcceptance">Whether at least one decoder acknowledgement has been received.</param>
     /// <param name="lastDecoderAcceptedFrameId">The identifier of the latest frame acknowledged and accepted by the remote decoder.</param>
     /// <param name="maxAcceptableLagWindow">The maximum acceptable lag window in frames between encoded and accepted frames. Defaults to <see cref="DefaultDecoderAcceptanceLagWindow"/>.</param>
     /// <returns><c>true</c> if decoder acceptance is healthy; otherwise, <c>false</c>.</returns>
+    public static bool IsDecoderAcceptanceHealthy(
+        bool isDisposed,
+        bool hasHandle,
+        bool hasValidFrame,
+        ulong lastValidFrameId,
+        bool hasDecoderAcceptance,
+        ulong lastDecoderAcceptedFrameId,
+        ulong maxAcceptableLagWindow = DefaultDecoderAcceptanceLagWindow)
+    {
+        return !isDisposed
+            && hasHandle
+            && hasValidFrame
+            && hasDecoderAcceptance
+            && lastDecoderAcceptedFrameId <= lastValidFrameId
+            && (lastValidFrameId - lastDecoderAcceptedFrameId) <= maxAcceptableLagWindow;
+    }
+
+    /// <summary>
+    /// Backward-compatible overload evaluating health when explicit boolean flags are omitted.
+    /// </summary>
     public static bool IsDecoderAcceptanceHealthy(
         bool isDisposed,
         bool hasHandle,
@@ -40,11 +62,15 @@ public static class EncoderEvidencePolicy
         ulong lastDecoderAcceptedFrameId,
         ulong maxAcceptableLagWindow = DefaultDecoderAcceptanceLagWindow)
     {
-        return !isDisposed
-            && hasHandle
-            && lastDecoderAcceptedFrameId != 0
-            && lastDecoderAcceptedFrameId <= lastValidFrameId
-            && (lastValidFrameId - lastDecoderAcceptedFrameId) <= maxAcceptableLagWindow;
+        return IsDecoderAcceptanceHealthy(
+            isDisposed,
+            hasHandle,
+            hasValidFrame: lastValidFrameId != 0,
+            lastValidFrameId: lastValidFrameId,
+            hasDecoderAcceptance: lastDecoderAcceptedFrameId != 0,
+            lastDecoderAcceptedFrameId: lastDecoderAcceptedFrameId,
+            maxAcceptableLagWindow: maxAcceptableLagWindow
+        );
     }
 }
 
