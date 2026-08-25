@@ -83,7 +83,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Verify zero heap allocations in audio DSP mixing and resampling routines.
   - [x] 100% CTest pass rate across audio test suites (`test_wasapi_capture`, `test_opus_encoder`, `test_opus_decoder`, `test_wasapi_renderer`, `test_audio_resampler`, `test_virtual_audio_driver`, `test_virtual_audio_ipc`).
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T01:21:05Z | Commit: 523d2e5 | Proof: 100% pass across 8 native CTest suites and 24 managed xUnit audio tests with zero GC allocations -->
+  - <!-- VERIFIED: 2026-08-26T01:21:05Z | Commit: d828d6d | Proof: 100% pass across 8 native CTest suites and 24 managed xUnit audio tests with zero GC allocations -->
 
 ---
 
