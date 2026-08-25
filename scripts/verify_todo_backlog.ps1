@@ -112,7 +112,14 @@ for ($i = 0; $i -lt $taskOrder.Count; $i++) {
     $endIndex = if ($i + 1 -lt $taskMatches.Count) {
         $taskMatches[$i + 1].Index
     } else {
-        $content.Length
+        # If last task, delimit at the next major markdown header, divider, or EOF
+        $remaining = $content.Substring($startIndex)
+        $nextSectionMatch = [regex]::Match($remaining, '(?m)^(?:\r?\n)(?:#\s|---\s*$)')
+        if ($nextSectionMatch.Success -and $nextSectionMatch.Index -gt 0) {
+            $startIndex + $nextSectionMatch.Index
+        } else {
+            $content.Length
+        }
     }
     
     # Use raw content for block inspection so we can extract real comments and checkboxes
