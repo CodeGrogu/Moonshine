@@ -107,12 +107,14 @@ These are microbenchmark baselines for isolated algorithms, not streaming throug
 
 ### Hardware Verification Matrix (2026-08-25 Local Test Run)
 
-| Hardware Backend | Test Runner Hardware | Software / Mock Tests | Physical Bitstream & Loopback Tests | Disposition |
-| :--- | :---: | :---: | :---: | :--- |
-| **NVIDIA NVENC** | Present (NVIDIA GPU) | Passed | Passed | Physically exercised and verified |
-| **AMD AMF** | Absent | Passed | Skipped (3 tests) | Capability-gated, skipped cleanly |
-| **Intel QuickSync (QSV)** | Absent | Passed | Skipped (3 tests) | Capability-gated, skipped cleanly |
-| **Direct3D 11 Hardware** | Present | Passed | Passed | Physically exercised and verified |
+> **System GPU Inventory**: NVIDIA GeForce RTX 2060 (`0x10DE`, primary display adapter) and Intel Iris Xe Graphics (`0x8086`, secondary headless adapter) physically installed on test runner.
+
+| Hardware Backend | Physical GPU on Host | Software / Capability-Independent Tests | Physical Bitstream & Loopback Tests | Codec Coverage Detail | Disposition |
+| :--- | :---: | :---: | :---: | :--- | :--- |
+| **NVIDIA NVENC** | Present (RTX 2060) | Passed | Passed | H.264 & HEVC Main10 passed; AV1 capability-gated on Turing | Physically exercised and verified |
+| **AMD AMF** | Absent | Passed | Skipped (3 tests) | Capability-gated on missing AMD hardware | Capability-gated, skipped cleanly |
+| **Intel QuickSync (QSV)** | Present (Iris Xe) | Passed | Skipped (3 tests) | Software/ABI tests passed; QSV hardware session uninitialised on test context | Capability-gated, skipped cleanly |
+| **Direct3D 11 Hardware** | Present | Passed | Passed | Universal hardware transform fallback | Physically exercised and verified |
 
 ## Direct Follow-up Work
 
