@@ -119,17 +119,17 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
 ---
 
 ### [TODO-006] Protocol Security: Authenticated State-Changing Control & Role Authorization Pipeline
-* **Status**: `Pending`
+* **Status**: `Completed`
 * **Priority**: `P0`
 * **Prerequisites**: None
 * **Scope**: `src/Moonshine.Core/` and `src/Moonshine.Protocol/`
 * **Objective**: Make authentication mandatory for state-changing control requests, reject unauthenticated configuration attempts, and enforce single-pipeline authorization.
 * **Acceptance Criteria**:
-  - [ ] Enforce mandatory authentication on state-changing control methods (`SetHostConfiguration`, `StopStream`).
-  - [ ] Verify unauthenticated attempts fail closed with `InvalidAuthentication` or `AccessDenied`.
-  - [ ] Add unit and integration tests in `Moonshine.Core.Tests`.
+  - [x] Enforce mandatory authentication on state-changing control methods (`SetHostConfiguration`, `StopStream`).
+  - [x] Verify unauthenticated attempts fail closed with `InvalidAuthentication` or `AccessDenied`.
+  - [x] Add unit and integration tests in `Moonshine.Core.Tests`.
 * **Evidence**:
-  - <!-- PENDING: Provenance tag will be added upon completion -->
+  - <!-- VERIFIED: 2026-08-26T01:34:18Z | Commit: b2dbf93 | Proof: 25/25 tests passed across MoonshineRemoteHostControlClientTests and RemoteControlSecurityTests with HMAC-SHA256 signing and validation -->
 
 ---
 
