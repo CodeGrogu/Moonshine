@@ -144,7 +144,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Assert broad principals (`Users`, `Everyone`, `Authenticated Users`) are stripped from key ACLs.
   - [x] Add integration test in `Moonshine.Core.Tests` verifying keyfile ACLs on Windows 11.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T01:36:17Z | Commit: ba49bb8 | Proof: 5/5 tests passed in SecureFileStoreTests verifying file and directory Windows ACL inheritance protection and broad principal exclusion -->
+  - <!-- VERIFIED: 2026-08-26T01:36:17Z | Commit: 0949f50 | Proof: 5/5 tests passed in SecureFileStoreTests verifying file and directory Windows ACL inheritance protection and broad principal exclusion -->
 
 ---
 
