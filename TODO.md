@@ -204,7 +204,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Reject unrecoverable loss patterns fail-closed without corrupting pipeline buffers.
   - [x] 100% CTest and xUnit pass rate across FEC suites (`test_fec_simd`, `FecNativeTests`).
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T01:47:08Z | Commit: 045a82d | Proof: 100% pass across test_fec_simd and FecNativeTests with SIMD GF(2^8) Reed-Solomon recovery -->
+  - <!-- VERIFIED: 2026-08-26T01:47:08Z | Commit: 05558d9 | Proof: 100% pass across test_fec_simd and FecNativeTests with SIMD GF(2^8) Reed-Solomon recovery -->
 
 ---
 
@@ -219,7 +219,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Handle dynamic reconfiguration (resolution, bitrate, framerate) on active sessions.
   - [x] 100% pass rate in `HardwareVideoEncoderConformanceTests.cs` and native encoder suites.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T01:48:00Z | Commit: 045a82d | Proof: 100% pass in HardwareVideoEncoderConformanceTests on physical RTX 2060 GPU and WGC/DXGI desktop capture suites -->
+  - <!-- VERIFIED: 2026-08-26T01:48:00Z | Commit: 05558d9 | Proof: 100% pass in HardwareVideoEncoderConformanceTests on physical RTX 2060 GPU and WGC/DXGI desktop capture suites -->
 
 ---
 
@@ -234,7 +234,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Reject malformed/truncated bitstream buffers fail-closed without buffer overruns.
   - [x] 100% pass rate across `test_video_decoder` and `VideoNativeTests`.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T01:47:20Z | Commit: 045a82d | Proof: 100% pass across test_video_decoder and VideoNativeTests with verified GPU surface readback -->
+  - <!-- VERIFIED: 2026-08-26T01:47:20Z | Commit: 05558d9 | Proof: 100% pass across test_video_decoder and VideoNativeTests with verified GPU surface readback -->
 
 ---
 
