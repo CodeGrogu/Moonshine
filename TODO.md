@@ -159,7 +159,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Assert streaming session initialization fails closed if required components are not `Operational`.
   - [x] Add unit tests in `Moonshine.Core.Tests`.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T01:41:28Z | Commit: 167fc69 | Proof: 25/25 tests passed in HostStreamingSessionTests and HostCapabilityProbeEngineTests enforcing ComponentReadiness invariants -->
+  - <!-- VERIFIED: 2026-08-26T01:41:28Z | Commit: 53d3b7e | Proof: 25/25 tests passed in HostStreamingSessionTests and HostCapabilityProbeEngineTests enforcing ComponentReadiness invariants -->
 
 ---
 
@@ -174,7 +174,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Reassemble frames accurately under arbitrary packet arrival order and duplicate suppression.
   - [x] 100% pass rate in `Moonshine.Core.Tests`.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T01:41:47Z | Commit: 167fc69 | Proof: 11/11 tests passed in MoonshineMediaPacketiserTests and ClientAudioPipelineTests verifying zero-allocation packetisation and jitter recovery -->
+  - <!-- VERIFIED: 2026-08-26T01:41:47Z | Commit: 53d3b7e | Proof: 11/11 tests passed in MoonshineMediaPacketiserTests and ClientAudioPipelineTests verifying zero-allocation packetisation and jitter recovery -->
 
 ---
 
@@ -189,7 +189,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Verify rollback tears down bound sockets if later startup steps fail.
   - [x] 100% pass rate in `Moonshine.Host.Tests`.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T01:42:09Z | Commit: 167fc69 | Proof: 16/16 tests passed in HostStreamingSessionTests verifying listener binding order and rollback semantics on failure -->
+  - <!-- VERIFIED: 2026-08-26T01:42:09Z | Commit: 53d3b7e | Proof: 16/16 tests passed in HostStreamingSessionTests verifying listener binding order and rollback semantics on failure -->
 
 ---
 
