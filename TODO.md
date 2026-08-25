@@ -98,7 +98,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Verify seamless SDR fallback when display HDR is disabled.
   - [x] Add CTest and managed tests verifying swapchain present timing and occlusion handling.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T01:22:30Z | Commit: 7a6c34d | Proof: 100% pass across test_hdr_colorimetry, test_swapchain_presenter, SwapchainNativeTests, and HdrNativeTests -->
+  - <!-- VERIFIED: 2026-08-26T01:22:30Z | Commit: fc15a03 | Proof: 100% pass across test_hdr_colorimetry, test_swapchain_presenter, SwapchainNativeTests, and HdrNativeTests -->
 
 ---
 
