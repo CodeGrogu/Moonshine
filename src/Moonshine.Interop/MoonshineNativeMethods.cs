@@ -979,6 +979,25 @@ public static unsafe partial class MoonshineNativeMethods
         out uint outBytes
     );
 
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_d3d11_create_shared_texture")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial IntPtr D3D11CreateSharedTexture(
+        IntPtr d3dDevice,
+        uint width,
+        uint height,
+        uint format,
+        uint miscFlags,
+        out IntPtr outSharedHandle
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_d3d11_open_shared_texture")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial IntPtr D3D11OpenSharedTexture(
+        IntPtr d3dDevice,
+        IntPtr sharedHandle,
+        uint isNtHandle
+    );
+
     [LibraryImport(LibraryName, EntryPoint = "moonshine_d3d11_cross_adapter_copy")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int D3D11CrossAdapterCopy(

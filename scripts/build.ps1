@@ -63,21 +63,21 @@ if (-not $hostDll) {
 }
 Write-Host "[+] Managed Windows artifact verified: $($hostDll.FullName)" -ForegroundColor Green
 
-if (-not $SkipTests) {
-    Get-Process -Name testhost*, vstest* -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Milliseconds 250
-    Get-ChildItem -Path "$RootDir\src", "$RootDir\tests" -Recurse -Directory | Where-Object {
-        $_.FullName -match '[\\/]bin[\\/]'
-    } | ForEach-Object {
-        try {
-            Copy-Item $nativeDll $_.FullName -Force -ErrorAction Stop
-        } catch {
-            Get-Process -Name testhost*, vstest* -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-            Start-Sleep -Milliseconds 250
-            Copy-Item $nativeDll $_.FullName -Force -ErrorAction Stop
-        }
+Get-Process -Name testhost*, vstest* -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Milliseconds 250
+Get-ChildItem -Path "$RootDir\src", "$RootDir\tests" -Recurse -Directory | Where-Object {
+    $_.FullName -match '[\\/]bin[\\/]'
+} | ForEach-Object {
+    try {
+        Copy-Item $nativeDll $_.FullName -Force -ErrorAction Stop
+    } catch {
+        Get-Process -Name testhost*, vstest* -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Milliseconds 250
+        Copy-Item $nativeDll $_.FullName -Force -ErrorAction Stop
     }
+}
 
+if (-not $SkipTests) {
     $env:PATH = "$(Split-Path -Parent $nativeDll);$env:PATH"
     $testProjects = @(
         "$RootDir\tests\Moonshine.Protocol.Tests\Moonshine.Protocol.Tests.csproj",

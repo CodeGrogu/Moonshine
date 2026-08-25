@@ -71,6 +71,61 @@ public class EncoderNativeTests
     }
 
     [Fact]
+    public void D3D11SharedTexture_NullDevice_FailClosedSafely()
+    {
+        IntPtr tex = MoonshineNativeMethods.D3D11CreateSharedTexture(IntPtr.Zero, 1920, 1080, 0, 0, out IntPtr sharedHandle);
+        tex.Should().Be(IntPtr.Zero, "Null D3D11 device must fail closed");
+        sharedHandle.Should().Be(IntPtr.Zero);
+
+        IntPtr opened = MoonshineNativeMethods.D3D11OpenSharedTexture(IntPtr.Zero, IntPtr.Zero, 1);
+        opened.Should().Be(IntPtr.Zero, "Null shared handle must fail closed");
+    }
+
+    [Fact]
+    public unsafe void D3D11CrossAdapterCopy_ValidSurfaces_CopiesAndRendersCorrectly()
+    {
+        IntPtr dev = MoonshineNativeMethods.D3D11CreateDevice(0);
+        if (dev == IntPtr.Zero) return;
+
+        try
+        {
+            IntPtr srcTex = MoonshineNativeMethods.D3D11CreatePatternTexture(dev, 1280, 720, 1, 0); // Teal pattern
+            IntPtr dstTex = MoonshineNativeMethods.D3D11CreateTexture(dev, 1280, 720, 0);
+
+            srcTex.Should().NotBe(IntPtr.Zero);
+            dstTex.Should().NotBe(IntPtr.Zero);
+
+            try
+            {
+                int copyRes = MoonshineNativeMethods.D3D11CrossAdapterCopy(dev, srcTex, dev, dstTex, 1280, 720);
+                copyRes.Should().Be(0, "Cross-adapter surface copy must succeed");
+
+                byte[] outPixels = new byte[1280 * 720 * 4];
+                fixed (byte* pOut = outPixels)
+                {
+                    int readRes = MoonshineNativeMethods.D3D11ReadbackPixels(dev, dstTex, pOut, (uint)outPixels.Length, out uint readBytes);
+                    readRes.Should().Be(0);
+                    readBytes.Should().Be((uint)outPixels.Length);
+
+                    // Verify Teal pattern: Green > 100, Blue > 100, Red < 80 (BGRA layout: B=p[0], G=p[1], R=p[2])
+                    pOut[0].Should().BeGreaterThan(100); // Blue
+                    pOut[1].Should().BeGreaterThan(100); // Green
+                    pOut[2].Should().BeLessThan(80);     // Red
+                }
+            }
+            finally
+            {
+                MoonshineNativeMethods.D3D11DestroyTexture(srcTex);
+                MoonshineNativeMethods.D3D11DestroyTexture(dstTex);
+            }
+        }
+        finally
+        {
+            MoonshineNativeMethods.D3D11DestroyDevice(dev);
+        }
+    }
+
+    [Fact]
     public void EncoderDrainAndFlush_NullHandle_FailClosedSafely()
     {
         int drainRes = MoonshineNativeMethods.EncoderDrain(IntPtr.Zero);

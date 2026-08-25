@@ -3458,6 +3458,101 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_d3d11_readback_pixels(
         return MOONSHINE_ERR_FATAL;
     }
 }
+ 
+MOONSHINE_API void* MOONSHINE_CONV moonshine_d3d11_create_shared_texture(
+    void* d3d_device,
+    uint32_t width,
+    uint32_t height,
+    uint32_t format,
+    uint32_t misc_flags,
+    void** out_shared_handle
+) {
+    try {
+    #if defined(_WIN32)
+        if (!d3d_device || width == 0 || height == 0) return nullptr;
+        auto* dev = static_cast<ID3D11Device*>(d3d_device);
+
+        D3D11_TEXTURE2D_DESC desc{};
+        desc.Width = width;
+        desc.Height = height;
+        desc.MipLevels = 1;
+        desc.ArraySize = 1;
+        desc.Format = (format == 0) ? DXGI_FORMAT_B8G8R8A8_UNORM : static_cast<DXGI_FORMAT>(format);
+        desc.SampleDesc.Count = 1;
+        desc.SampleDesc.Quality = 0;
+        desc.Usage = D3D11_USAGE_DEFAULT;
+        desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+        desc.MiscFlags = (misc_flags != 0) ? misc_flags : (D3D11_RESOURCE_MISC_SHARED_NTHANDLE | D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX);
+
+        Microsoft::WRL::ComPtr<ID3D11Texture2D> tex;
+        if (FAILED(dev->CreateTexture2D(&desc, nullptr, &tex)) || !tex) {
+            return nullptr;
+        }
+
+        if (out_shared_handle) {
+            *out_shared_handle = nullptr;
+            if (desc.MiscFlags & D3D11_RESOURCE_MISC_SHARED_NTHANDLE) {
+                Microsoft::WRL::ComPtr<IDXGIResource1> res1;
+                if (SUCCEEDED(tex.As(&res1))) {
+                    HANDLE shared_handle = nullptr;
+                    if (SUCCEEDED(res1->CreateSharedHandle(nullptr, DXGI_SHARED_RESOURCE_READ | DXGI_SHARED_RESOURCE_WRITE, nullptr, &shared_handle))) {
+                        *out_shared_handle = shared_handle;
+                    }
+                }
+            } else if (desc.MiscFlags & D3D11_RESOURCE_MISC_SHARED) {
+                Microsoft::WRL::ComPtr<IDXGIResource> res;
+                if (SUCCEEDED(tex.As(&res))) {
+                    HANDLE shared_handle = nullptr;
+                    if (SUCCEEDED(res->GetSharedHandle(&shared_handle))) {
+                        *out_shared_handle = shared_handle;
+                    }
+                }
+            }
+        }
+
+        return tex.Detach();
+    #else
+        (void)d3d_device; (void)width; (void)height; (void)format; (void)misc_flags; (void)out_shared_handle;
+        return nullptr;
+    #endif
+    } catch (...) {
+        return nullptr;
+    }
+}
+
+MOONSHINE_API void* MOONSHINE_CONV moonshine_d3d11_open_shared_texture(
+    void* d3d_device,
+    void* shared_handle,
+    uint32_t is_nt_handle
+) {
+    try {
+    #if defined(_WIN32)
+        if (!d3d_device || !shared_handle) return nullptr;
+        auto* dev = static_cast<ID3D11Device*>(d3d_device);
+
+        Microsoft::WRL::ComPtr<ID3D11Texture2D> opened_tex;
+        if (is_nt_handle != 0) {
+            Microsoft::WRL::ComPtr<ID3D11Device1> dev1;
+            if (SUCCEEDED(dev->QueryInterface(IID_PPV_ARGS(&dev1)))) {
+                if (FAILED(dev1->OpenSharedResource1(static_cast<HANDLE>(shared_handle), IID_PPV_ARGS(&opened_tex)))) {
+                    return nullptr;
+                }
+            }
+        } else {
+            if (FAILED(dev->OpenSharedResource(static_cast<HANDLE>(shared_handle), IID_PPV_ARGS(&opened_tex)))) {
+                return nullptr;
+            }
+        }
+
+        return opened_tex ? opened_tex.Detach() : nullptr;
+    #else
+        (void)d3d_device; (void)shared_handle; (void)is_nt_handle;
+        return nullptr;
+    #endif
+    } catch (...) {
+        return nullptr;
+    }
+}
 
 MOONSHINE_API int MOONSHINE_CONV moonshine_d3d11_cross_adapter_copy(
     void* src_device,
@@ -3494,10 +3589,84 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_d3d11_cross_adapter_copy(
             return MOONSHINE_ERR_INVALID_ARGUMENT;
         }
 
+        Microsoft::WRL::ComPtr<ID3D11DeviceContext> dst_context;
+        p_dst_dev->GetImmediateContext(&dst_context);
+        if (!dst_context) {
+            return MOONSHINE_ERR_FATAL;
+        }
+
         D3D11_TEXTURE2D_DESC src_desc{};
         p_src_tex->GetDesc(&src_desc);
 
-        // Readback source texture via staging readback
+        // Path 1: Hardware Direct3D 11.1 NT Shared Handle Migration
+        if (src_desc.MiscFlags & D3D11_RESOURCE_MISC_SHARED_NTHANDLE) {
+            Microsoft::WRL::ComPtr<IDXGIResource1> dxgi_res1;
+            if (SUCCEEDED(p_src_tex->QueryInterface(IID_PPV_ARGS(&dxgi_res1)))) {
+                HANDLE shared_handle = nullptr;
+                HRESULT hr = dxgi_res1->CreateSharedHandle(
+                    nullptr,
+                    DXGI_SHARED_RESOURCE_READ | DXGI_SHARED_RESOURCE_WRITE,
+                    nullptr,
+                    &shared_handle
+                );
+                if (SUCCEEDED(hr) && shared_handle) {
+                    Microsoft::WRL::ComPtr<ID3D11Device1> dev1;
+                    if (SUCCEEDED(p_dst_dev->QueryInterface(IID_PPV_ARGS(&dev1)))) {
+                        Microsoft::WRL::ComPtr<ID3D11Texture2D> shared_tex;
+                        hr = dev1->OpenSharedResource1(shared_handle, IID_PPV_ARGS(&shared_tex));
+                        if (SUCCEEDED(hr) && shared_tex) {
+                            Microsoft::WRL::ComPtr<IDXGIKeyedMutex> keyed_mutex;
+                            shared_tex.As(&keyed_mutex);
+                            if (keyed_mutex) {
+                                keyed_mutex->AcquireSync(0, 500);
+                            }
+
+                            dst_context->CopySubresourceRegion(p_dst_tex, 0, 0, 0, 0, shared_tex.Get(), 0, nullptr);
+                            dst_context->Flush();
+
+                            if (keyed_mutex) {
+                                keyed_mutex->ReleaseSync(0);
+                            }
+
+                            CloseHandle(shared_handle);
+                            return MOONSHINE_SUCCESS;
+                        }
+                    }
+                    CloseHandle(shared_handle);
+                }
+            }
+        }
+
+        // Path 2: Legacy Direct3D 11 Shared Handle Migration
+        if (src_desc.MiscFlags & D3D11_RESOURCE_MISC_SHARED) {
+            Microsoft::WRL::ComPtr<IDXGIResource> dxgi_res;
+            if (SUCCEEDED(p_src_tex->QueryInterface(IID_PPV_ARGS(&dxgi_res)))) {
+                HANDLE shared_handle = nullptr;
+                HRESULT hr = dxgi_res->GetSharedHandle(&shared_handle);
+                if (SUCCEEDED(hr) && shared_handle) {
+                    Microsoft::WRL::ComPtr<ID3D11Texture2D> shared_tex;
+                    hr = p_dst_dev->OpenSharedResource(shared_handle, IID_PPV_ARGS(&shared_tex));
+                    if (SUCCEEDED(hr) && shared_tex) {
+                        Microsoft::WRL::ComPtr<IDXGIKeyedMutex> keyed_mutex;
+                        shared_tex.As(&keyed_mutex);
+                        if (keyed_mutex) {
+                            keyed_mutex->AcquireSync(0, 500);
+                        }
+
+                        dst_context->CopySubresourceRegion(p_dst_tex, 0, 0, 0, 0, shared_tex.Get(), 0, nullptr);
+                        dst_context->Flush();
+
+                        if (keyed_mutex) {
+                            keyed_mutex->ReleaseSync(0);
+                        }
+
+                        return MOONSHINE_SUCCESS;
+                    }
+                }
+            }
+        }
+
+        // Path 3: Robust Staging Copy Fallback
         std::vector<uint8_t> staging_buffer(width * height * 4);
         uint32_t read_bytes = 0;
         int read_res = moonshine_d3d11_readback_pixels(
@@ -3512,15 +3681,9 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_d3d11_cross_adapter_copy(
             return MOONSHINE_ERR_FATAL;
         }
 
-        // Upload to destination texture
-        Microsoft::WRL::ComPtr<ID3D11DeviceContext> dst_context;
-        p_dst_dev->GetImmediateContext(&dst_context);
-        if (!dst_context) {
-            return MOONSHINE_ERR_FATAL;
-        }
-
         uint32_t row_pitch = width * 4;
         dst_context->UpdateSubresource(p_dst_tex, 0, nullptr, staging_buffer.data(), row_pitch, 0);
+        dst_context->Flush();
         return MOONSHINE_SUCCESS;
     #else
         (void)src_device; (void)src_texture; (void)dst_device; (void)dst_texture; (void)width; (void)height;

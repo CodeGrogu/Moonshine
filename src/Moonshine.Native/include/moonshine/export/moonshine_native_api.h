@@ -1054,6 +1054,8 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_d3d11_destroy_texture(void* texture)
 MOONSHINE_API void* MOONSHINE_CONV moonshine_d3d11_create_pattern_texture(void* d3d_device, uint32_t width, uint32_t height, uint32_t pattern_type, uint32_t frame_index);
 MOONSHINE_API int MOONSHINE_CONV moonshine_d3d11_render_pattern(void* d3d_device, void* texture, uint32_t width, uint32_t height, uint32_t pattern_type, uint32_t frame_index);
 MOONSHINE_API int MOONSHINE_CONV moonshine_d3d11_readback_pixels(void* d3d_device, void* d3d_texture, uint8_t* out_pixels, uint32_t max_bytes, uint32_t* out_bytes);
+MOONSHINE_API void* MOONSHINE_CONV moonshine_d3d11_create_shared_texture(void* d3d_device, uint32_t width, uint32_t height, uint32_t format, uint32_t misc_flags, void** out_shared_handle);
+MOONSHINE_API void* MOONSHINE_CONV moonshine_d3d11_open_shared_texture(void* d3d_device, void* shared_handle, uint32_t is_nt_handle);
 MOONSHINE_API int MOONSHINE_CONV moonshine_d3d11_cross_adapter_copy(void* src_device, void* src_texture, void* dst_device, void* dst_texture, uint32_t width, uint32_t height);
 
 // ============================================================================
