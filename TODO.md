@@ -129,7 +129,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Verify unauthenticated attempts fail closed with `InvalidAuthentication` or `AccessDenied`.
   - [x] Add unit and integration tests in `Moonshine.Core.Tests`.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T01:34:18Z | Commit: b2dbf93 | Proof: 25/25 tests passed across MoonshineRemoteHostControlClientTests and RemoteControlSecurityTests with HMAC-SHA256 signing and validation -->
+  - <!-- VERIFIED: 2026-08-26T01:34:18Z | Commit: 875f7cf | Proof: 25/25 tests passed across MoonshineRemoteHostControlClientTests and RemoteControlSecurityTests with HMAC-SHA256 signing and validation -->
 
 ---
 
