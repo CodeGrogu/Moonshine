@@ -615,15 +615,8 @@ bool NvencSession::drain() {
         }
     }
 
-    std::lock_guard<std::mutex> lock(_in_flight_mutex);
-    for (auto& in_flight : _in_flight_frames) {
-        if (in_flight.bitstream_buffer) {
-            NvencLockedBitstreamGuard lock_guard(_session, &fn, in_flight.bitstream_buffer);
-            _bitstream_pool.release_buffer(in_flight.bitstream_buffer);
-            in_flight.bitstream_buffer = nullptr;
-        }
-    }
-    _in_flight_frames.clear();
+    // In-flight frames are preserved in _in_flight_frames so the caller can poll them
+    // via poll_packet() or encode_frame(nullptr, ...). Flushing is restricted to flush() and close().
     return true;
 #else
     return false;

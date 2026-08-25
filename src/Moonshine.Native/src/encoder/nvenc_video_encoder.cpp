@@ -129,7 +129,7 @@ bool NvencVideoEncoder::encode_frame(
     out_written_size = 0;
 
     if (_state == NvencLifecycleState::Faulted || _state == NvencLifecycleState::Disposed ||
-        !_initialized || !_impl || !_impl->session.is_open() || !d3d_texture || !out_bitstream || max_buffer_size == 0) {
+        !_initialized || !_impl || !_impl->session.is_open() || !out_bitstream || max_buffer_size == 0) {
         return false;
     }
 
@@ -140,6 +140,10 @@ bool NvencVideoEncoder::encode_frame(
             _state = NvencLifecycleState::Faulted;
             return false;
         }
+    }
+
+    if (!d3d_texture) {
+        return _impl->session.poll_packet(out_bitstream, max_buffer_size, out_desc, out_written_size);
     }
 
     // Determine NVENC buffer format from D3D11 texture descriptor

@@ -1115,6 +1115,96 @@ public class HardwareVideoEncoderConformanceTests
     }
 
     [SkippableFact]
+    public unsafe void HardwareEncoder_HybridMultiGpu_BothRtxAndIntelXeIndependentlyOperational()
+    {
+        var adapters = Moonshine.Core.Hardware.GpuAdapterInventory.EnumerateAdapters();
+        Skip.If(adapters == null || adapters.Count == 0, "No physical GPU adapters discovered on this system.");
+
+        var nvidiaAdapter = adapters.FirstOrDefault(a => a.IsNvidia || a.VendorId == 0x10DE);
+        var intelAdapter = adapters.FirstOrDefault(a => a.IsIntel || a.VendorId == 0x8086);
+
+        Skip.If(nvidiaAdapter == null && intelAdapter == null, "Neither NVIDIA (0x10DE) nor Intel (0x8086) GPU present.");
+
+        // 1. Validate NVIDIA RTX dGPU path independently
+        if (nvidiaAdapter != null)
+        {
+            IntPtr devNvidia = MoonshineNativeMethods.D3D11CreateDevice(0x10DE);
+            if (devNvidia != IntPtr.Zero)
+            {
+                try
+                {
+                    using var nvPipeline = new NvencHardwareEncoderPipeline(1920, 1080, d3dDevice: devNvidia);
+                    if (nvPipeline.IsActive)
+                    {
+                        IntPtr tex = MoonshineNativeMethods.D3D11CreatePatternTexture(devNvidia, 1920, 1080, 0, 0);
+                        tex.Should().NotBe(IntPtr.Zero);
+                        try
+                        {
+                            int renderRes = MoonshineNativeMethods.D3D11RenderPattern(devNvidia, tex, 1920, 1080, 4, 0);
+                            renderRes.Should().Be(1);
+
+                            Span<byte> outBitstream = stackalloc byte[1024 * 512];
+                            bool ok = nvPipeline.TryEncodeFrame(tex, true, out var desc, outBitstream, out int written);
+                            ok.Should().BeTrue();
+                            written.Should().BeGreaterThan(0);
+                            desc.IsKeyframe.Should().Be(1);
+                            nvPipeline.HasProducedValidOutput.Should().BeTrue();
+                            nvPipeline.Evidence.HasValidFrame.Should().BeTrue();
+                        }
+                        finally
+                        {
+                            MoonshineNativeMethods.D3D11DestroyTexture(tex);
+                        }
+                    }
+                }
+                finally
+                {
+                    MoonshineNativeMethods.D3D11DestroyDevice(devNvidia);
+                }
+            }
+        }
+
+        // 2. Validate Intel Iris Xe iGPU path independently (regardless of display attachment)
+        if (intelAdapter != null)
+        {
+            IntPtr devIntel = MoonshineNativeMethods.D3D11CreateDevice(0x8086);
+            if (devIntel != IntPtr.Zero)
+            {
+                try
+                {
+                    using var qsvPipeline = new QsvHardwareEncoderPipeline(1920, 1080, d3dDevice: devIntel);
+                    if (qsvPipeline.IsActive)
+                    {
+                        IntPtr tex = MoonshineNativeMethods.D3D11CreatePatternTexture(devIntel, 1920, 1080, 0, 0);
+                        tex.Should().NotBe(IntPtr.Zero);
+                        try
+                        {
+                            int renderRes = MoonshineNativeMethods.D3D11RenderPattern(devIntel, tex, 1920, 1080, 4, 0);
+                            renderRes.Should().Be(1);
+
+                            Span<byte> outBitstream = stackalloc byte[1024 * 512];
+                            bool ok = qsvPipeline.TryEncodeFrame(tex, true, out var desc, outBitstream, out int written);
+                            ok.Should().BeTrue();
+                            written.Should().BeGreaterThan(0);
+                            desc.IsKeyframe.Should().Be(1);
+                            qsvPipeline.HasProducedValidOutput.Should().BeTrue();
+                            qsvPipeline.Evidence.HasValidFrame.Should().BeTrue();
+                        }
+                        finally
+                        {
+                            MoonshineNativeMethods.D3D11DestroyTexture(tex);
+                        }
+                    }
+                }
+                finally
+                {
+                    MoonshineNativeMethods.D3D11DestroyDevice(devIntel);
+                }
+            }
+        }
+    }
+
+    [SkippableFact]
     public void UnifiedEngine_DeviceLossRecovery_RecreatesSessionAndResumesReadyState()
     {
         IntPtr dev = MoonshineNativeMethods.D3D11CreateDevice(0);

@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <thread>
 
 #if defined(_WIN32)
 #include <d3d11.h>
@@ -340,8 +341,8 @@ bool QsvSession::configure(const EncoderConfig& config) {
         return false;
     }
 
-    // Allocate bitstream internal cache
-    uint32_t buf_sz = std::max(1024u * 1024u, config.width * config.height * 2);
+    // Allocate bitstream internal cache (4 MB minimum pre-allocation for zero steady-state heap reallocations)
+    uint32_t buf_sz = std::max(4u * 1024u * 1024u, config.width * config.height * 2);
     _bitstream_buffer.resize(buf_sz);
 
     // Initialize TrackedSurface pool with proper oneVPL mfxHDLPair bindings
@@ -464,7 +465,16 @@ EncodeResult QsvSession::encode(
     }
 
     if (sts == MFX_ERR_NONE && syncp) {
-        sts = _api->MFXVideoCORE_SyncOperation(_session, syncp, 1000); // 1000ms timeout
+        int retry_count = 0;
+        do {
+            sts = _api->MFXVideoCORE_SyncOperation(_session, syncp, 1000);
+            if (sts == MFX_WRN_DEVICE_BUSY) {
+                std::this_thread::yield();
+                retry_count++;
+            } else {
+                break;
+            }
+        } while (retry_count < 100);
         _last_status = sts;
     }
 
@@ -594,7 +604,17 @@ bool QsvSession::drain() {
         sts = _api->MFXVideoENCODE_EncodeFrameAsync(_session, nullptr, nullptr, &bs, &syncp);
         if (sts == MFX_ERR_NONE && syncp) {
             if (_api->MFXVideoCORE_SyncOperation) {
-                mfxStatus sync_sts = _api->MFXVideoCORE_SyncOperation(_session, syncp, 500);
+                mfxStatus sync_sts = MFX_ERR_NONE;
+                int retry_count = 0;
+                do {
+                    sync_sts = _api->MFXVideoCORE_SyncOperation(_session, syncp, 500);
+                    if (sync_sts == MFX_WRN_DEVICE_BUSY) {
+                        std::this_thread::yield();
+                        retry_count++;
+                    } else {
+                        break;
+                    }
+                } while (retry_count < 50);
                 if (sync_sts == MFX_ERR_NONE && bs.DataLength > 0) {
                     QsvPendingPacket pkt{};
                     pkt.data.assign(bs.Data + bs.DataOffset, bs.Data + bs.DataOffset + bs.DataLength);

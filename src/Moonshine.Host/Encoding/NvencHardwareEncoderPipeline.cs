@@ -218,7 +218,7 @@ public sealed class NvencHardwareEncoderPipeline : IVideoEncoderPipeline
         long startQpc = System.Diagnostics.Stopwatch.GetTimestamp();
 
         Volatile.Write(ref _frameSubmitted, true);
-        if (_disposed || _handle == IntPtr.Zero || d3dTexture == IntPtr.Zero) return false;
+        if (_disposed || _handle == IntPtr.Zero) return false;
 
         _runtimeState = EncoderRuntimeState.Encoding;
         try
@@ -428,9 +428,18 @@ public sealed class NvencHardwareEncoderPipeline : IVideoEncoderPipeline
         out int bytesWritten
     )
     {
-        desc = default;
-        bytesWritten = 0;
-        return false;
+        lock (_lock)
+        {
+            if (_disposed || _handle == IntPtr.Zero)
+            {
+                desc = default;
+                bytesWritten = 0;
+                return false;
+            }
+            ulong frameId = Interlocked.Increment(ref _submittedFrameCounter);
+            ulong timestampUs = MoonshineMediaClock.GetCurrentTimestampMicroseconds();
+            return TryEncodeFrameCore(IntPtr.Zero, frameId, timestampUs, false, out desc, outBitstream, out bytesWritten);
+        }
     }
 
     public bool Reconfigure(uint bitrateKbps, uint fps, uint peakBitrateKbps = 0)
