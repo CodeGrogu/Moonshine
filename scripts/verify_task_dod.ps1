@@ -35,7 +35,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $content = Get-Content -Path $TodoPath -Raw
-$taskPattern = "(?ms)^###\s*\[" + [regex]::Escape($TaskId) + "\]\s*(.+?)(?=(^###\s*\[TODO-|\Z))"
+$taskPattern = "(?ms)^###\s*\[" + [regex]::Escape($TaskId) + "\]\s*(.+?)(?=(^###\s*\[TODO-|^#\s+|^---\s*$|\Z))"
 $match = [regex]::Match($content, $taskPattern)
 
 if (-not $match.Success) {

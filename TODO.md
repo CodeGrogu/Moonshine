@@ -88,17 +88,17 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
 ---
 
 ### [TODO-004] Client Presentation Pipeline HDR10 Tone Mapping & Swapchain Flip Model Discard
-* **Status**: `Pending`
+* **Status**: `Completed`
 * **Priority**: `P2`
 * **Prerequisites**: None
 * **Scope**: `src/Moonshine.Native/src/video/` and `src/Moonshine.Client/`
 * **Objective**: Harden the Direct3D 11 / DXGI swapchain presenter for HDR10 (`DXGI_FORMAT_R10G10B10A2_UNORM`) presentation, BT.2020 colorimetry metadata configuration, SMPTE ST 2086 mastering display metadata, and low-latency `DXGI_SWAP_EFFECT_FLIP_DISCARD` presenter pacing.
 * **Acceptance Criteria**:
-  - [ ] Verify HDR10 metadata injection (`DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020`).
-  - [ ] Verify seamless SDR fallback when display HDR is disabled.
-  - [ ] Add CTest and managed tests verifying swapchain present timing and occlusion handling.
+  - [x] Verify HDR10 metadata injection (`DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020`).
+  - [x] Verify seamless SDR fallback when display HDR is disabled.
+  - [x] Add CTest and managed tests verifying swapchain present timing and occlusion handling.
 * **Evidence**:
-  - <!-- PENDING: Provenance tag will be added upon completion -->
+  - <!-- VERIFIED: 2026-08-26T01:22:30Z | Commit: 7a6c34d | Proof: 100% pass across test_hdr_colorimetry, test_swapchain_presenter, SwapchainNativeTests, and HdrNativeTests -->
 
 ---
 
