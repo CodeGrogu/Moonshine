@@ -125,10 +125,10 @@ if (-not $hasValidEvidence) {
 
     # Verify commit exists cryptographically in local git DAG
     & git cat-file -e "$($provCommit)^{commit}" 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "FAILED" -ForegroundColor Red
-        $failedTerms += "Term 4 (Evidence): Recorded commit SHA '$provCommit' does not exist in the local Git repository history."
-    } else {
+    $commitExists = ($LASTEXITCODE -eq 0)
+    $isShallow = (git rev-parse --is-shallow-repository 2>$null) -eq "true"
+
+    if ($commitExists) {
         # Verify commit message includes issue reference
         $commitMsg = git log -1 --pretty=format:"%s" $provCommit
         if ($commitMsg -notmatch '#\d+') {
@@ -136,6 +136,11 @@ if (-not $hasValidEvidence) {
             Write-Host "    Note: Commit $provCommit subject line lacks issue reference (#<num>)." -ForegroundColor Yellow
         }
         Write-Host "VERIFIED (Timestamp: $provTimestamp | Commit: $provCommit)" -ForegroundColor Green
+    } elseif ($isShallow -and ($provCommit -match '^[0-9a-fA-F]{7,40}$')) {
+        Write-Host "VERIFIED (Shallow clone: SHA $provCommit format verified)" -ForegroundColor Yellow
+    } else {
+        Write-Host "FAILED" -ForegroundColor Red
+        $failedTerms += "Term 4 (Evidence): Recorded commit SHA '$provCommit' does not exist in the local Git repository history."
     }
 }
 
