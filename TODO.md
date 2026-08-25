@@ -114,7 +114,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Validate RFC 1982 modular sequence comparisons across 16-bit and 32-bit rollover boundaries.
   - [x] 100% pass rate in `Moonshine.Protocol.Tests`.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T01:32:44Z | Commit: 607e724 | Proof: 152/152 tests passed in Moonshine.Protocol.Tests covering RFC 1982 modular arithmetic and state-machine freshness boundaries -->
+  - <!-- VERIFIED: 2026-08-26T01:32:44Z | Commit: 5ca9a9e | Proof: 152/152 tests passed in Moonshine.Protocol.Tests covering RFC 1982 modular arithmetic and state-machine freshness boundaries -->
 
 ---
 
