@@ -26,8 +26,11 @@ if (-not (Test-Path $TodoPath)) {
 $content = Get-Content -Path $TodoPath -Raw
 $lines = $content -split "\r?\n"
 
+# Mask out fenced code blocks (``` ... ``` and ~~~ ... ~~~) with equal-length whitespace to preserve exact offsets
+$maskedContent = [regex]::Replace($content, '(?s)```.*?```|~~~.*?~~~', { param($m) " " * $m.Length })
+
 $taskPattern = '(?m)^###\s*\[(TODO-[A-Za-z0-9_\-]+)\]\s*(.+)$'
-$taskMatches = [regex]::Matches($content, $taskPattern)
+$taskMatches = [regex]::Matches($maskedContent, $taskPattern)
 
 if ($taskMatches.Count -eq 0) {
     Write-Warning "No structured TODO items found matching '### [TODO-XXX]' format."
