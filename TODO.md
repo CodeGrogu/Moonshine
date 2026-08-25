@@ -134,17 +134,17 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
 ---
 
 ### [TODO-007] Cryptographic Key Storage & Windows ACL Access Control Verification
-* **Status**: `Pending`
+* **Status**: `Completed`
 * **Priority**: `P0`
 * **Prerequisites**: None
 * **Scope**: `src/Moonshine.Core/Security/` and `tests/Moonshine.Core.Tests/`
 * **Objective**: Enforce Windows filesystem ACLs on private key storage with `FileSystemAccessRule`, disabling inheritance and restricting read/write strictly to `CurrentUser` and `SYSTEM`.
 * **Acceptance Criteria**:
-  - [ ] Validate Windows ACL configuration disables inheritance on persistent key directories.
-  - [ ] Assert broad principals (`Users`, `Everyone`, `Authenticated Users`) are stripped from key ACLs.
-  - [ ] Add integration test in `Moonshine.Core.Tests` verifying keyfile ACLs on Windows 11.
+  - [x] Validate Windows ACL configuration disables inheritance on persistent key directories.
+  - [x] Assert broad principals (`Users`, `Everyone`, `Authenticated Users`) are stripped from key ACLs.
+  - [x] Add integration test in `Moonshine.Core.Tests` verifying keyfile ACLs on Windows 11.
 * **Evidence**:
-  - <!-- PENDING: Provenance tag will be added upon completion -->
+  - <!-- VERIFIED: 2026-08-26T01:36:17Z | Commit: ba49bb8 | Proof: 5/5 tests passed in SecureFileStoreTests verifying file and directory Windows ACL inheritance protection and broad principal exclusion -->
 
 ---
 
