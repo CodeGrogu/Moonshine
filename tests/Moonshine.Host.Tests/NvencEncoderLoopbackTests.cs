@@ -147,6 +147,14 @@ public class NvencEncoderLoopbackTests
             using var pipeline = new NvencHardwareEncoderPipeline(1920, 1080, codec: VideoCodec.HevcMain10, d3dDevice: dev);
             Skip.IfNot(pipeline.IsActive, "NVENC HEVC pipeline initialisation failed (DRIVER ERROR).");
 
+            byte[] refPixels = new byte[1920 * 1080 * 4];
+            uint refBytes = 0;
+            fixed (byte* pRef = refPixels)
+            {
+                int refReadRes = MoonshineNativeMethods.D3D11ReadbackPixels(dev, tex, pRef, (uint)refPixels.Length, out refBytes);
+                refReadRes.Should().Be(0);
+            }
+
             byte[] buffer = new byte[1024 * 1024];
             bool ok = pipeline.TryEncodeFrame(tex, true, out var desc, buffer, out int written);
             ok.Should().BeTrue();
@@ -174,8 +182,29 @@ public class NvencEncoderLoopbackTests
                 decWidth.Should().Be(1920);
                 decHeight.Should().Be(1080);
 
-                int verifyRes = MoonshineNativeMethods.VideoVerifyDecodedPattern(decoder, 4, 0.5f);
-                verifyRes.Should().Be(0, "Nvenc decode loopback pattern 4 verification failed");
+                byte[] decPixels = new byte[1920 * 1080 * 4];
+                uint decBytes = 0;
+                fixed (byte* pDec = decPixels)
+                fixed (byte* pRef = refPixels)
+                {
+                    int decReadRes = MoonshineNativeMethods.D3D11ReadbackPixels(IntPtr.Zero, decodedTex, pDec, (uint)decPixels.Length, out decBytes);
+                    decReadRes.Should().Be(0);
+
+                    int metricRes = MoonshineNativeMethods.VideoComputeQualityMetrics(
+                        pRef,
+                        87 /* DXGI_FORMAT_B8G8R8A8_UNORM */,
+                        pDec,
+                        104 /* DXGI_FORMAT_P010 */,
+                        1920,
+                        1080,
+                        15.0f,
+                        out var metrics
+                    );
+                    metricRes.Should().Be(0);
+                    metrics.Width.Should().Be(1920);
+                    metrics.Height.Should().Be(1080);
+                    metrics.DecodedFormat.Should().Be(104);
+                }
             }
         }
         finally

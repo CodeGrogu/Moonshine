@@ -80,8 +80,18 @@ public:
     ) = 0;
     virtual bool reconfigure(const EncoderConfig& new_config) = 0;
     virtual void request_keyframe() = 0;
+    
+    /// Stop accepting new frames and wait until all previously submitted frames
+    /// have produced their encoded output. Returns true when all pending output
+    /// has been collected. Used for: session shutdown, pre-reconfiguration flush.
     virtual bool drain() = 0;
+
+    /// Discard or reset pending encoder state. Establish a clean random-access
+    /// boundary so the next submitted frame will be an IDR/CRA/key frame.
+    /// Returns true when encoder is ready to accept new input.
+    /// Used for: error recovery, stream discontinuity.
     virtual bool flush() = 0;
+    
     virtual void cleanup() = 0;
     [[nodiscard]] virtual EncoderVendor vendor() const noexcept = 0;
     [[nodiscard]] virtual bool is_initialized() const noexcept = 0;

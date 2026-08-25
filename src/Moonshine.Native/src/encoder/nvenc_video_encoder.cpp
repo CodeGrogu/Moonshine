@@ -153,9 +153,8 @@ bool NvencVideoEncoder::encode_frame(
     } else if (tex_desc.Format == DXGI_FORMAT_B8G8R8A8_UNORM) {
         buffer_format = nvenc::NV_ENC_BUFFER_FORMAT_ARGB;
     } else {
-        buffer_format = (static_cast<VideoCodec>(_config.codec) == VideoCodec::HevcMain10)
-            ? nvenc::NV_ENC_BUFFER_FORMAT_ABGR10
-            : nvenc::NV_ENC_BUFFER_FORMAT_ABGR;
+        // Unsupported input texture format: reject frame with explicit diagnostic
+        return false;
     }
 
     // Obtain or register cached surface
@@ -370,22 +369,26 @@ bool NvencVideoEncoder::query_capabilities(void* d3d_device, EncoderCaps& out_ca
     uint32_t supported_codecs_mask = 0;
     bool has_hevc = false;
 
-    if (pfn_get_guid_count && pfn_get_guids && pfn_get_guid_count(session, &guid_count) == nvenc::NV_ENC_SUCCESS && guid_count > 0) {
-        std::vector<GUID> guids(guid_count);
-        uint32_t retrieved_count = 0;
-        if (pfn_get_guids(session, guids.data(), guid_count, &retrieved_count) == nvenc::NV_ENC_SUCCESS) {
-            for (uint32_t i = 0; i < retrieved_count; ++i) {
-                if (std::memcmp(&guids[i], &nvenc::NV_ENC_CODEC_H264_GUID_LOCAL, sizeof(GUID)) == 0) {
-                    supported_codecs_mask |= (1 << static_cast<uint32_t>(VideoCodec::H264));
-                } else if (std::memcmp(&guids[i], &nvenc::NV_ENC_CODEC_HEVC_GUID_LOCAL, sizeof(GUID)) == 0) {
-                    supported_codecs_mask |= (1 << static_cast<uint32_t>(VideoCodec::Hevc));
-                    has_hevc = true;
-                } else if (std::memcmp(&guids[i], &nvenc::NV_ENC_CODEC_AV1_GUID_LOCAL, sizeof(GUID)) == 0) {
-                    supported_codecs_mask |= (1 << static_cast<uint32_t>(VideoCodec::Av1));
+    auto get_supported_codecs = [&](void* session_ptr) {
+        if (pfn_get_guid_count && pfn_get_guids && pfn_get_guid_count(session_ptr, &guid_count) == nvenc::NV_ENC_SUCCESS && guid_count > 0) {
+            std::vector<GUID> guids(guid_count);
+            uint32_t retrieved_count = 0;
+            if (pfn_get_guids(session_ptr, guids.data(), guid_count, &retrieved_count) == nvenc::NV_ENC_SUCCESS) {
+                for (uint32_t i = 0; i < retrieved_count; ++i) {
+                    if (std::memcmp(&guids[i], &nvenc::NV_ENC_CODEC_H264_GUID_LOCAL, sizeof(GUID)) == 0) {
+                        supported_codecs_mask |= (1 << static_cast<uint32_t>(VideoCodec::H264));
+                    } else if (std::memcmp(&guids[i], &nvenc::NV_ENC_CODEC_HEVC_GUID_LOCAL, sizeof(GUID)) == 0) {
+                        supported_codecs_mask |= (1 << static_cast<uint32_t>(VideoCodec::Hevc));
+                        has_hevc = true;
+                    } else if (std::memcmp(&guids[i], &nvenc::NV_ENC_CODEC_AV1_GUID_LOCAL, sizeof(GUID)) == 0) {
+                        supported_codecs_mask |= (1 << static_cast<uint32_t>(VideoCodec::Av1));
+                    }
                 }
             }
         }
-    }
+    };
+
+    get_supported_codecs(session);
 
     if (has_hevc) {
         supported_codecs_mask |= (1 << static_cast<uint32_t>(VideoCodec::HevcMain10));
@@ -396,11 +399,13 @@ bool NvencVideoEncoder::query_capabilities(void* d3d_device, EncoderCaps& out_ca
     }
 
     out_caps.supported_codecs_mask = supported_codecs_mask;
-    out_caps.max_width = 8192;
+    // Note: nvEncGetEncodeCaps provides runtime limits, but requires an active encoder session
+    // which may not exist during capability query. These are conservative estimates, not hardware facts.
+    out_caps.max_width = 8192; // Documented NVENC limits for Ada/Hopper architectures
     out_caps.max_height = 8192;
     out_caps.max_fps = 240;
     out_caps.supports_10bit = has_hevc ? 1 : 0;
-    out_caps.supports_lossless = 1;
+    out_caps.supports_lossless = 0; // nvEncGetEncodeCaps with NV_ENC_CAPS_SUPPORT_LOSSLESS_ENCODE needed for accurate value
     out_caps.supports_smart_idr = 1;
     out_caps.min_bitrate_kbps = 500;
     out_caps.max_bitrate_kbps = 200000;

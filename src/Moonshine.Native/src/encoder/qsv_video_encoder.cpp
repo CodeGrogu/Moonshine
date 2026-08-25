@@ -284,12 +284,14 @@ bool QsvVideoEncoder::query_capabilities(void* d3d_device, EncoderCaps& out_caps
         return false;
     }
 
+    // We cannot fully query oneVPL caps without a session here, so these are conservative estimates.
+    // TODO: use MFXEnumImplementations with mfxImplDescription to query supported codecs dynamically
     out_caps.supported_codecs_mask = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3); // H264, HEVC, HEVC Main10, AV1
     out_caps.max_width = 7680;
     out_caps.max_height = 4320;
     out_caps.max_fps = 240;
     out_caps.supports_10bit = 1;
-    out_caps.supports_lossless = 1;
+    out_caps.supports_lossless = 0; // QSV does not universally support lossless
     out_caps.supports_smart_idr = 1;
     out_caps.min_bitrate_kbps = 500;
     out_caps.max_bitrate_kbps = 150000;

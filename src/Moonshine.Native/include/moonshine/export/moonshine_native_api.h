@@ -94,6 +94,18 @@ typedef struct MoonshineDecoderCaps {
     uint8_t  reserved[1];
 } MoonshineDecoderCaps;
 
+typedef struct MoonshineQualityMetrics {
+    float psnr_y;                       // Peak signal-to-noise ratio (luminance)
+    float psnr_rgb;                     // Peak signal-to-noise ratio (all channels)
+    float mae;                          // Mean absolute error
+    float max_error;                    // Maximum single-pixel channel error
+    float pixels_within_tolerance_pct;  // Percentage of pixels within tolerance
+    uint32_t width;
+    uint32_t height;
+    uint32_t reference_format;
+    uint32_t decoded_format;
+} MoonshineQualityMetrics;
+
 /**
  * @brief Blittable descriptor representing a captured desktop frame.
  */
@@ -385,6 +397,16 @@ MOONSHINE_API void* MOONSHINE_CONV moonshine_video_get_texture(MoonshineDecoderH
 MOONSHINE_API int MOONSHINE_CONV moonshine_video_reset(MoonshineDecoderHandle handle, uint32_t width, uint32_t height);
 MOONSHINE_API int MOONSHINE_CONV moonshine_video_get_dimensions(MoonshineDecoderHandle handle, uint32_t* out_width, uint32_t* out_height);
 MOONSHINE_API int MOONSHINE_CONV moonshine_video_verify_decoded_pattern(void* decoder, uint32_t pattern_type, float tolerance);
+MOONSHINE_API int MOONSHINE_CONV moonshine_video_compute_quality_metrics(
+    const uint8_t* reference_pixels,
+    uint32_t reference_format,
+    const uint8_t* decoded_pixels,
+    uint32_t decoded_format,
+    uint32_t width,
+    uint32_t height,
+    float tolerance,
+    MoonshineQualityMetrics* out_metrics
+);
 
 // ============================================================================
 // Low-Latency DXGI Flip Model Swapchain APIs
@@ -1015,6 +1037,12 @@ MOONSHINE_API uint32_t MOONSHINE_CONV moonshine_encoder_get_vendor(
 // ============================================================================
 
 MOONSHINE_API void* MOONSHINE_CONV moonshine_d3d11_create_device(uint32_t vendor_id);
+
+MOONSHINE_API void* MOONSHINE_CONV moonshine_d3d11_create_device_on_adapter(
+    uint32_t vendor_id,
+    uint32_t adapter_index
+);
+
 MOONSHINE_API void MOONSHINE_CONV moonshine_d3d11_destroy_device(void* d3d_device);
 MOONSHINE_API void* MOONSHINE_CONV moonshine_d3d11_create_texture(void* d3d_device, uint32_t width, uint32_t height, uint32_t format);
 MOONSHINE_API void MOONSHINE_CONV moonshine_d3d11_destroy_texture(void* texture);

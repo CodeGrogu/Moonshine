@@ -200,6 +200,19 @@ public static unsafe partial class MoonshineNativeMethods
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int VideoVerifyDecodedPattern(IntPtr decoder, uint patternType, float tolerance);
 
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_video_compute_quality_metrics")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static unsafe partial int VideoComputeQualityMetrics(
+        byte* referencePixels,
+        uint referenceFormat,
+        byte* decodedPixels,
+        uint decodedFormat,
+        uint width,
+        uint height,
+        float tolerance,
+        out MoonshineQualityMetrics outMetrics
+    );
+
     [LibraryImport(LibraryName, EntryPoint = "moonshine_video_reset")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int VideoReset(IntPtr handle, uint width, uint height);

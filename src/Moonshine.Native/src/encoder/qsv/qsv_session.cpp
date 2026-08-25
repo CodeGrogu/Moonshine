@@ -306,8 +306,10 @@ bool QsvSession::configure(const EncoderConfig& config) {
         _ext_opt2.IntRefQPDelta = static_cast<int16_t>(_intra_refresh_qp_delta);
     }
 
-    _params.ExtParam = nullptr;
-    _params.NumExtParam = 0;
+    _ext_buffers[0] = reinterpret_cast<mfxExtBuffer*>(&_ext_opt);
+    _ext_buffers[1] = reinterpret_cast<mfxExtBuffer*>(&_ext_opt2);
+    _params.ExtParam = _ext_buffers;
+    _params.NumExtParam = 2;
 
     mfxVideoParam inParams = _params;
     if (_api->MFXVideoENCODE_Query) {
@@ -317,19 +319,7 @@ bool QsvSession::configure(const EncoderConfig& config) {
     mfxStatus sts = _api->MFXVideoENCODE_Init(_session, &_params);
     _last_status = sts;
     if (sts < MFX_ERR_NONE) {
-        // Try with H.264 if HEVC was attempted
-        if (codec_id != MFX_CODEC_AVC) {
-            _params.mfx.CodecId = MFX_CODEC_AVC;
-            inParams = _params;
-            if (_api->MFXVideoENCODE_Query) {
-                _api->MFXVideoENCODE_Query(_session, &inParams, &_params);
-            }
-            sts = _api->MFXVideoENCODE_Init(_session, &_params);
-            _last_status = sts;
-        }
-        if (sts < MFX_ERR_NONE) {
-            return false;
-        }
+        return false;
     }
 
     // Allocate bitstream internal cache
@@ -359,6 +349,7 @@ bool QsvSession::encode(
 
     std::lock_guard<std::mutex> lock(_mutex);
 
+    // TODO(oneVPL): Migrate to MFXMemory_GetSurfaceForEncode or mfxFrameAllocator for proper D3D11 surface management
     mfxFrameSurface1 surface{};
     surface.Info = _params.mfx.FrameInfo;
     surface.Data.MemId = d3d_texture;
@@ -373,6 +364,11 @@ bool QsvSession::encode(
 
     mfxSyncPoint syncp = nullptr;
     mfxStatus sts = _api->MFXVideoENCODE_EncodeFrameAsync(_session, nullptr, &surface, &bs, &syncp);
+
+    if (sts < MFX_ERR_NONE) {
+        // Surface rejected by encoder
+        return false;
+    }
 
     if (sts == MFX_ERR_NONE && syncp) {
         sts = _api->MFXVideoCORE_SyncOperation(_session, syncp, 1000); // 1000ms timeout

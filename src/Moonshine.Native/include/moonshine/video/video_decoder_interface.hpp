@@ -61,6 +61,8 @@ private:
     void* video_decoder_{nullptr};
     void* output_view_{nullptr};
     void* output_texture_{nullptr};
+    void* staging_texture_{nullptr};
+    uint32_t output_format_{0};
     std::vector<uint8_t> decoded_pixels_{};
 };
 

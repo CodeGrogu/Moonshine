@@ -219,6 +219,21 @@ int D3D11VideoDecoder::Initialize(void* hwnd, uint32_t width, uint32_t height, V
     video_decoder_ = decoder.Detach();
     output_view_ = output_view.Detach();
     output_texture_ = output_texture.Detach();
+    output_format_ = static_cast<uint32_t>(format);
+
+    // Create staging texture for readback (use raw pointers since ComPtrs were Detached above)
+    D3D11_TEXTURE2D_DESC staging_desc{};
+    static_cast<ID3D11Texture2D*>(output_texture_)->GetDesc(&staging_desc);
+    staging_desc.Usage = D3D11_USAGE_STAGING;
+    staging_desc.BindFlags = 0;
+    staging_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    staging_desc.MiscFlags = 0;
+    staging_desc.ArraySize = 1;
+
+    ComPtr<ID3D11Texture2D> staging_tex;
+    if (SUCCEEDED(static_cast<ID3D11Device*>(d3d11_device_)->CreateTexture2D(&staging_desc, nullptr, &staging_tex))) {
+        staging_texture_ = staging_tex.Detach();
+    }
 
     initialized_ = true;
     return 0;
@@ -266,189 +281,50 @@ int D3D11VideoDecoder::SubmitFrame(const MoonshineFrameDesc& frame) {
         vctx->DecoderEndFrame(dec);
     }
 
-    // Populate output_texture_ with decoded frame pattern data for readback and loopback verification
-    if (d3d11_context_ && output_texture_ && width_ > 0 && height_ > 0) {
+    if (d3d11_context_ && output_texture_ && staging_texture_ && width_ > 0 && height_ > 0) {
         auto* dctx = static_cast<ID3D11DeviceContext*>(d3d11_context_);
         auto* out_tex = static_cast<ID3D11Texture2D*>(output_texture_);
+        auto* staging_tex = static_cast<ID3D11Texture2D*>(staging_texture_);
 
-        D3D11_TEXTURE2D_DESC tex_desc{};
-        out_tex->GetDesc(&tex_desc);
+        dctx->CopySubresourceRegion(staging_tex, 0, 0, 0, 0, out_tex, 0, nullptr);
+        dctx->Flush();
 
-        uint32_t pattern_type = (frame.frame_index < 5) ? frame.frame_index : 4;
-        std::vector<uint32_t> bgra_pixels(width_ * height_);
-
-        switch (pattern_type) {
-            case 0: { // Black
-                for (uint32_t i = 0; i < width_ * height_; ++i) {
-                    bgra_pixels[i] = 0xFF000000;
+        D3D11_MAPPED_SUBRESOURCE mapped{};
+        if (SUCCEEDED(dctx->Map(staging_tex, 0, D3D11_MAP_READ, 0, &mapped))) {
+            if (output_format_ == DXGI_FORMAT_NV12) {
+                uint32_t expected_size = width_ * height_ * 3 / 2;
+                if (decoded_pixels_.size() != expected_size) {
+                    decoded_pixels_.resize(expected_size);
                 }
-                break;
-            }
-            case 1: { // Solid Colour (Vibrant Teal: R=32, G=178, B=170, A=255)
-                const uint32_t solid_color = 0xFF20B2AA;
-                for (uint32_t i = 0; i < width_ * height_; ++i) {
-                    bgra_pixels[i] = solid_color;
-                }
-                break;
-            }
-            case 2: { // Linear 2D Gradient
-                for (uint32_t y = 0; y < height_; ++y) {
-                    for (uint32_t x = 0; x < width_; ++x) {
-                        uint32_t r = (x * 255) / width_;
-                        uint32_t g = (y * 255) / height_;
-                        uint32_t b = ((x + y) * 255) / (width_ + height_);
-                        bgra_pixels[y * width_ + x] = 0xFF000000 | (r << 16) | (g << 8) | b;
-                    }
-                }
-                break;
-            }
-            case 3: { // Moving Procedural Pattern
-                uint32_t box_size = 128;
-                uint32_t max_x = width_ > box_size ? width_ - box_size : 1;
-                uint32_t max_y = height_ > box_size ? height_ - box_size : 1;
-                uint32_t box_x = (frame.frame_index * 24) % max_x;
-                uint32_t box_y = (frame.frame_index * 16) % max_y;
+                uint8_t* dst_y = decoded_pixels_.data();
+                uint8_t* dst_uv = dst_y + (width_ * height_);
+                const uint8_t* src_y = static_cast<const uint8_t*>(mapped.pData);
+                const uint8_t* src_uv = src_y + (height_ * mapped.RowPitch);
 
                 for (uint32_t y = 0; y < height_; ++y) {
-                    for (uint32_t x = 0; x < width_; ++x) {
-                        if (x >= box_x && x < box_x + box_size && y >= box_y && y < box_y + box_size) {
-                            bool check = (((x - box_x) / 16) + ((y - box_y) / 16)) % 2 == 0;
-                            bgra_pixels[y * width_ + x] = check ? 0xFFFFFFFF : 0xFF00FF00;
-                        } else {
-                            float wave_val = std::sin((x + frame.frame_index * 12) * 0.04f) * 0.5f + 0.5f;
-                            uint32_t r = static_cast<uint32_t>(wave_val * 255.0f);
-                            uint32_t g = (x * 255) / width_;
-                            uint32_t b = (y * 255) / height_;
-                            bgra_pixels[y * width_ + x] = 0xFF000000 | (r << 16) | (g << 8) | b;
-                        }
-                    }
+                    std::memcpy(dst_y + (y * width_), src_y + (y * mapped.RowPitch), width_);
                 }
-                break;
-            }
-            case 4: // SMPTE Colour Bars (Descending luminance: White, Yellow, Cyan, Green, Magenta, Red, Blue)
-            default: {
-                const uint32_t smpte_colors[7] = {
-                    0xFFBFBFBF, // 75% White (Y ~ 191)
-                    0xFFBFBF00, // 75% Yellow (Y ~ 169)
-                    0xFF00BFBF, // 75% Cyan (Y ~ 133)
-                    0xFF00BF00, // 75% Green (Y ~ 112)
-                    0xFFBF00BF, // 75% Magenta (Y ~ 78)
-                    0xFFBF0000, // 75% Red (Y ~ 57)
-                    0xFF0000BF  // 75% Blue (Y ~ 21)
-                };
+                for (uint32_t y = 0; y < height_ / 2; ++y) {
+                    std::memcpy(dst_uv + (y * width_), src_uv + (y * mapped.RowPitch), width_);
+                }
+            } else if (output_format_ == DXGI_FORMAT_P010 || output_format_ == DXGI_FORMAT_P016) {
+                uint32_t expected_size = width_ * height_ * 3;
+                if (decoded_pixels_.size() != expected_size) {
+                    decoded_pixels_.resize(expected_size);
+                }
+                uint8_t* dst_y = decoded_pixels_.data();
+                uint8_t* dst_uv = dst_y + (width_ * height_ * 2);
+                const uint8_t* src_y = static_cast<const uint8_t*>(mapped.pData);
+                const uint8_t* src_uv = src_y + (height_ * mapped.RowPitch);
+
                 for (uint32_t y = 0; y < height_; ++y) {
-                    for (uint32_t x = 0; x < width_; ++x) {
-                        uint32_t calc_idx = (x * 7) / width_;
-                        uint32_t bar_index = (calc_idx < 6) ? calc_idx : 6;
-                        bgra_pixels[y * width_ + x] = smpte_colors[bar_index];
-                    }
+                    std::memcpy(dst_y + (y * width_ * 2), src_y + (y * mapped.RowPitch), width_ * 2);
                 }
-                break;
-            }
-        }
-
-        if (tex_desc.Format == DXGI_FORMAT_NV12) {
-            std::vector<uint8_t> nv12_data(width_ * height_ * 3 / 2);
-            uint8_t* y_plane = nv12_data.data();
-            uint8_t* uv_plane = nv12_data.data() + (width_ * height_);
-
-            for (uint32_t y = 0; y < height_; ++y) {
-                for (uint32_t x = 0; x < width_; ++x) {
-                    uint32_t bgra = bgra_pixels[y * width_ + x];
-                    float b = static_cast<float>(bgra & 0xFF);
-                    float g = static_cast<float>((bgra >> 8) & 0xFF);
-                    float r = static_cast<float>((bgra >> 16) & 0xFF);
-
-                    float yf = 0.299f * r + 0.587f * g + 0.114f * b;
-                    y_plane[y * width_ + x] = static_cast<uint8_t>(std::clamp(yf, 0.0f, 255.0f));
-
-                    if ((y % 2 == 0) && (x % 2 == 0)) {
-                        float uf = (b - yf) / 1.772f + 128.0f;
-                        float vf = (r - yf) / 1.402f + 128.0f;
-                        uint32_t uv_idx = (y / 2) * width_ + x;
-                        uv_plane[uv_idx] = static_cast<uint8_t>(std::clamp(uf, 0.0f, 255.0f));
-                        uv_plane[uv_idx + 1] = static_cast<uint8_t>(std::clamp(vf, 0.0f, 255.0f));
-                    }
+                for (uint32_t y = 0; y < height_ / 2; ++y) {
+                    std::memcpy(dst_uv + (y * width_ * 2), src_uv + (y * mapped.RowPitch), width_ * 2);
                 }
             }
-
-            D3D11_TEXTURE2D_DESC temp_desc{};
-            temp_desc.Width = width_;
-            temp_desc.Height = height_;
-            temp_desc.MipLevels = 1;
-            temp_desc.ArraySize = 1;
-            temp_desc.Format = DXGI_FORMAT_NV12;
-            temp_desc.SampleDesc.Count = 1;
-            temp_desc.SampleDesc.Quality = 0;
-            temp_desc.Usage = D3D11_USAGE_STAGING;
-            temp_desc.BindFlags = 0;
-            temp_desc.CPUAccessFlags = 0;
-            temp_desc.MiscFlags = 0;
-
-            D3D11_SUBRESOURCE_DATA init_data{};
-            init_data.pSysMem = nv12_data.data();
-            init_data.SysMemPitch = width_;
-            init_data.SysMemSlicePitch = static_cast<UINT>(nv12_data.size());
-
-            ComPtr<ID3D11Texture2D> temp_tex;
-            if (SUCCEEDED(dev->CreateTexture2D(&temp_desc, &init_data, &temp_tex)) && temp_tex) {
-                dctx->CopySubresourceRegion(out_tex, 0, 0, 0, 0, temp_tex.Get(), 0, nullptr);
-                dctx->Flush();
-            }
-            decoded_pixels_ = std::move(nv12_data);
-        } else if (tex_desc.Format == DXGI_FORMAT_P010 || tex_desc.Format == DXGI_FORMAT_P016) {
-            std::vector<uint8_t> p010_data(width_ * height_ * 3);
-            auto* y_plane = reinterpret_cast<uint16_t*>(p010_data.data());
-            auto* uv_plane = reinterpret_cast<uint16_t*>(p010_data.data() + (width_ * height_ * 2));
-
-            for (uint32_t y = 0; y < height_; ++y) {
-                for (uint32_t x = 0; x < width_; ++x) {
-                    uint32_t bgra = bgra_pixels[y * width_ + x];
-                    float b = static_cast<float>(bgra & 0xFF);
-                    float g = static_cast<float>((bgra >> 8) & 0xFF);
-                    float r = static_cast<float>((bgra >> 16) & 0xFF);
-
-                    float yf = 0.299f * r + 0.587f * g + 0.114f * b;
-                    uint16_t y10 = static_cast<uint16_t>(std::clamp((yf / 255.0f) * 1023.0f, 0.0f, 1023.0f)) << 6;
-                    y_plane[y * width_ + x] = y10;
-
-                    if ((y % 2 == 0) && (x % 2 == 0)) {
-                        float uf = (b - yf) / 1.772f + 128.0f;
-                        float vf = (r - yf) / 1.402f + 128.0f;
-                        uint16_t u10 = static_cast<uint16_t>(std::clamp((uf / 255.0f) * 1023.0f, 0.0f, 1023.0f)) << 6;
-                        uint16_t v10 = static_cast<uint16_t>(std::clamp((vf / 255.0f) * 1023.0f, 0.0f, 1023.0f)) << 6;
-                        uint32_t uv_idx = (y / 2) * width_ + x;
-                        uv_plane[uv_idx] = u10;
-                        uv_plane[uv_idx + 1] = v10;
-                    }
-                }
-            }
-
-            D3D11_TEXTURE2D_DESC temp_desc{};
-            temp_desc.Width = width_;
-            temp_desc.Height = height_;
-            temp_desc.MipLevels = 1;
-            temp_desc.ArraySize = 1;
-            temp_desc.Format = tex_desc.Format;
-            temp_desc.SampleDesc.Count = 1;
-            temp_desc.SampleDesc.Quality = 0;
-            temp_desc.Usage = D3D11_USAGE_STAGING;
-            temp_desc.BindFlags = 0;
-            temp_desc.CPUAccessFlags = 0;
-            temp_desc.MiscFlags = 0;
-
-            D3D11_SUBRESOURCE_DATA init_data{};
-            init_data.pSysMem = p010_data.data();
-            init_data.SysMemPitch = width_ * 2;
-            init_data.SysMemSlicePitch = static_cast<UINT>(p010_data.size());
-
-            ComPtr<ID3D11Texture2D> temp_tex;
-            if (SUCCEEDED(dev->CreateTexture2D(&temp_desc, &init_data, &temp_tex)) && temp_tex) {
-                dctx->CopySubresourceRegion(out_tex, 0, 0, 0, 0, temp_tex.Get(), 0, nullptr);
-                dctx->Flush();
-            }
-
-            decoded_pixels_ = std::move(p010_data);
+            dctx->Unmap(staging_tex, 0);
         }
     }
 
@@ -500,6 +376,10 @@ void D3D11VideoDecoder::Shutdown() {
     if (output_texture_) {
         static_cast<ID3D11Texture2D*>(output_texture_)->Release();
         output_texture_ = nullptr;
+    }
+    if (staging_texture_) {
+        static_cast<ID3D11Texture2D*>(staging_texture_)->Release();
+        staging_texture_ = nullptr;
     }
     if (video_decoder_) {
         static_cast<ID3D11VideoDecoder*>(video_decoder_)->Release();

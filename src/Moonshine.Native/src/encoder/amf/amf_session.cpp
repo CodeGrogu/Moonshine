@@ -202,7 +202,10 @@ bool AmfSession::encode(
         if (submit_res == AMF_INPUT_FULL || submit_res == AMF_REPEAT) {
             AMFData* pPendingData = nullptr;
             if (_encoder->QueryOutput(&pPendingData) == AMF_OK && pPendingData) {
-                pPendingData->Release();
+                if (_pending_output) {
+                    _pending_output->Release();
+                }
+                _pending_output = pPendingData;
             }
             std::this_thread::yield();
         } else {
@@ -219,19 +222,28 @@ bool AmfSession::encode(
     AMFData* pData = nullptr;
     AMF_RESULT query_res = AMF_REPEAT;
 
-    for (int poll_attempt = 0; poll_attempt < 30; ++poll_attempt) {
-        query_res = _encoder->QueryOutput(&pData);
-        if (query_res == AMF_OK && pData) {
-            break;
-        }
-        if (query_res == AMF_EOF || query_res == AMF_INVALID_ARG || query_res == AMF_WRONG_STATE) {
-            return false;
-        }
-        if (query_res == AMF_NEED_MORE_INPUT) {
-            return false;
-        }
-        if (query_res == AMF_REPEAT) {
-            std::this_thread::yield();
+    if (_pending_output) {
+        pData = _pending_output;
+        _pending_output = nullptr;
+        query_res = AMF_OK;
+    } else {
+        for (int poll_attempt = 0; poll_attempt < 30; ++poll_attempt) {
+            query_res = _encoder->QueryOutput(&pData);
+            if (query_res == AMF_OK && pData) {
+                break;
+            }
+            if (query_res == AMF_EOF || query_res == AMF_INVALID_ARG || query_res == AMF_WRONG_STATE) {
+                return false;
+            }
+            if (query_res == AMF_NEED_MORE_INPUT) {
+                // Encoder pipeline is filling: frame accepted but output deferred
+                out_written_size = 0;
+                out_desc.payload_size = 0;
+                return true; // Frame was accepted, just no output yet
+            }
+            if (query_res == AMF_REPEAT) {
+                std::this_thread::yield();
+            }
         }
     }
 
@@ -369,6 +381,10 @@ void AmfSession::close() {
         _encoder->Terminate();
         _encoder->Release();
         _encoder = nullptr;
+    }
+    if (_pending_output) {
+        _pending_output->Release();
+        _pending_output = nullptr;
     }
     if (_context) {
         _context->Terminate();

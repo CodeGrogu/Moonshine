@@ -57,6 +57,23 @@ public unsafe struct MoonshineDecoderCaps
 }
 
 /// <summary>
+/// Exact binary match for MoonshineQualityMetrics (C-ABI, 36 bytes).
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct MoonshineQualityMetrics
+{
+    public float PsnrY;
+    public float PsnrRgb;
+    public float Mae;
+    public float MaxError;
+    public float PixelsWithinTolerancePct;
+    public uint Width;
+    public uint Height;
+    public uint ReferenceFormat;
+    public uint DecodedFormat;
+}
+
+/// <summary>
 /// Exact binary match for MoonshineCaptureFrameDesc (C-ABI, 36 bytes).
 /// </summary>
 [StructLayout(LayoutKind.Sequential, Pack = 1)]

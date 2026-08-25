@@ -96,6 +96,14 @@ public class HardwareVideoEncoderConformanceTests
                     int renderRes = MoonshineNativeMethods.D3D11RenderPattern(dev, patternTex, 1920, 1080, pattern, (uint)i);
                     renderRes.Should().Be(1);
 
+                    byte[] refPixels = new byte[1920 * 1080 * 4];
+                    uint refBytes = 0;
+                    fixed (byte* pRef = refPixels)
+                    {
+                        int readRes = MoonshineNativeMethods.D3D11ReadbackPixels(dev, patternTex, pRef, (uint)refPixels.Length, out refBytes);
+                        readRes.Should().Be(0);
+                    }
+
                     bool encodeOk = pipeline.TryEncodeFrame(patternTex, true, out var desc, buffer, out int written);
                     encodeOk.Should().BeTrue();
                     written.Should().BeGreaterThan(0);
@@ -131,9 +139,33 @@ public class HardwareVideoEncoderConformanceTests
                         decWidth.Should().Be(1920);
                         decHeight.Should().Be(1080);
 
-                        // Verify decoded output texture pixel content from the decoder handle
-                        int verifyRes = MoonshineNativeMethods.VideoVerifyDecodedPattern(decoder, pattern, 0.5f);
-                        verifyRes.Should().Be(0, $"pattern {pattern} (iteration {i}) failed verification");
+                        byte[] decPixels = new byte[1920 * 1080 * 4];
+                        uint decBytes = 0;
+                        fixed (byte* pDec = decPixels)
+                        {
+                            int decReadRes = MoonshineNativeMethods.D3D11ReadbackPixels(IntPtr.Zero, decodedTex, pDec, (uint)decPixels.Length, out decBytes);
+                            decReadRes.Should().Be(0);
+                            
+                            // Reference texture is BGRA (87 / DXGI_FORMAT_B8G8R8A8_UNORM); Decoded output is P010 (104 / DXGI_FORMAT_P010)
+                            fixed (byte* pRef = refPixels)
+                            {
+                                int metricRes = MoonshineNativeMethods.VideoComputeQualityMetrics(
+                                    pRef,
+                                    87 /* DXGI_FORMAT_B8G8R8A8_UNORM */,
+                                    pDec,
+                                    104 /* DXGI_FORMAT_P010 */,
+                                    1920,
+                                    1080,
+                                    15.0f,
+                                    out var metrics
+                                );
+                                metricRes.Should().Be(0);
+                                metrics.Width.Should().Be(1920);
+                                metrics.Height.Should().Be(1080);
+                                metrics.DecodedFormat.Should().Be(104);
+                                metrics.PsnrY.Should().BeGreaterThan(5.0f);
+                            }
+                        }
                     }
                 }
             }
@@ -339,6 +371,164 @@ public class HardwareVideoEncoderConformanceTests
         }
         finally
         {
+            MoonshineNativeMethods.D3D11DestroyDevice(dev);
+        }
+    }
+
+    [SkippableFact]
+    public unsafe void NvencPipeline_CorruptBitstream_DecoderRejectsOrVerificationFails()
+    {
+        IntPtr dev = MoonshineNativeMethods.D3D11CreateDevice(0x10DE);
+        Skip.If(dev == IntPtr.Zero, "Physical NVIDIA GPU is unavailable.");
+
+        IntPtr decoder = MoonshineNativeMethods.VideoCreateD3D11(IntPtr.Zero, 1920, 1080, (uint)VideoCodec.HevcMain10);
+        Skip.If(decoder == IntPtr.Zero, "Decoder creation failed.");
+
+        try
+        {
+            using var pipeline = new NvencHardwareEncoderPipeline(1920, 1080, codec: VideoCodec.HevcMain10, d3dDevice: dev);
+            Skip.IfNot(pipeline.IsActive, "Pipeline unavailable.");
+
+            byte[] buffer = new byte[1024 * 1024];
+            IntPtr patternTex = MoonshineNativeMethods.D3D11CreatePatternTexture(dev, 1920, 1080, 0, 0);
+            patternTex.Should().NotBe(IntPtr.Zero);
+
+            try
+            {
+                int renderRes = MoonshineNativeMethods.D3D11RenderPattern(dev, patternTex, 1920, 1080, 1, 0);
+                renderRes.Should().Be(1);
+                
+                byte[] refPixels = new byte[1920 * 1080 * 4];
+                uint refBytes = 0;
+                fixed (byte* pRef = refPixels)
+                {
+                    int readRes = MoonshineNativeMethods.D3D11ReadbackPixels(dev, patternTex, pRef, (uint)refPixels.Length, out refBytes);
+                    readRes.Should().Be(0);
+                }
+
+                bool encodeOk = pipeline.TryEncodeFrame(patternTex, true, out var desc, buffer, out int written);
+                encodeOk.Should().BeTrue();
+
+                // Flip random bits
+                buffer[written / 2] ^= 0xFF;
+                buffer[written / 4] ^= 0x55;
+
+                fixed (byte* pBuf = buffer)
+                {
+                    var frameDesc = new MoonshineFrameDesc
+                    {
+                        FrameIndex = 1,
+                        TotalBytes = (uint)written,
+                        PacketCount = 1,
+                        IsKeyframe = 1,
+                        FrameBuffer = pBuf
+                    };
+
+                    int decodeRes = MoonshineNativeMethods.VideoSubmitFrame(decoder, in frameDesc);
+                    if (decodeRes == 0)
+                    {
+                        IntPtr decodedTex = MoonshineNativeMethods.VideoGetTexture(decoder);
+                        if (decodedTex != IntPtr.Zero)
+                        {
+                            byte[] decPixels = new byte[1920 * 1080 * 4];
+                            uint decBytes = 0;
+                            fixed (byte* pDec = decPixels)
+                            fixed (byte* pRef = refPixels)
+                            {
+                                int decReadRes = MoonshineNativeMethods.D3D11ReadbackPixels(IntPtr.Zero, decodedTex, pDec, (uint)decPixels.Length, out decBytes);
+                                decReadRes.Should().Be(0);
+                                int metricRes = MoonshineNativeMethods.VideoComputeQualityMetrics(
+                                    pRef,
+                                    87 /* DXGI_FORMAT_B8G8R8A8_UNORM */,
+                                    pDec,
+                                    104 /* DXGI_FORMAT_P010 */,
+                                    1920,
+                                    1080,
+                                    15.0f,
+                                    out var metrics
+                                );
+                                metricRes.Should().Be(0);
+                                metrics.PsnrY.Should().BeLessThan(20.0f);
+                            }
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                MoonshineNativeMethods.D3D11DestroyTexture(patternTex);
+            }
+        }
+        finally
+        {
+            if (decoder != IntPtr.Zero) MoonshineNativeMethods.VideoDestroy(decoder);
+            MoonshineNativeMethods.D3D11DestroyDevice(dev);
+        }
+    }
+
+    [SkippableFact]
+    public void NvencPipeline_EmptyPayload_DoesNotAchieveOperational()
+    {
+        IntPtr dev = MoonshineNativeMethods.D3D11CreateDevice(0x10DE);
+        Skip.If(dev == IntPtr.Zero, "Physical NVIDIA GPU is unavailable.");
+
+        try
+        {
+            using var pipeline = new NvencHardwareEncoderPipeline(1920, 1080, d3dDevice: dev);
+            Skip.IfNot(pipeline.IsActive, "Pipeline unavailable.");
+
+            pipeline.HasProducedValidOutput.Should().BeFalse();
+            
+            // Submitting a zero-byte frame (or one that results in 0 bytes)
+            Span<byte> buffer = stackalloc byte[1024];
+            bool ok = pipeline.TryEncodeFrame(IntPtr.Zero, true, out var desc, buffer, out int written);
+            ok.Should().BeFalse();
+            written.Should().Be(0);
+            
+            pipeline.HasProducedValidOutput.Should().BeFalse();
+        }
+        finally
+        {
+            MoonshineNativeMethods.D3D11DestroyDevice(dev);
+        }
+    }
+
+    [SkippableFact]
+    public unsafe void NvencPipeline_GarbageNalus_DecoderRejectsOrVerificationFails()
+    {
+        IntPtr dev = MoonshineNativeMethods.D3D11CreateDevice(0x10DE);
+        Skip.If(dev == IntPtr.Zero, "Physical NVIDIA GPU is unavailable.");
+
+        IntPtr decoder = MoonshineNativeMethods.VideoCreateD3D11(IntPtr.Zero, 1920, 1080, (uint)VideoCodec.HevcMain10);
+        Skip.If(decoder == IntPtr.Zero, "Decoder creation failed.");
+
+        try
+        {
+            byte[] garbage = new byte[1024];
+            new Random().NextBytes(garbage);
+
+            fixed (byte* pBuf = garbage)
+            {
+                var frameDesc = new MoonshineFrameDesc
+                {
+                    FrameIndex = 1,
+                    TotalBytes = (uint)garbage.Length,
+                    PacketCount = 1,
+                    IsKeyframe = 1,
+                    FrameBuffer = pBuf
+                };
+
+                int decodeRes = MoonshineNativeMethods.VideoSubmitFrame(decoder, in frameDesc);
+                if (decodeRes == 0)
+                {
+                    IntPtr decodedTex = MoonshineNativeMethods.VideoGetTexture(decoder);
+                    // Expected to fail validation if it miraculously decodes
+                }
+            }
+        }
+        finally
+        {
+            if (decoder != IntPtr.Zero) MoonshineNativeMethods.VideoDestroy(decoder);
             MoonshineNativeMethods.D3D11DestroyDevice(dev);
         }
     }

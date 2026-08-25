@@ -2698,7 +2698,7 @@ MOONSHINE_API uint32_t MOONSHINE_CONV moonshine_encoder_get_vendor(
 // Direct3D 11 Hardware Device & Texture Utility APIs
 // ============================================================================
 
-MOONSHINE_API void* MOONSHINE_CONV moonshine_d3d11_create_device(uint32_t vendor_id) {
+MOONSHINE_API void* MOONSHINE_CONV moonshine_d3d11_create_device_on_adapter(uint32_t vendor_id, uint32_t adapter_index) {
     try {
     #if defined(_WIN32)
         Microsoft::WRL::ComPtr<IDXGIFactory1> factory;
@@ -2708,12 +2708,16 @@ MOONSHINE_API void* MOONSHINE_CONV moonshine_d3d11_create_device(uint32_t vendor
 
         Microsoft::WRL::ComPtr<IDXGIAdapter1> chosen_adapter;
         Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
+        uint32_t match_count = 0;
         for (UINT i = 0; factory->EnumAdapters1(i, &adapter) != DXGI_ERROR_NOT_FOUND; ++i) {
             DXGI_ADAPTER_DESC1 desc{};
             if (SUCCEEDED(adapter->GetDesc1(&desc))) {
                 if (vendor_id == 0 || desc.VendorId == vendor_id) {
-                    chosen_adapter = adapter;
-                    break;
+                    if (match_count == adapter_index) {
+                        chosen_adapter = adapter;
+                        break;
+                    }
+                    match_count++;
                 }
             }
         }
@@ -2767,6 +2771,7 @@ MOONSHINE_API void* MOONSHINE_CONV moonshine_d3d11_create_device(uint32_t vendor
         return device.Detach();
     #else
         (void)vendor_id;
+        (void)adapter_index;
         return nullptr;
     #endif
     } catch (const std::exception&) {
@@ -2774,6 +2779,10 @@ MOONSHINE_API void* MOONSHINE_CONV moonshine_d3d11_create_device(uint32_t vendor
     } catch (...) {
         return nullptr;
     }
+}
+
+MOONSHINE_API void* MOONSHINE_CONV moonshine_d3d11_create_device(uint32_t vendor_id) {
+    return moonshine_d3d11_create_device_on_adapter(vendor_id, 0);
 }
 
 MOONSHINE_API void MOONSHINE_CONV moonshine_d3d11_destroy_device(void* d3d_device) {
@@ -3522,6 +3531,73 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_video_verify_decoded_pattern(
     #endif
     } catch (const std::exception&) {
         return MOONSHINE_ERR_FATAL;
+    } catch (...) {
+        return MOONSHINE_ERR_FATAL;
+    }
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_video_compute_quality_metrics(
+    const uint8_t* reference_pixels,
+    uint32_t reference_format,
+    const uint8_t* decoded_pixels,
+    uint32_t decoded_format,
+    uint32_t width,
+    uint32_t height,
+    float tolerance,
+    MoonshineQualityMetrics* out_metrics
+) {
+    if (!reference_pixels || !decoded_pixels || !out_metrics || width == 0 || height == 0) {
+        return MOONSHINE_ERR_INVALID_ARGUMENT;
+    }
+
+    try {
+        double sum_sq_err_y = 0.0;
+        double sum_sq_err_rgb = 0.0;
+        double sum_abs_err = 0.0;
+        float max_err = 0.0f;
+        uint32_t pixels_within_tol = 0;
+        uint32_t sample_count = 0;
+        
+        uint32_t step_x = (width > 1280) ? 8 : (width > 640) ? 4 : 2;
+        uint32_t step_y = (height > 720) ? 8 : (height > 360) ? 4 : 2;
+
+        for (uint32_t y = 0; y < height; y += step_y) {
+            for (uint32_t x = 0; x < width; x += step_x) {
+                PixelSample ref = get_pixel_sample(reference_pixels, width, height, reference_format, x, y);
+                PixelSample dec = get_pixel_sample(decoded_pixels, width, height, decoded_format, x, y);
+
+                float err_r = std::abs(ref.r - dec.r);
+                float err_g = std::abs(ref.g - dec.g);
+                float err_b = std::abs(ref.b - dec.b);
+                float err_y = std::abs(ref.y - dec.y);
+
+                float local_max = (std::max)({err_r, err_g, err_b});
+                if (local_max > max_err) max_err = local_max;
+                if (local_max <= tolerance) pixels_within_tol++;
+
+                sum_abs_err += (err_r + err_g + err_b) / 3.0;
+                sum_sq_err_rgb += (err_r * err_r + err_g * err_g + err_b * err_b) / 3.0;
+                sum_sq_err_y += (err_y * err_y);
+                sample_count++;
+            }
+        }
+
+        if (sample_count == 0) return MOONSHINE_ERR_FATAL;
+
+        double mse_y = sum_sq_err_y / sample_count;
+        double mse_rgb = sum_sq_err_rgb / sample_count;
+
+        out_metrics->psnr_y = (mse_y > 0.0) ? static_cast<float>(10.0 * std::log10(255.0 * 255.0 / mse_y)) : 100.0f;
+        out_metrics->psnr_rgb = (mse_rgb > 0.0) ? static_cast<float>(10.0 * std::log10(255.0 * 255.0 / mse_rgb)) : 100.0f;
+        out_metrics->mae = static_cast<float>(sum_abs_err / sample_count);
+        out_metrics->max_error = max_err;
+        out_metrics->pixels_within_tolerance_pct = (static_cast<float>(pixels_within_tol) / static_cast<float>(sample_count)) * 100.0f;
+        out_metrics->width = width;
+        out_metrics->height = height;
+        out_metrics->reference_format = reference_format;
+        out_metrics->decoded_format = decoded_format;
+
+        return MOONSHINE_SUCCESS;
     } catch (...) {
         return MOONSHINE_ERR_FATAL;
     }

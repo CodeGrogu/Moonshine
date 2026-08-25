@@ -57,6 +57,7 @@ private:
     bool _intra_refresh_enabled{false};
     uint32_t _intra_refresh_num_mbs_per_slot{0};
     bool _is_configured{false};
+    AMFData* _pending_output{nullptr};
     mutable std::mutex _mutex;
 };
 
