@@ -53,7 +53,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Add unit and loopback tests in `HardwareVideoEncoderConformanceTests.cs`.
   - [x] 100% CTest and xUnit pass rate with zero preflight violations.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T01:18:05Z | Commit: a110f80 | Proof: D3D11 shared texture creation/opening and cross-adapter surface copy verified in EncoderNativeTests.cs and HardwareVideoEncoderConformanceTests.cs -->
+  - <!-- VERIFIED: 2026-08-26T01:18:05Z | Commit: b7efee6 | Proof: D3D11 shared texture creation/opening and cross-adapter surface copy verified in EncoderNativeTests.cs and HardwareVideoEncoderConformanceTests.cs -->
 
 ---
 
