@@ -13,6 +13,13 @@ using Microsoft::WRL::ComPtr;
 
 namespace moonshine::encoder::qsv {
 
+// Convert microseconds to 90 kHz clock ticks (the standard MPEG timebase).
+// Formula: ticks_90k = us * 90000 / 1000000 = us * 9 / 100
+// Using 90000ULL numerator to preserve precision for large timestamps.
+static inline constexpr mfxU64 us_to_90khz(uint64_t timestamp_us) noexcept {
+    return static_cast<mfxU64>((timestamp_us * 90000ULL) / 1000000ULL);
+}
+
 QsvSession::QsvSession() = default;
 
 QsvSession::~QsvSession() {
@@ -33,6 +40,7 @@ QsvSession::QsvSession(QsvSession&& other) noexcept
       _bitstream_buffer(std::move(other._bitstream_buffer)),
       _surface_pool(std::move(other._surface_pool)),
       _surface_index(other._surface_index),
+      _output_queue(std::move(other._output_queue)),
       _config(other._config),
       _usage(other._usage),
       _low_power_vdenc(other._low_power_vdenc),
@@ -71,6 +79,7 @@ QsvSession& QsvSession::operator=(QsvSession&& other) noexcept {
         _bitstream_buffer = std::move(other._bitstream_buffer);
         _surface_pool = std::move(other._surface_pool);
         _surface_index = other._surface_index;
+        _output_queue = std::move(other._output_queue);
         _config = other._config;
         _usage = other._usage;
         _low_power_vdenc = other._low_power_vdenc;
@@ -354,7 +363,7 @@ bool QsvSession::configure(const EncoderConfig& config) {
     return true;
 }
 
-bool QsvSession::encode(
+EncodeResult QsvSession::encode(
     void* d3d_texture,
     bool force_idr,
     uint64_t frame_id,
@@ -367,11 +376,33 @@ bool QsvSession::encode(
     out_written_size = 0;
     std::memset(&out_desc, 0, sizeof(EncodedPacketDesc));
 
-    if (!_session || !_is_configured || !d3d_texture || !out_bitstream || max_buffer_size == 0) {
-        return false;
+    if (!_session || !_is_configured || !out_bitstream || max_buffer_size == 0) {
+        return EncodeResult::Failed;
     }
 
     std::lock_guard<std::mutex> lock(_mutex);
+
+    // Consume pending queued packet if available (e.g. from prior drain)
+    if (!_output_queue.empty()) {
+        auto pkt = std::move(_output_queue.front());
+        _output_queue.pop();
+
+        if (pkt.data.size() > max_buffer_size) {
+            return EncodeResult::Failed;
+        }
+
+        std::memcpy(out_bitstream, pkt.data.data(), pkt.data.size());
+        out_written_size = static_cast<uint32_t>(pkt.data.size());
+        out_desc = pkt.desc;
+        out_desc.frame_index = frame_id;
+        out_desc.timestamp_qpc = timestamp_us;
+        out_desc.payload_size = out_written_size;
+        return EncodeResult::OutputProduced;
+    }
+
+    if (!d3d_texture) {
+        return EncodeResult::Failed;
+    }
 
     // Locate available surface from tracked surface pool
     TrackedSurface* slot = nullptr;
@@ -395,7 +426,7 @@ bool QsvSession::encode(
     slot->surface.Info = _params.mfx.FrameInfo;
     slot->surface.Data.MemType = MFX_MEMTYPE_D3D11_MEMORY_BIND_RENDER_TARGET | MFX_MEMTYPE_FROM_ENCODE;
     slot->surface.Data.MemId = &slot->hdl_pair;
-    slot->surface.Data.TimeStamp = timestamp_us * 90; // 90 kHz clock
+    slot->surface.Data.TimeStamp = us_to_90khz(timestamp_us);
     slot->in_use = true;
     slot->frame_id = frame_id;
 
@@ -405,31 +436,53 @@ bool QsvSession::encode(
     bs.DataOffset = 0;
     bs.DataLength = 0;
 
+    // Construct per-frame encode control to enforce IDR when requested.
+    // Passing nullptr means the encoder chooses the frame type autonomously,
+    // which does NOT honour force_idr requests.
+    mfxEncodeCtrl ctrl{};
+    mfxEncodeCtrl* ctrl_ptr = nullptr;
+    if (force_idr) {
+        ctrl.FrameType = MFX_FRAMETYPE_I | MFX_FRAMETYPE_IDR | MFX_FRAMETYPE_REF;
+        ctrl_ptr = &ctrl;
+    }
+
     mfxSyncPoint syncp = nullptr;
-    mfxStatus sts = _api->MFXVideoENCODE_EncodeFrameAsync(_session, nullptr, &slot->surface, &bs, &syncp);
+    mfxStatus sts = _api->MFXVideoENCODE_EncodeFrameAsync(_session, ctrl_ptr, &slot->surface, &bs, &syncp);
 
     if (sts < MFX_ERR_NONE) {
         // Surface rejected by encoder
         slot->in_use = false;
         slot->d3d_texture = nullptr;
-        return false;
+        _last_status = sts;
+        return EncodeResult::Failed;
+    }
+
+    if (sts == MFX_ERR_MORE_DATA) {
+        slot->in_use = false;
+        slot->d3d_texture = nullptr;
+        return EncodeResult::AcceptedNoOutput;
     }
 
     if (sts == MFX_ERR_NONE && syncp) {
         sts = _api->MFXVideoCORE_SyncOperation(_session, syncp, 1000); // 1000ms timeout
+        _last_status = sts;
     }
 
     // Release surface slot after synchronization
     slot->in_use = false;
     slot->d3d_texture = nullptr;
 
-    if (sts != MFX_ERR_NONE || bs.DataLength == 0) {
-        return false;
+    if (sts != MFX_ERR_NONE) {
+        return EncodeResult::Failed;
+    }
+
+    if (bs.DataLength == 0) {
+        return EncodeResult::AcceptedNoOutput;
     }
 
     if (bs.DataLength > max_buffer_size) {
         out_written_size = 0;
-        return false; // Fail closed, buffer too small
+        return EncodeResult::Failed; // Fail closed, buffer too small
     }
 
     std::memcpy(out_bitstream, bs.Data + bs.DataOffset, bs.DataLength);
@@ -438,12 +491,15 @@ bool QsvSession::encode(
     out_desc.frame_index = frame_id;
     out_desc.timestamp_qpc = timestamp_us;
     out_desc.payload_size = out_written_size;
-    out_desc.is_keyframe = (force_idr || (bs.FrameType & MFX_FRAMETYPE_IDR) || (bs.FrameType & MFX_FRAMETYPE_I)) ? 1 : 0;
+    // Determine keyframe status from the actual bitstream FrameType flags.
+    // Do NOT rely on the force_idr request flag: the encoder may not honour it,
+    // and the bitstream is the sole authority on what was actually produced.
+    out_desc.is_keyframe = ((bs.FrameType & MFX_FRAMETYPE_IDR) || (bs.FrameType & MFX_FRAMETYPE_I)) ? 1 : 0;
     out_desc.is_header_packet = out_desc.is_keyframe;
     out_desc.temporal_id = 0;
     out_desc.reserved = 0;
 
-    return true;
+    return EncodeResult::OutputProduced;
 }
 
 bool QsvSession::reconfigure(const EncoderConfig& new_config) {
@@ -538,7 +594,15 @@ bool QsvSession::drain() {
         sts = _api->MFXVideoENCODE_EncodeFrameAsync(_session, nullptr, nullptr, &bs, &syncp);
         if (sts == MFX_ERR_NONE && syncp) {
             if (_api->MFXVideoCORE_SyncOperation) {
-                _api->MFXVideoCORE_SyncOperation(_session, syncp, 500);
+                mfxStatus sync_sts = _api->MFXVideoCORE_SyncOperation(_session, syncp, 500);
+                if (sync_sts == MFX_ERR_NONE && bs.DataLength > 0) {
+                    QsvPendingPacket pkt{};
+                    pkt.data.assign(bs.Data + bs.DataOffset, bs.Data + bs.DataOffset + bs.DataLength);
+                    pkt.desc.payload_size = bs.DataLength;
+                    pkt.desc.is_keyframe = ((bs.FrameType & MFX_FRAMETYPE_IDR) || (bs.FrameType & MFX_FRAMETYPE_I)) ? 1 : 0;
+                    pkt.desc.is_header_packet = pkt.desc.is_keyframe;
+                    _output_queue.push(std::move(pkt));
+                }
             }
         } else if (sts == MFX_ERR_MORE_DATA) {
             break;
@@ -558,6 +622,10 @@ bool QsvSession::drain() {
 bool QsvSession::flush() {
     if (!_session || !_api) return false;
     std::lock_guard<std::mutex> lock(_mutex);
+
+    while (!_output_queue.empty()) {
+        _output_queue.pop();
+    }
 
     for (auto& slot : _surface_pool) {
         slot.in_use = false;
@@ -596,11 +664,19 @@ void QsvSession::close() {
         _api->MFXUnload(_loader);
         _loader = nullptr;
     }
+    while (!_output_queue.empty()) {
+        _output_queue.pop();
+    }
     _surface_pool.clear();
     _surface_index = 0;
     _d3d_device = nullptr;
     _api = nullptr;
     _is_configured = false;
+}
+
+size_t QsvSession::pending_output_count() const noexcept {
+    std::lock_guard<std::mutex> lock(_mutex);
+    return _output_queue.size();
 }
 
 bool QsvSession::is_open() const noexcept {

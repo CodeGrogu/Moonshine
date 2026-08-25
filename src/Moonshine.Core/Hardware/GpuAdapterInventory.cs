@@ -29,6 +29,24 @@ public sealed record GpuAdapterInfo(
 /// <summary>
 /// Hardware inventory engine that enumerates all physical DXGI adapters across the host machine.
 /// Decouples system-wide GPU inventory from device-specific encoder suitability.
+/// <para>
+/// Architectural Selection Chain Invariant:
+/// <code>
+/// GpuAdapter (Inventory)
+///     │
+///     ├── Vendor ID (e.g. 0x10DE NVIDIA, 0x8086 Intel, 0x1002 AMD)
+///     ├── Adapter LUID / DXGI Index
+///     ├── Video Memory &amp; Capabilities
+///     │
+///     ▼
+/// Direct3D 11 Device (Instantiated ON That Specific Adapter via moonshine_d3d11_create_device_on_adapter)
+///     │
+///     ▼
+/// Encoder Backend (NVENC / QSV / AMF initialised WITH That Specific Direct3D 11 Device)
+/// </code>
+/// Invariant: The encoder backend must always be initialised on the Direct3D 11 device created on its matching
+/// vendor adapter, completely decoupled from which adapter owns the desktop display output.
+/// </para>
 /// </summary>
 public static class GpuAdapterInventory
 {

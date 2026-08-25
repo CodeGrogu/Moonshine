@@ -24,7 +24,13 @@ public:
     bool open(AmfApi& api, void* d3d_device);
     bool configure(const EncoderConfig& config);
 
-    bool encode(
+    /**
+     * Surface Format Policy:
+     * - SDR 8-bit pipelines (H.264, HEVC, AV1) use AMF_SURFACE_BGRA for desktop capture textures.
+     * - HDR 10-bit pipelines (HEVC Main10) use AMF_SURFACE_R10G10B10A2 (DXGI_FORMAT_R10G10B10A2_UNORM).
+     * - If capture texture differs, format conversion must occur prior to encoder submission.
+     */
+    EncodeResult encode(
         void* d3d_texture,
         bool force_idr,
         uint64_t frame_id,
@@ -43,6 +49,7 @@ public:
     [[nodiscard]] bool is_open() const noexcept;
     [[nodiscard]] bool is_configured() const noexcept;
     [[nodiscard]] const EncoderConfig& config() const noexcept;
+    [[nodiscard]] size_t pending_output_count() const noexcept;
 
     void set_preset_and_usage(AmfQualityPreset preset, AmfUsage usage) noexcept;
     void set_intra_refresh(bool enabled, uint32_t num_mbs_per_slot) noexcept;

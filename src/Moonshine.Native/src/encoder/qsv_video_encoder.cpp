@@ -112,7 +112,10 @@ bool QsvVideoEncoder::encode_frame(
     out_written_size = 0;
     std::memset(&out_desc, 0, sizeof(EncodedPacketDesc));
 
-    if (!_initialized || !_impl || !d3d_texture || !out_bitstream || max_buffer_size == 0) {
+    if (!_initialized || !_impl || !out_bitstream || max_buffer_size == 0) {
+        return false;
+    }
+    if (!d3d_texture && _impl->session.pending_output_count() == 0) {
         return false;
     }
 
@@ -134,7 +137,7 @@ bool QsvVideoEncoder::encode_frame(
     auto now = std::chrono::high_resolution_clock::now().time_since_epoch();
     uint64_t timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(now).count();
 
-    bool ok = _impl->session.encode(
+    EncodeResult res = _impl->session.encode(
         d3d_texture,
         request_idr,
         frame_id,
@@ -145,7 +148,7 @@ bool QsvVideoEncoder::encode_frame(
         out_written_size
     );
 
-    if (ok && out_written_size > 0) {
+    if (res == EncodeResult::OutputProduced && out_written_size > 0) {
         _frame_counter++;
         _force_keyframe = false;
         _state = QsvLifecycleState::Ready;

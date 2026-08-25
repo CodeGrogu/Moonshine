@@ -260,6 +260,10 @@ public class NvencEncoderLoopbackTests
                 if (forceIdr)
                 {
                     desc.IsKeyframe.Should().Be(1);
+                    // Verify IDR at the bitstream level, not merely from the requested flag
+                    var au = BitstreamValidator.ValidateAccessUnit(VideoCodec.HevcMain10, buffer.AsSpan(0, written));
+                    au.IsValid.Should().BeTrue();
+                    (au.HasIdr || au.HasRandomAccessPoint || au.HasParameterSets).Should().BeTrue();
                 }
             }
 

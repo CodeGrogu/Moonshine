@@ -165,7 +165,7 @@ bool AmfSession::configure(const EncoderConfig& config) {
     return true;
 }
 
-bool AmfSession::encode(
+EncodeResult AmfSession::encode(
     void* d3d_texture,
     bool force_idr,
     uint64_t frame_id,
@@ -177,48 +177,13 @@ bool AmfSession::encode(
 ) {
     out_written_size = 0;
 
-    if (!_context || !_encoder || !d3d_texture || !out_bitstream || max_buffer_size == 0) {
-        return false;
+    if (!_context || !_encoder || !out_bitstream || max_buffer_size == 0) {
+        return EncodeResult::Failed;
     }
 
     std::lock_guard<std::mutex> lock(_mutex);
 
-    AMFSurface* pSurface = nullptr;
-    if (_context->CreateSurfaceFromDX11Native(d3d_texture, &pSurface, nullptr) != AMF_OK || !pSurface) {
-        return false;
-    }
-
-    pSurface->SetPts(static_cast<amf_pts>(timestamp_us));
-
-    if (force_idr) {
-        _encoder->SetProperty(AMF_VIDEO_ENCODER_FORCE_PICTURE_TYPE, make_int64_variant(3)); // 3: IDR
-    }
-
-    // Submit input with bounded retry handling for AMF_INPUT_FULL and AMF_REPEAT
-    AMF_RESULT submit_res = AMF_INPUT_FULL;
-    for (int retry = 0; retry < 25; ++retry) {
-        submit_res = _encoder->SubmitInput(pSurface);
-        if (submit_res == AMF_OK || submit_res == AMF_NEED_MORE_INPUT) {
-            break;
-        }
-        if (submit_res == AMF_INPUT_FULL || submit_res == AMF_REPEAT) {
-            AMFData* pPendingData = nullptr;
-            while (_encoder->QueryOutput(&pPendingData) == AMF_OK && pPendingData) {
-                _output_queue.push(pPendingData);
-                pPendingData = nullptr;
-            }
-            std::this_thread::yield();
-        } else {
-            break;
-        }
-    }
-    pSurface->Release();
-
-    if (submit_res != AMF_OK && submit_res != AMF_NEED_MORE_INPUT) {
-        return false;
-    }
-
-    // Bounded asynchronous polling for output packet
+    // If an output is already pending in the FIFO queue, extract it directly
     AMFData* pData = nullptr;
     AMF_RESULT query_res = AMF_REPEAT;
 
@@ -227,19 +192,59 @@ bool AmfSession::encode(
         _output_queue.pop();
         query_res = AMF_OK;
     } else {
+        if (!d3d_texture) {
+            return EncodeResult::Failed;
+        }
+
+        AMFSurface* pSurface = nullptr;
+        if (_context->CreateSurfaceFromDX11Native(d3d_texture, &pSurface, nullptr) != AMF_OK || !pSurface) {
+            return EncodeResult::Failed;
+        }
+
+        pSurface->SetPts(static_cast<amf_pts>(timestamp_us));
+
+        if (force_idr) {
+            _encoder->SetProperty(AMF_VIDEO_ENCODER_FORCE_PICTURE_TYPE, make_int64_variant(3)); // 3: IDR
+        }
+
+        // Submit input with bounded retry handling for AMF_INPUT_FULL and AMF_REPEAT
+        AMF_RESULT submit_res = AMF_INPUT_FULL;
+        for (int retry = 0; retry < 25; ++retry) {
+            submit_res = _encoder->SubmitInput(pSurface);
+            if (submit_res == AMF_OK || submit_res == AMF_NEED_MORE_INPUT) {
+                break;
+            }
+            if (submit_res == AMF_INPUT_FULL || submit_res == AMF_REPEAT) {
+                AMFData* pPendingData = nullptr;
+                while (_encoder->QueryOutput(&pPendingData) == AMF_OK && pPendingData) {
+                    _output_queue.push(pPendingData);
+                    pPendingData = nullptr;
+                }
+                std::this_thread::yield();
+            } else {
+                break;
+            }
+        }
+        pSurface->Release();
+
+        if (submit_res != AMF_OK && submit_res != AMF_NEED_MORE_INPUT) {
+            return EncodeResult::Failed;
+        }
+
+        // Bounded asynchronous polling for output packet
         for (int poll_attempt = 0; poll_attempt < 30; ++poll_attempt) {
             query_res = _encoder->QueryOutput(&pData);
             if (query_res == AMF_OK && pData) {
                 break;
             }
             if (query_res == AMF_EOF || query_res == AMF_INVALID_ARG || query_res == AMF_WRONG_STATE) {
-                return false;
+                return EncodeResult::Failed;
             }
             if (query_res == AMF_NEED_MORE_INPUT) {
-                // Encoder pipeline is filling: frame accepted but output deferred
+                // Encoder pipeline accepted input but output is deferred across multi-stage pipeline
                 out_written_size = 0;
                 out_desc.payload_size = 0;
-                return true; // Frame was accepted, just no output yet
+                return EncodeResult::AcceptedNoOutput;
             }
             if (query_res == AMF_REPEAT) {
                 std::this_thread::yield();
@@ -256,7 +261,7 @@ bool AmfSession::encode(
             if (buffer_size > max_buffer_size) {
                 pData->Release();
                 out_written_size = 0;
-                return false;
+                return EncodeResult::Failed;
             }
 
             if (pNative && buffer_size > 0) {
@@ -284,13 +289,13 @@ bool AmfSession::encode(
                 out_desc.reserved = 0;
 
                 pData->Release();
-                return true;
+                return EncodeResult::OutputProduced;
             }
         }
         pData->Release();
     }
 
-    return false;
+    return EncodeResult::Failed;
 }
 
 bool AmfSession::reconfigure(const EncoderConfig& new_config) {
@@ -338,7 +343,8 @@ bool AmfSession::drain() {
     AMF_RESULT res = _encoder->Drain();
     if (res != AMF_OK) return false;
 
-    // Poll until AMF_EOF or completion, queuing retrieved output surfaces
+    // Poll until AMF_EOF or completion, queuing retrieved output surfaces in _output_queue
+    // Crucial: do NOT discard them. They remain available for subsequent consumer retrieval.
     for (int i = 0; i < 50; ++i) {
         AMFData* pData = nullptr;
         AMF_RESULT qres = _encoder->QueryOutput(&pData);
@@ -353,15 +359,12 @@ bool AmfSession::drain() {
         }
     }
 
-    // Release all queued output surfaces cleanly
-    while (!_output_queue.empty()) {
-        AMFData* data = _output_queue.front();
-        _output_queue.pop();
-        if (data) {
-            data->Release();
-        }
-    }
     return true;
+}
+
+size_t AmfSession::pending_output_count() const noexcept {
+    std::lock_guard<std::mutex> lock(_mutex);
+    return _output_queue.size();
 }
 
 bool AmfSession::flush() {

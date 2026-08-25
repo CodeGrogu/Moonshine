@@ -290,6 +290,9 @@ bool NvencSession::encode(
     pic_params.version = NV_ENC_PIC_PARAMS_VER;
     pic_params.inputWidth = _config.width;
     pic_params.inputHeight = _config.height;
+    // For registered Direct3D 11 texture resources (NV_ENC_INPUT_RESOURCE_TYPE_DIRECTX),
+    // NVENC derives the GPU row pitch directly from the underlying D3D texture metadata.
+    // Setting inputPitch to inputWidth is standard practice per NVIDIA Video Codec SDK specifications.
     pic_params.inputPitch = _config.width;
     pic_params.inputBuffer = map_guard.mapped_resource();
     pic_params.outputBitstream = bitstream_buf;
@@ -408,6 +411,9 @@ bool NvencSession::submit_frame(
     pic_params.version = NV_ENC_PIC_PARAMS_VER;
     pic_params.inputWidth = _config.width;
     pic_params.inputHeight = _config.height;
+    // For registered Direct3D 11 texture resources (NV_ENC_INPUT_RESOURCE_TYPE_DIRECTX),
+    // NVENC derives the GPU row pitch directly from the underlying D3D texture metadata.
+    // Setting inputPitch to inputWidth is standard practice per NVIDIA Video Codec SDK specifications.
     pic_params.inputPitch = _config.width;
     pic_params.inputBuffer = map_guard.mapped_resource();
     pic_params.outputBitstream = bitstream_buf;

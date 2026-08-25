@@ -6,8 +6,36 @@
 #include "encoder/qsv/qsv_api.hpp"
 #include <mutex>
 #include <vector>
+#include <queue>
 
 namespace moonshine::encoder::qsv {
+
+/**
+ * Output packet descriptor and buffer for queued packets produced during drain or multi-frame pipelining.
+ */
+struct QsvPendingPacket {
+    std::vector<uint8_t> data;
+    EncodedPacketDesc desc{};
+};
+
+/**
+ * TrackedSurface Pool Architecture:
+ * - Current Moonshine oneVPL architecture operates synchronously with AsyncDepth=1.
+ * - Each submission takes an available surface slot from the pool, binds the Direct3D 11 texture
+ *   using mfxHDLPair, submits via MFXVideoENCODE_EncodeFrameAsync, and synchronises immediately
+ *   via MFXVideoCORE_SyncOperation before releasing the surface back to the pool.
+ * - This fail-closed, synchronous design guarantees deterministic ordering and zero race conditions
+ *   on streaming pipelines.
+ * - Future evolution can expand to deeper asynchronous pipelining (AsyncDepth > 1) with deferred
+ *   surface release upon sync point completion, whilst preserving the exact same C-ABI boundary.
+ */
+struct TrackedSurface {
+    mfxFrameSurface1 surface{};
+    mfxHDLPair hdl_pair{};
+    void* d3d_texture{nullptr};
+    bool in_use{false};
+    uint64_t frame_id{0};
+};
 
 class QsvSession {
 public:
@@ -23,7 +51,7 @@ public:
     bool open(QsvApi& api, void* d3d_device);
     bool configure(const EncoderConfig& config);
 
-    bool encode(
+    EncodeResult encode(
         void* d3d_texture,
         bool force_idr,
         uint64_t frame_id,
@@ -46,17 +74,10 @@ public:
     [[nodiscard]] mfxStatus impl_filter_status() const noexcept;
     [[nodiscard]] mfxStatus accel_filter_status() const noexcept;
     [[nodiscard]] mfxSession session() const noexcept;
+    [[nodiscard]] size_t pending_output_count() const noexcept;
 
     void set_target_usage(QsvTargetUsage usage, bool low_power_vdenc) noexcept;
     void set_intra_refresh(bool enabled, uint32_t cycle_size, int32_t qp_delta) noexcept;
-
-    struct TrackedSurface {
-        mfxFrameSurface1 surface{};
-        mfxHDLPair hdl_pair{};
-        void* d3d_texture{nullptr};
-        bool in_use{false};
-        uint64_t frame_id{0};
-    };
 
 private:
     QsvApi* _api{nullptr};
@@ -73,6 +94,7 @@ private:
     std::vector<uint8_t> _bitstream_buffer;
     std::vector<TrackedSurface> _surface_pool;
     size_t _surface_index{0};
+    std::queue<QsvPendingPacket> _output_queue;
     EncoderConfig _config{};
     QsvTargetUsage _usage{QsvTargetUsage::BestSpeed};
     bool _low_power_vdenc{true};

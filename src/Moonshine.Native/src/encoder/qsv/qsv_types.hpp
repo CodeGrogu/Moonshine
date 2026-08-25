@@ -19,6 +19,14 @@ namespace moonshine::encoder::qsv {
     ((uint32_t)(uint8_t)(a) | ((uint32_t)(uint8_t)(b) << 8) | ((uint32_t)(uint8_t)(c) << 16) | ((uint32_t)(uint8_t)(d) << 24))
 
 typedef int32_t mfxStatus;
+typedef uint64_t mfxU64;
+typedef uint32_t mfxU32;
+typedef uint16_t mfxU16;
+typedef uint8_t  mfxU8;
+typedef int64_t  mfxI64;
+typedef int32_t  mfxI32;
+typedef int16_t  mfxI16;
+typedef int8_t   mfxI8;
 
 enum : int32_t {
     MFX_ERR_NONE                        = 0,
@@ -289,6 +297,15 @@ struct mfxInitParam {
     uint16_t NumExtParam;
     uint16_t GPUCopy;
     uint32_t reserved[3];
+};
+
+struct mfxEncodeCtrl {
+    mfxExtBuffer** ExtParam;
+    uint16_t NumExtParam;
+    uint16_t QP;
+    uint16_t FrameType;
+    uint16_t MfxReserved1;
+    uint32_t MfxReserved[4];
 };
 
 struct mfxExtCodingOption {

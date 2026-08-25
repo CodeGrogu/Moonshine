@@ -116,7 +116,10 @@ bool AmfVideoEncoder::encode_frame(
     out_written_size = 0;
 
     if (_state == AmfLifecycleState::Faulted || _state == AmfLifecycleState::Disposed ||
-        !_initialized || !_impl || !_impl->session.is_open() || !d3d_texture || !out_bitstream || max_buffer_size == 0) {
+        !_initialized || !_impl || !_impl->session.is_open() || !out_bitstream || max_buffer_size == 0) {
+        return false;
+    }
+    if (!d3d_texture && _impl->session.pending_output_count() == 0) {
         return false;
     }
 
@@ -137,7 +140,7 @@ bool AmfVideoEncoder::encode_frame(
 
     _state = AmfLifecycleState::Encoding;
 
-    bool res = _impl->session.encode(
+    EncodeResult res = _impl->session.encode(
         d3d_texture,
         is_key,
         current_frame,
@@ -148,7 +151,7 @@ bool AmfVideoEncoder::encode_frame(
         out_written_size
     );
 
-    if (res && out_written_size > 0) {
+    if (res == EncodeResult::OutputProduced && out_written_size > 0) {
         _frame_counter++;
         _force_keyframe = false;
         _state = AmfLifecycleState::Ready;

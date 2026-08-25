@@ -26,6 +26,12 @@ enum class RateControlMode : uint32_t {
     ConstrainedQuality = 2
 };
 
+enum class EncodeResult : uint8_t {
+    Failed = 0,
+    AcceptedNoOutput = 1,
+    OutputProduced = 2
+};
+
 #pragma pack(push, 1)
 struct EncoderCaps {
     uint32_t supported_codecs_mask; // Bit 0: H264, Bit 1: HEVC, Bit 2: HEVC Main10, Bit 3: AV1
