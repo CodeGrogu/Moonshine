@@ -183,6 +183,15 @@ public class HostConfigurationProtocolIntegrationTests
             return true;
         }
 
+        public bool ReconfigureResolution(uint width, uint height, uint fps = 60, uint bitrateKbps = 0)
+        {
+            if (bitrateKbps > 0) BitrateKbps = bitrateKbps;
+            return true;
+        }
+
+        public bool Drain() => true;
+        public bool Flush() => true;
+
         public void RequestKeyframe() { }
         public bool TryRecoverDevice(IntPtr newD3dDevice) => true;
         public void Dispose() { }

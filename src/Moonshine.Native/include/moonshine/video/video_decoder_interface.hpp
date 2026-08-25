@@ -3,13 +3,15 @@
 #include "moonshine/export/moonshine_native_api.h"
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 namespace moonshine::video {
 
 enum class VideoCodec : uint32_t {
     H264 = 0,
     HEVC = 1,
-    AV1  = 2
+    HEVC_MAIN10 = 2,
+    AV1  = 3
 };
 
 class IVideoDecoder {
@@ -19,6 +21,7 @@ public:
     virtual int SubmitFrame(const MoonshineFrameDesc& frame) = 0;
     virtual void* GetTextureHandle() const noexcept = 0;
     virtual void* GetDeviceHandle() const noexcept { return nullptr; }
+    virtual const uint8_t* GetDecodedPixels(uint32_t& out_size) const noexcept { out_size = 0; return nullptr; }
     virtual int GetDimensions(uint32_t& out_width, uint32_t& out_height) const noexcept = 0;
     virtual int Reset(uint32_t width, uint32_t height) = 0;
     virtual void Shutdown() = 0;
@@ -33,6 +36,7 @@ public:
     int SubmitFrame(const MoonshineFrameDesc& frame) override;
     void* GetTextureHandle() const noexcept override;
     void* GetDeviceHandle() const noexcept override { return d3d11_device_; }
+    const uint8_t* GetDecodedPixels(uint32_t& out_size) const noexcept override;
     int GetDimensions(uint32_t& out_width, uint32_t& out_height) const noexcept override;
     int Reset(uint32_t width, uint32_t height) override;
     void Shutdown() override;
@@ -57,6 +61,7 @@ private:
     void* video_decoder_{nullptr};
     void* output_view_{nullptr};
     void* output_texture_{nullptr};
+    std::vector<uint8_t> decoded_pixels_{};
 };
 
 class D3D12VideoDecoder final : public IVideoDecoder {

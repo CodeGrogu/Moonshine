@@ -27,10 +27,14 @@ public static unsafe partial class MoonshineNativeMethods
             const string osLibName = "Moonshine.Native.dll";
 
             string[] searchDirs = [
-                AppContext.BaseDirectory,
-                Path.Combine(AppContext.BaseDirectory, "runtimes", "win-x64", "native"),
+                Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "build", "release-avx2", "bin"),
+                Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "build", "release-avx2", "bin"),
+                Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "build", "bin"),
                 Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "build", "bin"),
-                Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "build", "src", "Moonshine.Native")
+                Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "build", "src", "Moonshine.Native"),
+                Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "build", "src", "Moonshine.Native"),
+                AppContext.BaseDirectory,
+                Path.Combine(AppContext.BaseDirectory, "runtimes", "win-x64", "native")
             ];
 
             foreach (var dir in searchDirs)
@@ -855,6 +859,14 @@ public static unsafe partial class MoonshineNativeMethods
     [LibraryImport(LibraryName, EntryPoint = "moonshine_encoder_request_keyframe")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial void EncoderRequestKeyframe(IntPtr handle);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_encoder_drain")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int EncoderDrain(IntPtr handle);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_encoder_flush")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int EncoderFlush(IntPtr handle);
 
     [LibraryImport(LibraryName, EntryPoint = "moonshine_encoder_destroy")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]

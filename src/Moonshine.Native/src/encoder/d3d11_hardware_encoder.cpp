@@ -107,6 +107,16 @@ void D3D11HardwareEncoder::request_keyframe() {
     _force_keyframe = true;
 }
 
+bool D3D11HardwareEncoder::drain() {
+    return _initialized;
+}
+
+bool D3D11HardwareEncoder::flush() {
+    if (!_initialized) return false;
+    _force_keyframe = true;
+    return true;
+}
+
 void D3D11HardwareEncoder::cleanup() {
     _initialized = false;
     _d3d_device = nullptr;

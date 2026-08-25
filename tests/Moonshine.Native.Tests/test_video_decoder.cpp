@@ -48,10 +48,10 @@ int main() {
 
     // 4. Test hardware decoder creation for supported codecs
     if (caps.supports_hevc) {
-        std::cout << "[*] Initializing live D3D11 HEVC hardware decoder..." << std::endl;
+        std::cout << "[*] Initialising live D3D11 HEVC hardware decoder..." << std::endl;
         MoonshineDecoderHandle dec = moonshine_video_create_d3d11(nullptr, 1920, 1080, 1); // 1 = HEVC
         if (dec != nullptr) {
-            std::cout << "  [+] Live D3D11 HEVC Decoder initialized successfully." << std::endl;
+            std::cout << "  [+] Live D3D11 HEVC Decoder initialised successfully." << std::endl;
 
             // Submit test bitstream frame payload
             std::vector<uint8_t> test_nal = {0x00, 0x00, 0x00, 0x01, 0x40, 0x01, 0x0C, 0x01};
@@ -74,6 +74,15 @@ int main() {
             moonshine_video_destroy(dec);
         } else {
             std::cout << "  [*] Live D3D11 HEVC Decoder creation failed closed (expected on non-HEVC hardware)." << std::endl;
+        }
+
+        if (caps.supports_10bit) {
+            std::cout << "[*] Initialising live D3D11 HEVC Main10 hardware decoder..." << std::endl;
+            MoonshineDecoderHandle dec10 = moonshine_video_create_d3d11(nullptr, 1920, 1080, 2); // 2 = HEVC Main10
+            if (dec10 != nullptr) {
+                std::cout << "  [+] Live D3D11 HEVC Main10 Decoder initialised successfully." << std::endl;
+                moonshine_video_destroy(dec10);
+            }
         }
     }
 

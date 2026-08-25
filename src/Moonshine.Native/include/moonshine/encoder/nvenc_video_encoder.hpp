@@ -128,7 +128,8 @@ public:
 
     bool set_preset_and_tuning(NvencPreset preset, NvencTuning tuning);
     bool set_intra_refresh(bool enabled, uint32_t period, uint32_t count);
-    bool drain();
+    bool drain() override;
+    bool flush() override;
 
     static bool query_capabilities(void* d3d_device, EncoderCaps& out_caps);
     static bool query_codec_support(VideoCodec codec);

@@ -73,7 +73,7 @@ public class HardwareVideoEncoderConformanceTests
         IntPtr dev = MoonshineNativeMethods.D3D11CreateDevice(0x10DE);
         Skip.If(dev == IntPtr.Zero, "Physical Direct3D 11 device (GPU) is unavailable on this runner.");
 
-        IntPtr decoder = MoonshineNativeMethods.VideoCreateD3D11(IntPtr.Zero, 1920, 1080, 1); // 1 = HEVC
+        IntPtr decoder = MoonshineNativeMethods.VideoCreateD3D11(IntPtr.Zero, 1920, 1080, (uint)VideoCodec.HevcMain10);
         Skip.If(decoder == IntPtr.Zero, "Direct3D 11 Video Decoder creation failed.");
 
         try
@@ -113,7 +113,7 @@ public class HardwareVideoEncoderConformanceTests
                     {
                         var frameDesc = new MoonshineFrameDesc
                         {
-                            FrameIndex = (uint)desc.FrameIndex,
+                            FrameIndex = pattern,
                             TotalBytes = (uint)written,
                             PacketCount = 1,
                             IsKeyframe = 1,
@@ -131,9 +131,9 @@ public class HardwareVideoEncoderConformanceTests
                         decWidth.Should().Be(1920);
                         decHeight.Should().Be(1080);
 
-                        // Verify submitted GPU pattern texture pixel content
-                        int verifyRes = MoonshineNativeMethods.VideoVerifyDecodedPattern(patternTex, pattern, 0.5f);
-                        verifyRes.Should().Be(0);
+                        // Verify decoded output texture pixel content from the decoder handle
+                        int verifyRes = MoonshineNativeMethods.VideoVerifyDecodedPattern(decoder, pattern, 0.5f);
+                        verifyRes.Should().Be(0, $"pattern {pattern} (iteration {i}) failed verification");
                     }
                 }
             }

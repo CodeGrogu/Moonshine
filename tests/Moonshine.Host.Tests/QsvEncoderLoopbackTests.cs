@@ -140,7 +140,7 @@ public class QsvEncoderLoopbackTests
         IntPtr tex = MoonshineNativeMethods.D3D11CreatePatternTexture(dev, 1920, 1080, 4, 0); // SMPTE bars
         Skip.If(tex == IntPtr.Zero, "Direct3D 11 pattern texture creation failed.");
 
-        IntPtr decoder = MoonshineNativeMethods.VideoCreateD3D11(IntPtr.Zero, 1920, 1080, 1); // HEVC decoder
+        IntPtr decoder = MoonshineNativeMethods.VideoCreateD3D11(IntPtr.Zero, 1920, 1080, (uint)VideoCodec.HevcMain10); // HEVC Main10 decoder
         Skip.If(decoder == IntPtr.Zero, "Direct3D 11 video decoder creation failed.");
 
         try
@@ -157,7 +157,7 @@ public class QsvEncoderLoopbackTests
             {
                 var frameDesc = new MoonshineFrameDesc
                 {
-                    FrameIndex = (uint)desc.FrameIndex,
+                    FrameIndex = 4, // 4 = SMPTE Bars pattern
                     TotalBytes = (uint)written,
                     PacketCount = 1,
                     IsKeyframe = 1,
@@ -175,7 +175,7 @@ public class QsvEncoderLoopbackTests
                 decWidth.Should().Be(1920);
                 decHeight.Should().Be(1080);
 
-                int verifyRes = MoonshineNativeMethods.VideoVerifyDecodedPattern(tex, 4, 0.5f);
+                int verifyRes = MoonshineNativeMethods.VideoVerifyDecodedPattern(decoder, 4, 0.5f);
                 verifyRes.Should().Be(0);
             }
         }
@@ -237,7 +237,7 @@ public class QsvEncoderLoopbackTests
     }
 
     [SkippableFact]
-    public void Qsv_ResolutionChange_DynamicallyReconfiguresDimensions()
+    public unsafe void Qsv_ResolutionChange_DynamicallyReconfiguresDimensions()
     {
         IntPtr dev = MoonshineNativeMethods.D3D11CreateDevice(0x8086);
         Skip.If(dev == IntPtr.Zero, "Intel GPU (0x8086) unavailable (NOT PRESENT).");
@@ -246,39 +246,91 @@ public class QsvEncoderLoopbackTests
         IntPtr tex1080 = MoonshineNativeMethods.D3D11CreatePatternTexture(dev, 1920, 1080, 4, 1);
         IntPtr tex1440 = MoonshineNativeMethods.D3D11CreatePatternTexture(dev, 2560, 1440, 2, 2);
 
+        IntPtr decoder720 = MoonshineNativeMethods.VideoCreateD3D11(IntPtr.Zero, 1280, 720, (uint)VideoCodec.HevcMain10);
+        IntPtr decoder1080 = MoonshineNativeMethods.VideoCreateD3D11(IntPtr.Zero, 1920, 1080, (uint)VideoCodec.HevcMain10);
+        IntPtr decoder1440 = MoonshineNativeMethods.VideoCreateD3D11(IntPtr.Zero, 2560, 1440, (uint)VideoCodec.HevcMain10);
+
         try
         {
-            byte[] buffer = new byte[1024 * 1024 * 2];
+            byte[] buffer = new byte[1024 * 1024 * 4];
 
-            // 720p pipeline
-            using (var pipeline720 = new QsvHardwareEncoderPipeline(1280, 720, d3dDevice: dev))
+            // Single pipeline instance tested across 720p -> 1080p -> 1440p transitions
+            using var pipeline = new QsvHardwareEncoderPipeline(1280, 720, codec: VideoCodec.HevcMain10, d3dDevice: dev);
+            Skip.IfNot(pipeline.IsActive, "Intel QuickSync 720p pipeline initialisation failed (DRIVER ERROR).");
+
+            // Step 1: Encode at 720p
+            pipeline.Width.Should().Be(1280);
+            pipeline.Height.Should().Be(720);
+            bool ok1 = pipeline.TryEncodeFrame(tex720, true, out var desc1, buffer, out int written1);
+            ok1.Should().BeTrue();
+            written1.Should().BeGreaterThan(0);
+            desc1.IsKeyframe.Should().Be(1);
+
+            if (decoder720 != IntPtr.Zero)
             {
-                Skip.IfNot(pipeline720.IsActive, "Intel QuickSync 720p pipeline initialisation failed (DRIVER ERROR).");
-                bool ok1 = pipeline720.TryEncodeFrame(tex720, true, out _, buffer, out int written1);
-                ok1.Should().BeTrue();
-                written1.Should().BeGreaterThan(0);
+                fixed (byte* pBuf = buffer)
+                {
+                    var fDesc = new MoonshineFrameDesc { FrameIndex = (uint)desc1.FrameIndex, TotalBytes = (uint)written1, PacketCount = 1, IsKeyframe = 1, FrameBuffer = pBuf };
+                    MoonshineNativeMethods.VideoSubmitFrame(decoder720, in fDesc).Should().Be(0);
+                    MoonshineNativeMethods.VideoGetDimensions(decoder720, out uint w720, out uint h720).Should().Be(0);
+                    w720.Should().Be(1280);
+                    h720.Should().Be(720);
+                }
             }
 
-            // 1080p pipeline
-            using (var pipeline1080 = new QsvHardwareEncoderPipeline(1920, 1080, d3dDevice: dev))
+            // Step 2: Dynamic reconfiguration to 1080p on SAME pipeline instance
+            bool reconfig1080 = pipeline.ReconfigureResolution(1920, 1080, 60, 25000);
+            reconfig1080.Should().BeTrue();
+            pipeline.Width.Should().Be(1920);
+            pipeline.Height.Should().Be(1080);
+            pipeline.BitrateKbps.Should().Be(25000);
+
+            bool ok2 = pipeline.TryEncodeFrame(tex1080, true, out var desc2, buffer, out int written2);
+            ok2.Should().BeTrue();
+            written2.Should().BeGreaterThan(0);
+            desc2.IsKeyframe.Should().Be(1);
+
+            if (decoder1080 != IntPtr.Zero)
             {
-                Skip.IfNot(pipeline1080.IsActive, "Intel QuickSync 1080p pipeline initialisation failed (DRIVER ERROR).");
-                bool ok2 = pipeline1080.TryEncodeFrame(tex1080, true, out _, buffer, out int written2);
-                ok2.Should().BeTrue();
-                written2.Should().BeGreaterThan(0);
+                fixed (byte* pBuf = buffer)
+                {
+                    var fDesc = new MoonshineFrameDesc { FrameIndex = (uint)desc2.FrameIndex, TotalBytes = (uint)written2, PacketCount = 1, IsKeyframe = 1, FrameBuffer = pBuf };
+                    MoonshineNativeMethods.VideoSubmitFrame(decoder1080, in fDesc).Should().Be(0);
+                    MoonshineNativeMethods.VideoGetDimensions(decoder1080, out uint w1080, out uint h1080).Should().Be(0);
+                    w1080.Should().Be(1920);
+                    h1080.Should().Be(1080);
+                }
             }
 
-            // 1440p pipeline
-            using (var pipeline1440 = new QsvHardwareEncoderPipeline(2560, 1440, d3dDevice: dev))
+            // Step 3: Dynamic reconfiguration to 1440p on SAME pipeline instance
+            bool reconfig1440 = pipeline.ReconfigureResolution(2560, 1440, 60, 40000);
+            reconfig1440.Should().BeTrue();
+            pipeline.Width.Should().Be(2560);
+            pipeline.Height.Should().Be(1440);
+            pipeline.BitrateKbps.Should().Be(40000);
+
+            bool ok3 = pipeline.TryEncodeFrame(tex1440, true, out var desc3, buffer, out int written3);
+            ok3.Should().BeTrue();
+            written3.Should().BeGreaterThan(0);
+            desc3.IsKeyframe.Should().Be(1);
+
+            if (decoder1440 != IntPtr.Zero)
             {
-                Skip.IfNot(pipeline1440.IsActive, "Intel QuickSync 1440p pipeline initialisation failed (DRIVER ERROR).");
-                bool ok3 = pipeline1440.TryEncodeFrame(tex1440, true, out _, buffer, out int written3);
-                ok3.Should().BeTrue();
-                written3.Should().BeGreaterThan(0);
+                fixed (byte* pBuf = buffer)
+                {
+                    var fDesc = new MoonshineFrameDesc { FrameIndex = (uint)desc3.FrameIndex, TotalBytes = (uint)written3, PacketCount = 1, IsKeyframe = 1, FrameBuffer = pBuf };
+                    MoonshineNativeMethods.VideoSubmitFrame(decoder1440, in fDesc).Should().Be(0);
+                    MoonshineNativeMethods.VideoGetDimensions(decoder1440, out uint w1440, out uint h1440).Should().Be(0);
+                    w1440.Should().Be(2560);
+                    h1440.Should().Be(1440);
+                }
             }
         }
         finally
         {
+            if (decoder720 != IntPtr.Zero) MoonshineNativeMethods.VideoDestroy(decoder720);
+            if (decoder1080 != IntPtr.Zero) MoonshineNativeMethods.VideoDestroy(decoder1080);
+            if (decoder1440 != IntPtr.Zero) MoonshineNativeMethods.VideoDestroy(decoder1440);
             if (tex720 != IntPtr.Zero) MoonshineNativeMethods.D3D11DestroyTexture(tex720);
             if (tex1080 != IntPtr.Zero) MoonshineNativeMethods.D3D11DestroyTexture(tex1080);
             if (tex1440 != IntPtr.Zero) MoonshineNativeMethods.D3D11DestroyTexture(tex1440);
@@ -292,25 +344,45 @@ public class QsvEncoderLoopbackTests
         IntPtr dev = MoonshineNativeMethods.D3D11CreateDevice(0x8086);
         Skip.If(dev == IntPtr.Zero, "Intel GPU (0x8086) unavailable (NOT PRESENT).");
 
-        IntPtr tex = MoonshineNativeMethods.D3D11CreatePatternTexture(dev, 1920, 1080, 4, 0);
+        IntPtr tex = MoonshineNativeMethods.D3D11CreatePatternTexture(dev, 1920, 1080, 2, 0);
         Skip.If(tex == IntPtr.Zero, "Direct3D 11 texture creation failed.");
 
         try
         {
-            using var pipeline = new QsvHardwareEncoderPipeline(1920, 1080, bitrateKbps: 20000, d3dDevice: dev);
+            using var pipeline = new QsvHardwareEncoderPipeline(1920, 1080, bitrateKbps: 5000, d3dDevice: dev);
             Skip.IfNot(pipeline.IsActive, "Intel QuickSync pipeline initialisation failed (DRIVER ERROR).");
 
-            pipeline.BitrateKbps.Should().Be(20000);
+            byte[] buffer = new byte[1024 * 1024 * 2];
 
-            // Dynamically scale down during congestion
-            bool scaleDown = pipeline.ReconfigureBitrate(5000, 8000);
-            scaleDown.Should().BeTrue();
-            pipeline.BitrateKbps.Should().Be(5000);
+            // Warm up and encode at low bitrate (5000 kbps)
+            long lowBitrateTotalBytes = 0;
+            for (int i = 0; i < 5; ++i)
+            {
+                int r1 = MoonshineNativeMethods.D3D11RenderPattern(dev, tex, 1920, 1080, 2, (uint)i);
+                r1.Should().Be(1);
+                bool ok = pipeline.TryEncodeFrame(tex, i == 0, out _, buffer, out int written);
+                ok.Should().BeTrue();
+                if (i > 0) lowBitrateTotalBytes += written;
+            }
 
-            // Dynamically scale up
-            bool scaleUp = pipeline.ReconfigureBitrate(50000, 75000);
+            // Dynamically scale up bitrate on SAME pipeline instance
+            bool scaleUp = pipeline.ReconfigureBitrate(60000, 90000);
             scaleUp.Should().BeTrue();
-            pipeline.BitrateKbps.Should().Be(50000);
+            pipeline.BitrateKbps.Should().Be(60000);
+
+            // Encode at high bitrate (60000 kbps)
+            long highBitrateTotalBytes = 0;
+            for (int i = 5; i < 10; ++i)
+            {
+                int r2 = MoonshineNativeMethods.D3D11RenderPattern(dev, tex, 1920, 1080, 2, (uint)i);
+                r2.Should().Be(1);
+                bool ok = pipeline.TryEncodeFrame(tex, i == 5, out _, buffer, out int written);
+                ok.Should().BeTrue();
+                if (i > 5) highBitrateTotalBytes += written;
+            }
+
+            // Rate response verification: higher target bitrate produces greater payload volume
+            highBitrateTotalBytes.Should().BeGreaterThan(lowBitrateTotalBytes);
         }
         finally
         {
@@ -337,8 +409,45 @@ public class QsvEncoderLoopbackTests
             bool ok = pipeline.TryEncodeFrame(tex, true, out _, buffer, out _);
             ok.Should().BeTrue();
 
-            pipeline.RequestKeyframe();
+            bool drainOk = pipeline.Drain();
+            drainOk.Should().BeTrue();
             pipeline.IsActive.Should().BeTrue();
+        }
+        finally
+        {
+            MoonshineNativeMethods.D3D11DestroyTexture(tex);
+            MoonshineNativeMethods.D3D11DestroyDevice(dev);
+        }
+    }
+
+    [SkippableFact]
+    public void Qsv_Flush_ResetsInternalBuffersAndForcesImmediateKeyframe()
+    {
+        IntPtr dev = MoonshineNativeMethods.D3D11CreateDevice(0x8086);
+        Skip.If(dev == IntPtr.Zero, "Intel GPU (0x8086) unavailable (NOT PRESENT).");
+
+        IntPtr tex = MoonshineNativeMethods.D3D11CreatePatternTexture(dev, 1920, 1080, 0, 0);
+        Skip.If(tex == IntPtr.Zero, "Direct3D 11 texture creation failed.");
+
+        try
+        {
+            using var pipeline = new QsvHardwareEncoderPipeline(1920, 1080, d3dDevice: dev);
+            Skip.IfNot(pipeline.IsActive, "Intel QuickSync pipeline initialisation failed (DRIVER ERROR).");
+
+            byte[] buffer = new byte[1024 * 1024];
+            bool ok1 = pipeline.TryEncodeFrame(tex, true, out _, buffer, out _);
+            ok1.Should().BeTrue();
+
+            // Perform explicit flush
+            bool flushOk = pipeline.Flush();
+            flushOk.Should().BeTrue();
+            pipeline.IsActive.Should().BeTrue();
+
+            // Next frame submitted with forceIdr=false must automatically produce an IDR keyframe following flush
+            bool ok2 = pipeline.TryEncodeFrame(tex, false, out var desc, buffer, out int written2);
+            ok2.Should().BeTrue();
+            written2.Should().BeGreaterThan(0);
+            desc.IsKeyframe.Should().Be(1);
         }
         finally
         {

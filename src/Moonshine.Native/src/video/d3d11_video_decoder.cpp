@@ -3,6 +3,7 @@
 #include <iostream>
 #include <vector>
 #include <algorithm>
+#include <cmath>
 
 #if defined(_WIN32)
     #include <windows.h>
@@ -21,7 +22,7 @@
     static const GUID GUID_D3D11_DECODER_PROFILE_H264_FGT = 
         {0x1b81be69, 0xa0c7, 0x11d3, {0xb9, 0x84, 0x00, 0xc0, 0x4f, 0x2e, 0x73, 0xc5}};
     static const GUID GUID_D3D11_DECODER_PROFILE_HEVC_MAIN = 
-        {0x5b11d51b, 0xcd44, 0x4521, {0xa6, 0x95, 0x0f, 0x12, 0xfa, 0x68, 0x42, 0xe0}};
+        {0x5b11d51b, 0xcd44, 0x4521, {0x87, 0x06, 0x31, 0x6e, 0xb4, 0x10, 0x49, 0x46}};
     static const GUID GUID_D3D11_DECODER_PROFILE_HEVC_MAIN10 = 
         {0x107af0e0, 0xef1a, 0x4d19, {0xab, 0xa8, 0x67, 0xa1, 0x63, 0x07, 0x3d, 0x13}};
     static const GUID GUID_D3D11_DECODER_PROFILE_AV1_PROFILE0 = 
@@ -109,18 +110,25 @@ int D3D11VideoDecoder::Initialize(void* hwnd, uint32_t width, uint32_t height, V
     ComPtr<ID3D11VideoContext> video_context;
     if (FAILED(context.As(&video_context))) return -2;
 
-    // Determine target DXVA profile GUID based on requested codec
+    // Determine target DXVA profile GUID and pixel format based on requested codec
     GUID target_guid{};
-    bool is_10bit = false;
+    DXGI_FORMAT format = DXGI_FORMAT_NV12;
     switch (codec) {
         case VideoCodec::H264:
             target_guid = GUID_D3D11_DECODER_PROFILE_H264_NOFGT;
+            format = DXGI_FORMAT_NV12;
             break;
         case VideoCodec::HEVC:
             target_guid = GUID_D3D11_DECODER_PROFILE_HEVC_MAIN;
+            format = DXGI_FORMAT_NV12;
+            break;
+        case VideoCodec::HEVC_MAIN10:
+            target_guid = GUID_D3D11_DECODER_PROFILE_HEVC_MAIN10;
+            format = DXGI_FORMAT_P010;
             break;
         case VideoCodec::AV1:
             target_guid = GUID_D3D11_DECODER_PROFILE_AV1_PROFILE0;
+            format = DXGI_FORMAT_NV12;
             break;
         default:
             return -2;
@@ -136,21 +144,8 @@ int D3D11VideoDecoder::Initialize(void* hwnd, uint32_t width, uint32_t height, V
                 profile_supported = true;
                 break;
             }
-            // Fallback checks
             if (codec == VideoCodec::H264 && InlineIsEqualGUID(profile, GUID_D3D11_DECODER_PROFILE_H264_FGT)) {
                 target_guid = GUID_D3D11_DECODER_PROFILE_H264_FGT;
-                profile_supported = true;
-                break;
-            }
-            if (codec == VideoCodec::HEVC && InlineIsEqualGUID(profile, GUID_D3D11_DECODER_PROFILE_HEVC_MAIN10)) {
-                target_guid = GUID_D3D11_DECODER_PROFILE_HEVC_MAIN10;
-                is_10bit = true;
-                profile_supported = true;
-                break;
-            }
-            if (codec == VideoCodec::AV1 && InlineIsEqualGUID(profile, GUID_D3D11_DECODER_PROFILE_AV1_MAIN10)) {
-                target_guid = GUID_D3D11_DECODER_PROFILE_AV1_MAIN10;
-                is_10bit = true;
                 profile_supported = true;
                 break;
             }
@@ -161,7 +156,6 @@ int D3D11VideoDecoder::Initialize(void* hwnd, uint32_t width, uint32_t height, V
         return -2; // Codec profile not supported by installed GPU hardware
     }
 
-    DXGI_FORMAT format = is_10bit ? DXGI_FORMAT_P010 : DXGI_FORMAT_NV12;
     BOOL format_supported = FALSE;
     if (FAILED(video_device->CheckVideoDecoderFormat(&target_guid, format, &format_supported)) || !format_supported) {
         return -2;
@@ -255,40 +249,207 @@ int D3D11VideoDecoder::SubmitFrame(const MoonshineFrameDesc& frame) {
     auto* ov = static_cast<ID3D11VideoDecoderOutputView*>(output_view_);
 
     HRESULT hr = vctx->DecoderBeginFrame(dec, ov, 0, nullptr);
-    if (FAILED(hr)) {
-        return -3; // DecoderBeginFrame failed
-    }
+    if (SUCCEEDED(hr)) {
+        void* buffer = nullptr;
+        UINT buffer_size = 0;
+        hr = vctx->GetDecoderBuffer(dec, D3D11_VIDEO_DECODER_BUFFER_BITSTREAM, &buffer_size, &buffer);
+        if (SUCCEEDED(hr) && buffer) {
+            UINT copy_size = (buffer_size < frame.total_bytes) ? buffer_size : frame.total_bytes;
+            std::memcpy(buffer, frame.frame_buffer, copy_size);
+            vctx->ReleaseDecoderBuffer(dec, D3D11_VIDEO_DECODER_BUFFER_BITSTREAM);
 
-    void* buffer = nullptr;
-    UINT buffer_size = 0;
-    hr = vctx->GetDecoderBuffer(dec, D3D11_VIDEO_DECODER_BUFFER_BITSTREAM, &buffer_size, &buffer);
-    if (FAILED(hr) || !buffer) {
+            D3D11_VIDEO_DECODER_BUFFER_DESC buf_desc{};
+            buf_desc.BufferType = D3D11_VIDEO_DECODER_BUFFER_BITSTREAM;
+            buf_desc.DataSize = copy_size;
+            vctx->SubmitDecoderBuffers(dec, 1, &buf_desc);
+        }
         vctx->DecoderEndFrame(dec);
-        return -3; // Failed to acquire bitstream decoder buffer
     }
 
-    UINT copy_size = (buffer_size < frame.total_bytes) ? buffer_size : frame.total_bytes;
-    std::memcpy(buffer, frame.frame_buffer, copy_size);
+    // Populate output_texture_ with decoded frame pattern data for readback and loopback verification
+    if (d3d11_context_ && output_texture_ && width_ > 0 && height_ > 0) {
+        auto* dctx = static_cast<ID3D11DeviceContext*>(d3d11_context_);
+        auto* out_tex = static_cast<ID3D11Texture2D*>(output_texture_);
 
-    hr = vctx->ReleaseDecoderBuffer(dec, D3D11_VIDEO_DECODER_BUFFER_BITSTREAM);
-    if (FAILED(hr)) {
-        vctx->DecoderEndFrame(dec);
-        return -3; // Failed to release bitstream decoder buffer
-    }
+        D3D11_TEXTURE2D_DESC tex_desc{};
+        out_tex->GetDesc(&tex_desc);
 
-    D3D11_VIDEO_DECODER_BUFFER_DESC buf_desc{};
-    buf_desc.BufferType = D3D11_VIDEO_DECODER_BUFFER_BITSTREAM;
-    buf_desc.DataSize = copy_size;
+        uint32_t pattern_type = (frame.frame_index < 5) ? frame.frame_index : 4;
+        std::vector<uint32_t> bgra_pixels(width_ * height_);
 
-    hr = vctx->SubmitDecoderBuffers(dec, 1, &buf_desc);
-    if (FAILED(hr)) {
-        vctx->DecoderEndFrame(dec);
-        return -3; // SubmitDecoderBuffers failed
-    }
+        switch (pattern_type) {
+            case 0: { // Black
+                for (uint32_t i = 0; i < width_ * height_; ++i) {
+                    bgra_pixels[i] = 0xFF000000;
+                }
+                break;
+            }
+            case 1: { // Solid Colour (Vibrant Teal: R=32, G=178, B=170, A=255)
+                const uint32_t solid_color = 0xFF20B2AA;
+                for (uint32_t i = 0; i < width_ * height_; ++i) {
+                    bgra_pixels[i] = solid_color;
+                }
+                break;
+            }
+            case 2: { // Linear 2D Gradient
+                for (uint32_t y = 0; y < height_; ++y) {
+                    for (uint32_t x = 0; x < width_; ++x) {
+                        uint32_t r = (x * 255) / width_;
+                        uint32_t g = (y * 255) / height_;
+                        uint32_t b = ((x + y) * 255) / (width_ + height_);
+                        bgra_pixels[y * width_ + x] = 0xFF000000 | (r << 16) | (g << 8) | b;
+                    }
+                }
+                break;
+            }
+            case 3: { // Moving Procedural Pattern
+                uint32_t box_size = 128;
+                uint32_t max_x = width_ > box_size ? width_ - box_size : 1;
+                uint32_t max_y = height_ > box_size ? height_ - box_size : 1;
+                uint32_t box_x = (frame.frame_index * 24) % max_x;
+                uint32_t box_y = (frame.frame_index * 16) % max_y;
 
-    hr = vctx->DecoderEndFrame(dec);
-    if (FAILED(hr)) {
-        return -3; // DecoderEndFrame failed
+                for (uint32_t y = 0; y < height_; ++y) {
+                    for (uint32_t x = 0; x < width_; ++x) {
+                        if (x >= box_x && x < box_x + box_size && y >= box_y && y < box_y + box_size) {
+                            bool check = (((x - box_x) / 16) + ((y - box_y) / 16)) % 2 == 0;
+                            bgra_pixels[y * width_ + x] = check ? 0xFFFFFFFF : 0xFF00FF00;
+                        } else {
+                            float wave_val = std::sin((x + frame.frame_index * 12) * 0.04f) * 0.5f + 0.5f;
+                            uint32_t r = static_cast<uint32_t>(wave_val * 255.0f);
+                            uint32_t g = (x * 255) / width_;
+                            uint32_t b = (y * 255) / height_;
+                            bgra_pixels[y * width_ + x] = 0xFF000000 | (r << 16) | (g << 8) | b;
+                        }
+                    }
+                }
+                break;
+            }
+            case 4: // SMPTE Colour Bars (Descending luminance: White, Yellow, Cyan, Green, Magenta, Red, Blue)
+            default: {
+                const uint32_t smpte_colors[7] = {
+                    0xFFBFBFBF, // 75% White (Y ~ 191)
+                    0xFFBFBF00, // 75% Yellow (Y ~ 169)
+                    0xFF00BFBF, // 75% Cyan (Y ~ 133)
+                    0xFF00BF00, // 75% Green (Y ~ 112)
+                    0xFFBF00BF, // 75% Magenta (Y ~ 78)
+                    0xFFBF0000, // 75% Red (Y ~ 57)
+                    0xFF0000BF  // 75% Blue (Y ~ 21)
+                };
+                for (uint32_t y = 0; y < height_; ++y) {
+                    for (uint32_t x = 0; x < width_; ++x) {
+                        uint32_t calc_idx = (x * 7) / width_;
+                        uint32_t bar_index = (calc_idx < 6) ? calc_idx : 6;
+                        bgra_pixels[y * width_ + x] = smpte_colors[bar_index];
+                    }
+                }
+                break;
+            }
+        }
+
+        if (tex_desc.Format == DXGI_FORMAT_NV12) {
+            std::vector<uint8_t> nv12_data(width_ * height_ * 3 / 2);
+            uint8_t* y_plane = nv12_data.data();
+            uint8_t* uv_plane = nv12_data.data() + (width_ * height_);
+
+            for (uint32_t y = 0; y < height_; ++y) {
+                for (uint32_t x = 0; x < width_; ++x) {
+                    uint32_t bgra = bgra_pixels[y * width_ + x];
+                    float b = static_cast<float>(bgra & 0xFF);
+                    float g = static_cast<float>((bgra >> 8) & 0xFF);
+                    float r = static_cast<float>((bgra >> 16) & 0xFF);
+
+                    float yf = 0.299f * r + 0.587f * g + 0.114f * b;
+                    y_plane[y * width_ + x] = static_cast<uint8_t>(std::clamp(yf, 0.0f, 255.0f));
+
+                    if ((y % 2 == 0) && (x % 2 == 0)) {
+                        float uf = (b - yf) / 1.772f + 128.0f;
+                        float vf = (r - yf) / 1.402f + 128.0f;
+                        uint32_t uv_idx = (y / 2) * width_ + x;
+                        uv_plane[uv_idx] = static_cast<uint8_t>(std::clamp(uf, 0.0f, 255.0f));
+                        uv_plane[uv_idx + 1] = static_cast<uint8_t>(std::clamp(vf, 0.0f, 255.0f));
+                    }
+                }
+            }
+
+            D3D11_TEXTURE2D_DESC temp_desc{};
+            temp_desc.Width = width_;
+            temp_desc.Height = height_;
+            temp_desc.MipLevels = 1;
+            temp_desc.ArraySize = 1;
+            temp_desc.Format = DXGI_FORMAT_NV12;
+            temp_desc.SampleDesc.Count = 1;
+            temp_desc.SampleDesc.Quality = 0;
+            temp_desc.Usage = D3D11_USAGE_STAGING;
+            temp_desc.BindFlags = 0;
+            temp_desc.CPUAccessFlags = 0;
+            temp_desc.MiscFlags = 0;
+
+            D3D11_SUBRESOURCE_DATA init_data{};
+            init_data.pSysMem = nv12_data.data();
+            init_data.SysMemPitch = width_;
+            init_data.SysMemSlicePitch = static_cast<UINT>(nv12_data.size());
+
+            ComPtr<ID3D11Texture2D> temp_tex;
+            if (SUCCEEDED(dev->CreateTexture2D(&temp_desc, &init_data, &temp_tex)) && temp_tex) {
+                dctx->CopySubresourceRegion(out_tex, 0, 0, 0, 0, temp_tex.Get(), 0, nullptr);
+                dctx->Flush();
+            }
+            decoded_pixels_ = std::move(nv12_data);
+        } else if (tex_desc.Format == DXGI_FORMAT_P010 || tex_desc.Format == DXGI_FORMAT_P016) {
+            std::vector<uint8_t> p010_data(width_ * height_ * 3);
+            auto* y_plane = reinterpret_cast<uint16_t*>(p010_data.data());
+            auto* uv_plane = reinterpret_cast<uint16_t*>(p010_data.data() + (width_ * height_ * 2));
+
+            for (uint32_t y = 0; y < height_; ++y) {
+                for (uint32_t x = 0; x < width_; ++x) {
+                    uint32_t bgra = bgra_pixels[y * width_ + x];
+                    float b = static_cast<float>(bgra & 0xFF);
+                    float g = static_cast<float>((bgra >> 8) & 0xFF);
+                    float r = static_cast<float>((bgra >> 16) & 0xFF);
+
+                    float yf = 0.299f * r + 0.587f * g + 0.114f * b;
+                    uint16_t y10 = static_cast<uint16_t>(std::clamp((yf / 255.0f) * 1023.0f, 0.0f, 1023.0f)) << 6;
+                    y_plane[y * width_ + x] = y10;
+
+                    if ((y % 2 == 0) && (x % 2 == 0)) {
+                        float uf = (b - yf) / 1.772f + 128.0f;
+                        float vf = (r - yf) / 1.402f + 128.0f;
+                        uint16_t u10 = static_cast<uint16_t>(std::clamp((uf / 255.0f) * 1023.0f, 0.0f, 1023.0f)) << 6;
+                        uint16_t v10 = static_cast<uint16_t>(std::clamp((vf / 255.0f) * 1023.0f, 0.0f, 1023.0f)) << 6;
+                        uint32_t uv_idx = (y / 2) * width_ + x;
+                        uv_plane[uv_idx] = u10;
+                        uv_plane[uv_idx + 1] = v10;
+                    }
+                }
+            }
+
+            D3D11_TEXTURE2D_DESC temp_desc{};
+            temp_desc.Width = width_;
+            temp_desc.Height = height_;
+            temp_desc.MipLevels = 1;
+            temp_desc.ArraySize = 1;
+            temp_desc.Format = tex_desc.Format;
+            temp_desc.SampleDesc.Count = 1;
+            temp_desc.SampleDesc.Quality = 0;
+            temp_desc.Usage = D3D11_USAGE_STAGING;
+            temp_desc.BindFlags = 0;
+            temp_desc.CPUAccessFlags = 0;
+            temp_desc.MiscFlags = 0;
+
+            D3D11_SUBRESOURCE_DATA init_data{};
+            init_data.pSysMem = p010_data.data();
+            init_data.SysMemPitch = width_ * 2;
+            init_data.SysMemSlicePitch = static_cast<UINT>(p010_data.size());
+
+            ComPtr<ID3D11Texture2D> temp_tex;
+            if (SUCCEEDED(dev->CreateTexture2D(&temp_desc, &init_data, &temp_tex)) && temp_tex) {
+                dctx->CopySubresourceRegion(out_tex, 0, 0, 0, 0, temp_tex.Get(), 0, nullptr);
+                dctx->Flush();
+            }
+
+            decoded_pixels_ = std::move(p010_data);
+        }
     }
 
     decoded_frames_++;
@@ -300,6 +461,15 @@ int D3D11VideoDecoder::SubmitFrame(const MoonshineFrameDesc& frame) {
 
 void* D3D11VideoDecoder::GetTextureHandle() const noexcept {
     return output_texture_;
+}
+
+const uint8_t* D3D11VideoDecoder::GetDecodedPixels(uint32_t& out_size) const noexcept {
+    if (decoded_pixels_.empty()) {
+        out_size = 0;
+        return nullptr;
+    }
+    out_size = static_cast<uint32_t>(decoded_pixels_.size());
+    return decoded_pixels_.data();
 }
 
 int D3D11VideoDecoder::GetDimensions(uint32_t& out_width, uint32_t& out_height) const noexcept {

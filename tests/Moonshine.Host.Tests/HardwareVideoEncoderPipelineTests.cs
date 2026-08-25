@@ -273,7 +273,7 @@ public class HardwareVideoEncoderPipelineTests
         av1KeyResult.NaluCount.Should().Be(2);
 
         // Standalone Frame Header OBU (3) without Tile Group -> ContainsFrameData = false, IsCompleteAccessUnit = false
-        byte[] av1FrameHeaderAu = [0x1A, 0x02, 0x10, 0x20]; // OBU Type 3 (Frame Header), size 2
+        byte[] av1FrameHeaderAu = [0x1A, 0x02, 0x20, 0x20]; // OBU Type 3 (Frame Header), size 2 (InterFrame: frame_type=1)
         var av1InterResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.Av1, av1FrameHeaderAu);
         av1InterResult.IsValid.Should().BeTrue();
         av1InterResult.HasStructurallyValidPayload.Should().BeTrue();
@@ -919,6 +919,9 @@ public class HardwareVideoEncoderPipelineTests
         }
 
         public bool Reconfigure(uint bitrateKbps, uint fps, uint peakBitrateKbps = 0) => true;
+        public bool ReconfigureResolution(uint width, uint height, uint fps = 60, uint bitrateKbps = 0) => true;
+        public bool Drain() => true;
+        public bool Flush() => true;
         public void RequestKeyframe() { }
         public bool TryRecoverDevice(IntPtr newD3dDevice) => true;
         public void Dispose()

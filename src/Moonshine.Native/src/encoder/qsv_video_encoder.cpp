@@ -193,6 +193,27 @@ void QsvVideoEncoder::request_keyframe() {
     _force_keyframe = true;
 }
 
+bool QsvVideoEncoder::drain() {
+    if (!_initialized || !_impl || _state == QsvLifecycleState::Faulted || _state == QsvLifecycleState::Disposed) {
+        return false;
+    }
+    _state = QsvLifecycleState::Flushing;
+    bool res = _impl->session.drain();
+    _state = QsvLifecycleState::Ready;
+    return res;
+}
+
+bool QsvVideoEncoder::flush() {
+    if (!_initialized || !_impl || _state == QsvLifecycleState::Faulted || _state == QsvLifecycleState::Disposed) {
+        return false;
+    }
+    _state = QsvLifecycleState::Flushing;
+    bool res = _impl->session.flush();
+    _force_keyframe = true;
+    _state = QsvLifecycleState::Ready;
+    return res;
+}
+
 void QsvVideoEncoder::cleanup() {
     if (_impl) {
         _impl->session.close();

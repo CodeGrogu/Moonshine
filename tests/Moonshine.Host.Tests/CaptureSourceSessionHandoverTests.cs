@@ -257,6 +257,19 @@ public class CaptureSourceSessionHandoverTests
             return true;
         }
 
+        public bool ReconfigureResolution(uint width, uint height, uint fps = 60, uint bitrateKbps = 0)
+        {
+            Width = width;
+            Height = height;
+            Fps = fps;
+            if (bitrateKbps > 0) BitrateKbps = bitrateKbps;
+            ReconfigureCallCount++;
+            return true;
+        }
+
+        public bool Drain() => true;
+        public bool Flush() => true;
+
         public void RequestKeyframe()
         {
             ForceIdrCallCount++;

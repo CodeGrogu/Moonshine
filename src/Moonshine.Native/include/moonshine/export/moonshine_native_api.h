@@ -986,6 +986,14 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_encoder_request_keyframe(
     MoonshineEncoderHandle handle
 );
 
+MOONSHINE_API int MOONSHINE_CONV moonshine_encoder_drain(
+    MoonshineEncoderHandle handle
+);
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_encoder_flush(
+    MoonshineEncoderHandle handle
+);
+
 MOONSHINE_API void MOONSHINE_CONV moonshine_encoder_destroy(
     MoonshineEncoderHandle handle
 );

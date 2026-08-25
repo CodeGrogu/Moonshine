@@ -660,7 +660,18 @@ int main() {
         void* smpte_tex = moonshine_d3d11_create_pattern_texture(device.Get(), 1920, 1080, 4, 0);
         ACTIVE_ASSERT(smpte_tex != nullptr);
 
-        uint32_t chosen_codec = supports_hevc ? 1 : 0;
+        MoonshineDecoderCaps dec_caps{};
+        moonshine_video_query_caps(&dec_caps);
+
+        uint32_t chosen_codec = 0;
+        if (dec_caps.supports_10bit && (caps.supported_codecs_mask & (1 << 2))) {
+            chosen_codec = 2; // HEVC Main10
+        } else if (dec_caps.supports_hevc && (caps.supported_codecs_mask & (1 << 1))) {
+            chosen_codec = 1; // HEVC
+        } else {
+            chosen_codec = 0; // H.264
+        }
+
         MoonshineDecoderHandle dec = moonshine_video_create_d3d11(nullptr, 1920, 1080, chosen_codec);
         ACTIVE_ASSERT(dec != nullptr);
 

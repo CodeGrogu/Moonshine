@@ -182,6 +182,12 @@ add_executable(test_gpu_inventory
 target_link_libraries(test_gpu_inventory PRIVATE Moonshine.Native $<$<BOOL:${WIN32}>:d3d11 dxgi>)
 add_test(NAME test_gpu_inventory COMMAND test_gpu_inventory)
 
+add_executable(test_bitstream_parser
+    test_bitstream_parser.cpp
+)
+target_link_libraries(test_bitstream_parser PRIVATE Moonshine.Native)
+add_test(NAME test_bitstream_parser COMMAND test_bitstream_parser)
+
 if(WIN32)
     add_custom_command(TARGET test_c_abi_export POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different

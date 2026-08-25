@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <thread>
 #include <chrono>
+#include <moonshine/bitstream/bitstream_parser.hpp>
 
 #if defined(_WIN32)
 #include <d3d11.h>
@@ -259,44 +260,7 @@ bool AmfSession::encode(
                 const uint8_t* ptr = static_cast<const uint8_t*>(pNative);
                 auto video_codec = static_cast<VideoCodec>(_config.codec);
 
-                if (video_codec == VideoCodec::Av1) {
-                    // AV1 OBU Inspection
-                    for (size_t i = 0; i + 1 < buffer_size && i < 64; ) {
-                        uint8_t header = ptr[i];
-                        uint8_t obu_type = (header >> 3) & 0x0F;
-                        bool has_size = (header & 0x02) != 0;
-                        if (obu_type == 1 /* Sequence Header */ || obu_type == 6 /* Frame */) {
-                            is_keyframe = true;
-                        }
-                        if (has_size && i + 2 < buffer_size) {
-                            uint8_t obu_len = ptr[i + 1] & 0x7F;
-                            i += 2 + obu_len;
-                        } else {
-                            break;
-                        }
-                    }
-                } else {
-                    // H.264 / HEVC NAL Unit Inspection
-                    for (size_t i = 0; i + 4 < buffer_size && i < 128; ++i) {
-                        if (ptr[i] == 0 && ptr[i+1] == 0 && ptr[i+2] == 1) {
-                            if (video_codec == VideoCodec::H264) {
-                                uint8_t nal_type = ptr[i+3] & 0x1F;
-                                if (nal_type == 5 || nal_type == 7) is_keyframe = true;
-                            } else {
-                                uint8_t nal_type = (ptr[i+3] >> 1) & 0x3F;
-                                if (nal_type == 19 || nal_type == 20 || nal_type == 21 || nal_type == 32) is_keyframe = true;
-                            }
-                        } else if (ptr[i] == 0 && ptr[i+1] == 0 && ptr[i+2] == 0 && ptr[i+3] == 1) {
-                            if (video_codec == VideoCodec::H264) {
-                                uint8_t nal_type = ptr[i+4] & 0x1F;
-                                if (nal_type == 5 || nal_type == 7) is_keyframe = true;
-                            } else {
-                                uint8_t nal_type = (ptr[i+4] >> 1) & 0x3F;
-                                if (nal_type == 19 || nal_type == 20 || nal_type == 21 || nal_type == 32) is_keyframe = true;
-                            }
-                        }
-                    }
-                }
+                moonshine::bitstream::validate_bitstream(video_codec, ptr, buffer_size, is_keyframe);
 
                 if (!is_keyframe && (force_idr || frame_id == 0)) {
                     is_keyframe = true;
@@ -330,8 +294,11 @@ bool AmfSession::reconfigure(const EncoderConfig& new_config) {
 
     std::lock_guard<std::mutex> lock(_mutex);
 
-    if (_encoder->SetProperty(AMF_VIDEO_ENCODER_TARGET_BITRATE, make_int64_variant(static_cast<int64_t>(new_config.bitrate_kbps) * 1000)) != AMF_OK ||
-        _encoder->SetProperty(AMF_VIDEO_ENCODER_PEAK_BITRATE, make_int64_variant(static_cast<int64_t>(new_config.peak_bitrate_kbps) * 1000)) != AMF_OK) {
+    int64_t target_bps = static_cast<int64_t>(new_config.bitrate_kbps) * 1000;
+    int64_t peak_bps = static_cast<int64_t>(new_config.peak_bitrate_kbps > 0 ? new_config.peak_bitrate_kbps : new_config.bitrate_kbps * 3 / 2) * 1000;
+
+    if (_encoder->SetProperty(AMF_VIDEO_ENCODER_TARGET_BITRATE, make_int64_variant(target_bps)) != AMF_OK ||
+        _encoder->SetProperty(AMF_VIDEO_ENCODER_PEAK_BITRATE, make_int64_variant(peak_bps)) != AMF_OK) {
         return false;
     }
 

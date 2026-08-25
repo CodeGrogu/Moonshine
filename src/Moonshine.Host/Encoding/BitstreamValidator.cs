@@ -16,8 +16,150 @@ public readonly record struct AccessUnitValidationResult(
     int NaluCount,
     bool HasParameterSets = false,
     bool HasIdr = false,
-    bool HasRandomAccessPoint = false
+    bool HasRandomAccessPoint = false,
+    uint ProfileIdc = 0,
+    uint LevelIdc = 0,
+    int PictureOrderCount = 0,
+    bool HasAud = false,
+    bool HasCra = false,
+    bool HasVps = false,
+    bool HasSps = false,
+    bool HasPps = false
 );
+
+/// <summary>
+/// Zero-allocation bit-level reader with on-the-fly emulation prevention byte (0x03) removal for NAL payloads.
+/// </summary>
+internal ref struct NalBitReader
+{
+    private readonly ReadOnlySpan<byte> _data;
+    private int _byteOffset;
+    private int _bitOffset;
+    private byte _currentByte;
+    private bool _hasCurrentByte;
+    private byte _prev1;
+    private byte _prev2;
+
+    public NalBitReader(ReadOnlySpan<byte> data)
+    {
+        _data = data;
+        _byteOffset = 0;
+        _bitOffset = 0;
+        _currentByte = 0;
+        _hasCurrentByte = false;
+        _prev1 = 0xFF;
+        _prev2 = 0xFF;
+    }
+
+    private bool FetchNextByte(out byte b)
+    {
+        if (_byteOffset >= _data.Length)
+        {
+            b = 0;
+            return false;
+        }
+
+        byte val = _data[_byteOffset++];
+        if (_prev2 == 0x00 && _prev1 == 0x00 && val == 0x03)
+        {
+            if (_byteOffset >= _data.Length)
+            {
+                b = 0;
+                return false;
+            }
+            val = _data[_byteOffset++];
+            _prev2 = 0x00;
+            _prev1 = val;
+        }
+        else
+        {
+            _prev2 = _prev1;
+            _prev1 = val;
+        }
+
+        b = val;
+        return true;
+    }
+
+    public bool ReadBit(out int bit)
+    {
+        if (!_hasCurrentByte || _bitOffset == 8)
+        {
+            if (!FetchNextByte(out _currentByte))
+            {
+                bit = 0;
+                return false;
+            }
+            _hasCurrentByte = true;
+            _bitOffset = 0;
+        }
+
+        bit = (_currentByte >> (7 - _bitOffset)) & 0x01;
+        _bitOffset++;
+        return true;
+    }
+
+    public bool ReadBits(int count, out uint value)
+    {
+        value = 0;
+        for (int i = 0; i < count; i++)
+        {
+            if (!ReadBit(out int bit))
+            {
+                return false;
+            }
+            value = (value << 1) | (uint)bit;
+        }
+        return true;
+    }
+
+    public bool ReadUe(out uint value)
+    {
+        value = 0;
+        int zeroCount = 0;
+        while (true)
+        {
+            if (!ReadBit(out int bit))
+            {
+                return false;
+            }
+            if (bit == 1)
+            {
+                break;
+            }
+            zeroCount++;
+            if (zeroCount > 31)
+            {
+                return false;
+            }
+        }
+
+        if (zeroCount == 0)
+        {
+            value = 0;
+            return true;
+        }
+
+        if (!ReadBits(zeroCount, out uint suffix))
+        {
+            return false;
+        }
+
+        value = (1u << zeroCount) - 1u + suffix;
+        return true;
+    }
+
+    public bool ReadSe(out int value)
+    {
+        value = 0;
+        if (!ReadUe(out uint ueVal))
+        {
+            return false;
+        }
+        value = (ueVal & 1) != 0 ? (int)((ueVal + 1) / 2) : -(int)(ueVal / 2);
+        return true;
+    }
+}
 
 /// <summary>
 /// High-performance zero-allocation bitstream structural validator for H.264, HEVC, and AV1 compressed payloads.
@@ -25,12 +167,36 @@ public readonly record struct AccessUnitValidationResult(
 public static class BitstreamValidator
 {
     /// <summary>
+    /// Decodes an unsigned LEB128 variable-length integer up to 8 bytes per AV1 specification Section 4.10.5.
+    /// </summary>
+    public static bool TryDecodeLeb128(ReadOnlySpan<byte> data, out ulong value, out int bytesRead)
+    {
+        value = 0;
+        bytesRead = 0;
+        int shift = 0;
+
+        for (int i = 0; i < 8 && i < data.Length; i++)
+        {
+            byte b = data[i];
+            bytesRead++;
+            value |= (ulong)(b & 0x7F) << shift;
+            if ((b & 0x80) == 0)
+            {
+                return true;
+            }
+            shift += 7;
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Validates whether a compressed bitstream payload contains structurally valid NAL units or OBU sequences.
     /// </summary>
     public static bool ValidateBitstream(VideoCodec codec, ReadOnlySpan<byte> bitstream, out bool isKeyframe)
     {
         isKeyframe = false;
-        if (bitstream.Length < 4) return false;
+        if (bitstream.IsEmpty) return false;
 
         var result = ValidateAccessUnit(codec, bitstream);
         isKeyframe = result.HasCodecHeaders || result.HasRandomAccessMarker || result.HasParameterSets || result.HasIdr || result.HasRandomAccessPoint;
@@ -42,20 +208,9 @@ public static class BitstreamValidator
     /// </summary>
     public static AccessUnitValidationResult ValidateAccessUnit(VideoCodec codec, ReadOnlySpan<byte> bitstream)
     {
-        if (bitstream.Length < 4)
+        if (bitstream.IsEmpty)
         {
-            return new AccessUnitValidationResult(
-                IsValid: false,
-                HasStructurallyValidPayload: false,
-                HasCodecHeaders: false,
-                HasRandomAccessMarker: false,
-                ContainsFrameData: false,
-                IsCompleteAccessUnit: false,
-                NaluCount: 0,
-                HasParameterSets: false,
-                HasIdr: false,
-                HasRandomAccessPoint: false
-            );
+            return CreateInvalidResult();
         }
 
         return codec switch
@@ -63,68 +218,111 @@ public static class BitstreamValidator
             VideoCodec.H264 => ValidateH264AccessUnit(bitstream),
             VideoCodec.Hevc or VideoCodec.HevcMain10 => ValidateHevcAccessUnit(bitstream),
             VideoCodec.Av1 => ValidateAv1AccessUnit(bitstream),
-            _ => new AccessUnitValidationResult(
-                IsValid: false,
-                HasStructurallyValidPayload: false,
-                HasCodecHeaders: false,
-                HasRandomAccessMarker: false,
-                ContainsFrameData: false,
-                IsCompleteAccessUnit: false,
-                NaluCount: 0,
-                HasParameterSets: false,
-                HasIdr: false,
-                HasRandomAccessPoint: false
-            )
+            _ => CreateInvalidResult()
         };
     }
 
+    private static AccessUnitValidationResult CreateInvalidResult() => new(
+        IsValid: false,
+        HasStructurallyValidPayload: false,
+        HasCodecHeaders: false,
+        HasRandomAccessMarker: false,
+        ContainsFrameData: false,
+        IsCompleteAccessUnit: false,
+        NaluCount: 0,
+        HasParameterSets: false,
+        HasIdr: false,
+        HasRandomAccessPoint: false
+    );
+
     private static AccessUnitValidationResult ValidateH264AccessUnit(ReadOnlySpan<byte> bitstream)
     {
-        int offset = 0;
-        bool foundValidNalu = false;
+        if (bitstream.Length < 4)
+        {
+            return CreateInvalidResult();
+        }
+
         bool hasSps = false;
         bool hasPps = false;
         bool hasIdr = false;
         bool hasNonIdr = false;
+        bool hasAud = false;
+        uint profileIdc = 0;
+        uint levelIdc = 0;
+        int poc = 0;
         int naluCount = 0;
 
-        while (offset + 3 < bitstream.Length)
+        int currentOffset = 0;
+        int naluStart = -1;
+
+        while (currentOffset + 2 < bitstream.Length)
         {
-            int startCodeLen = 0;
-            if (bitstream[offset] == 0 && bitstream[offset + 1] == 0)
+            int scLen = 0;
+            if (bitstream[currentOffset] == 0 && bitstream[currentOffset + 1] == 0)
             {
-                if (bitstream[offset + 2] == 1)
+                if (bitstream[currentOffset + 2] == 1)
                 {
-                    startCodeLen = 3;
+                    scLen = 3;
                 }
-                else if (offset + 3 < bitstream.Length && bitstream[offset + 2] == 0 && bitstream[offset + 3] == 1)
+                else if (currentOffset + 3 < bitstream.Length && bitstream[currentOffset + 2] == 0 && bitstream[currentOffset + 3] == 1)
                 {
-                    startCodeLen = 4;
+                    scLen = 4;
                 }
             }
 
-            if (startCodeLen > 0)
+            if (scLen > 0)
             {
-                int naluHeaderIdx = offset + startCodeLen;
-                if (naluHeaderIdx < bitstream.Length)
+                if (naluStart < 0)
                 {
-                    byte header = bitstream[naluHeaderIdx];
-                    int nalUnitType = header & 0x1F;
-                    foundValidNalu = true;
-                    naluCount++;
-
-                    // H.264 NAL Unit Types: 1 = Non-IDR Slice, 2..4 = Slice Partitions, 5 = IDR Slice, 7 = SPS, 8 = PPS
-                    if (nalUnitType == 7) hasSps = true;
-                    else if (nalUnitType == 8) hasPps = true;
-                    else if (nalUnitType == 5) hasIdr = true;
-                    else if (nalUnitType == 1 || (nalUnitType >= 2 && nalUnitType <= 4)) hasNonIdr = true;
+                    for (int z = 0; z < currentOffset; z++)
+                    {
+                        if (bitstream[z] != 0)
+                        {
+                            return CreateInvalidResult();
+                        }
+                    }
                 }
-                offset += startCodeLen;
+                else
+                {
+                    int nalPayloadStart = naluStart;
+                    int nalPayloadEnd = currentOffset;
+
+                    if (nalPayloadEnd > nalPayloadStart)
+                    {
+                        if (!ProcessH264Nalu(bitstream[nalPayloadStart..nalPayloadEnd], ref hasSps, ref hasPps, ref hasIdr, ref hasNonIdr, ref hasAud, ref profileIdc, ref levelIdc, ref poc))
+                        {
+                            return CreateInvalidResult();
+                        }
+                        naluCount++;
+                    }
+                }
+
+                naluStart = currentOffset + scLen;
+                currentOffset += scLen;
             }
             else
             {
-                offset++;
+                currentOffset++;
             }
+        }
+
+        if (naluStart >= 0)
+        {
+            int nalPayloadEnd = bitstream.Length;
+
+            if (nalPayloadEnd > naluStart)
+            {
+                if (!ProcessH264Nalu(bitstream[naluStart..nalPayloadEnd], ref hasSps, ref hasPps, ref hasIdr, ref hasNonIdr, ref hasAud, ref profileIdc, ref levelIdc, ref poc))
+                {
+                    return CreateInvalidResult();
+                }
+                naluCount++;
+            }
+        }
+
+        if (naluCount == 0)
+        {
+            return CreateInvalidResult();
         }
 
         bool hasCodecHeaders = hasSps || hasPps;
@@ -133,8 +331,8 @@ public static class BitstreamValidator
         bool isCompleteAccessUnit = hasCodecHeaders && containsFrameData;
 
         return new AccessUnitValidationResult(
-            IsValid: foundValidNalu,
-            HasStructurallyValidPayload: foundValidNalu,
+            IsValid: true,
+            HasStructurallyValidPayload: true,
             HasCodecHeaders: hasCodecHeaders,
             HasRandomAccessMarker: hasRandomAccessMarker,
             ContainsFrameData: containsFrameData,
@@ -142,71 +340,180 @@ public static class BitstreamValidator
             NaluCount: naluCount,
             HasParameterSets: hasCodecHeaders,
             HasIdr: hasIdr,
-            HasRandomAccessPoint: hasRandomAccessMarker
+            HasRandomAccessPoint: hasRandomAccessMarker,
+            ProfileIdc: profileIdc,
+            LevelIdc: levelIdc,
+            PictureOrderCount: poc,
+            HasAud: hasAud,
+            HasCra: false,
+            HasVps: false,
+            HasSps: hasSps,
+            HasPps: hasPps
         );
+    }
+
+    private static bool ProcessH264Nalu(
+        ReadOnlySpan<byte> naluData,
+        ref bool hasSps,
+        ref bool hasPps,
+        ref bool hasIdr,
+        ref bool hasNonIdr,
+        ref bool hasAud,
+        ref uint profileIdc,
+        ref uint levelIdc,
+        ref int poc)
+    {
+        _ = poc;
+        if (naluData.IsEmpty) return false;
+        byte header = naluData[0];
+        if ((header & 0x80) != 0) return false;
+
+        int nalRefIdc = (header >> 5) & 0x03;
+        int nalUnitType = header & 0x1F;
+
+        if (nalUnitType == 0 || nalUnitType > 23) return false;
+
+        ReadOnlySpan<byte> rbsp = naluData[1..];
+
+        if (nalUnitType == 7)
+        {
+            hasSps = true;
+            if (rbsp.Length >= 3)
+            {
+                profileIdc = rbsp[0];
+                levelIdc = rbsp[2];
+                if (levelIdc == 0) return false;
+            }
+        }
+        else if (nalUnitType == 8)
+        {
+            hasPps = true;
+        }
+        else if (nalUnitType == 5)
+        {
+            if (nalRefIdc == 0) return false;
+            hasIdr = true;
+
+            if (!rbsp.IsEmpty)
+            {
+                var reader = new NalBitReader(rbsp);
+                if (reader.ReadUe(out _) && reader.ReadUe(out uint sliceType))
+                {
+                    uint modSlice = sliceType % 5;
+                    if (modSlice != 2 && modSlice != 4) return false;
+                }
+            }
+        }
+        else if (nalUnitType == 1 || (nalUnitType >= 2 && nalUnitType <= 4))
+        {
+            hasNonIdr = true;
+        }
+        else if (nalUnitType == 9)
+        {
+            hasAud = true;
+        }
+
+        return true;
     }
 
     private static AccessUnitValidationResult ValidateHevcAccessUnit(ReadOnlySpan<byte> bitstream)
     {
-        int offset = 0;
-        bool foundValidNalu = false;
+        if (bitstream.Length < 5)
+        {
+            return CreateInvalidResult();
+        }
+
+        int naluCount = 0;
         bool hasVps = false;
         bool hasSps = false;
         bool hasPps = false;
         bool hasIdr = false;
         bool hasCra = false;
+        bool hasBla = false;
         bool hasTrail = false;
-        int naluCount = 0;
+        bool hasAud = false;
 
-        while (offset + 3 < bitstream.Length)
+        int currentOffset = 0;
+        int naluStart = -1;
+
+        while (currentOffset + 2 < bitstream.Length)
         {
-            int startCodeLen = 0;
-            if (bitstream[offset] == 0 && bitstream[offset + 1] == 0)
+            int scLen = 0;
+            if (bitstream[currentOffset] == 0 && bitstream[currentOffset + 1] == 0)
             {
-                if (bitstream[offset + 2] == 1)
+                if (bitstream[currentOffset + 2] == 1)
                 {
-                    startCodeLen = 3;
+                    scLen = 3;
                 }
-                else if (offset + 3 < bitstream.Length && bitstream[offset + 2] == 0 && bitstream[offset + 3] == 1)
+                else if (currentOffset + 3 < bitstream.Length && bitstream[currentOffset + 2] == 0 && bitstream[currentOffset + 3] == 1)
                 {
-                    startCodeLen = 4;
+                    scLen = 4;
                 }
             }
 
-            if (startCodeLen > 0)
+            if (scLen > 0)
             {
-                int naluHeaderIdx = offset + startCodeLen;
-                if (naluHeaderIdx < bitstream.Length)
+                if (naluStart < 0)
                 {
-                    byte header = bitstream[naluHeaderIdx];
-                    int nalUnitType = (header >> 1) & 0x3F;
-                    foundValidNalu = true;
-                    naluCount++;
-
-                    // HEVC NAL Unit Types: 0..3 = TRAIL, 4..9 = TSA/STSA/RADL/RASL, 19 = IDR_W_RADL, 20 = IDR_N_LP, 21 = CRA, 32 = VPS, 33 = SPS, 34 = PPS
-                    if (nalUnitType == 32) hasVps = true;
-                    else if (nalUnitType == 33) hasSps = true;
-                    else if (nalUnitType == 34) hasPps = true;
-                    else if (nalUnitType == 19 || nalUnitType == 20) hasIdr = true;
-                    else if (nalUnitType == 21) hasCra = true;
-                    else if (nalUnitType <= 3 || (nalUnitType >= 4 && nalUnitType <= 9)) hasTrail = true;
+                    for (int z = 0; z < currentOffset; z++)
+                    {
+                        if (bitstream[z] != 0)
+                        {
+                            return CreateInvalidResult();
+                        }
+                    }
                 }
-                offset += startCodeLen;
+                else
+                {
+                    int nalPayloadStart = naluStart;
+                    int nalPayloadEnd = currentOffset;
+
+                    if (nalPayloadEnd > nalPayloadStart)
+                    {
+                        if (!ProcessHevcNalu(bitstream[nalPayloadStart..nalPayloadEnd], ref hasVps, ref hasSps, ref hasPps, ref hasIdr, ref hasCra, ref hasBla, ref hasTrail, ref hasAud))
+                        {
+                            return CreateInvalidResult();
+                        }
+                        naluCount++;
+                    }
+                }
+
+                naluStart = currentOffset + scLen;
+                currentOffset += scLen;
             }
             else
             {
-                offset++;
+                currentOffset++;
             }
         }
 
+        if (naluStart >= 0)
+        {
+            int nalPayloadEnd = bitstream.Length;
+
+            if (nalPayloadEnd > naluStart)
+            {
+                if (!ProcessHevcNalu(bitstream[naluStart..nalPayloadEnd], ref hasVps, ref hasSps, ref hasPps, ref hasIdr, ref hasCra, ref hasBla, ref hasTrail, ref hasAud))
+                {
+                    return CreateInvalidResult();
+                }
+                naluCount++;
+            }
+        }
+
+        if (naluCount == 0)
+        {
+            return CreateInvalidResult();
+        }
+
         bool hasCodecHeaders = hasVps || hasSps || hasPps;
-        bool hasRandomAccessMarker = hasIdr || hasCra;
-        bool containsFrameData = hasIdr || hasCra || hasTrail;
+        bool hasRandomAccessMarker = hasIdr || hasCra || hasBla;
+        bool containsFrameData = hasIdr || hasCra || hasBla || hasTrail;
         bool isCompleteAccessUnit = hasCodecHeaders && containsFrameData;
 
         return new AccessUnitValidationResult(
-            IsValid: foundValidNalu,
-            HasStructurallyValidPayload: foundValidNalu,
+            IsValid: true,
+            HasStructurallyValidPayload: true,
             HasCodecHeaders: hasCodecHeaders,
             HasRandomAccessMarker: hasRandomAccessMarker,
             ContainsFrameData: containsFrameData,
@@ -214,26 +521,96 @@ public static class BitstreamValidator
             NaluCount: naluCount,
             HasParameterSets: hasCodecHeaders,
             HasIdr: hasIdr,
-            HasRandomAccessPoint: hasRandomAccessMarker
+            HasRandomAccessPoint: hasRandomAccessMarker,
+            ProfileIdc: 0,
+            LevelIdc: 0,
+            PictureOrderCount: 0,
+            HasAud: hasAud,
+            HasCra: hasCra,
+            HasVps: hasVps,
+            HasSps: hasSps,
+            HasPps: hasPps
         );
+    }
+
+    private static bool ProcessHevcNalu(
+        ReadOnlySpan<byte> naluData,
+        ref bool hasVps,
+        ref bool hasSps,
+        ref bool hasPps,
+        ref bool hasIdr,
+        ref bool hasCra,
+        ref bool hasBla,
+        ref bool hasTrail,
+        ref bool hasAud)
+    {
+        if (naluData.Length < 2) return false;
+        byte header0 = naluData[0];
+        byte header1 = naluData[1];
+
+        if ((header0 & 0x80) != 0) return false;
+
+        int nalUnitType = (header0 >> 1) & 0x3F;
+        int nuhTemporalIdPlus1 = header1 & 0x07;
+
+        if (nuhTemporalIdPlus1 == 0) return false;
+        if (nalUnitType > 63) return false;
+
+        ReadOnlySpan<byte> rbsp = naluData[2..];
+
+        if (nalUnitType == 32)
+        {
+            hasVps = true;
+        }
+        else if (nalUnitType == 33)
+        {
+            hasSps = true;
+        }
+        else if (nalUnitType == 34)
+        {
+            hasPps = true;
+        }
+        else if (nalUnitType == 35)
+        {
+            hasAud = true;
+        }
+        else if (nalUnitType == 19 || nalUnitType == 20)
+        {
+            hasIdr = true;
+            VerifyHevcIrapSliceHeader(rbsp);
+        }
+        else if (nalUnitType == 21)
+        {
+            hasCra = true;
+            VerifyHevcIrapSliceHeader(rbsp);
+        }
+        else if (nalUnitType >= 16 && nalUnitType <= 18)
+        {
+            hasBla = true;
+            VerifyHevcIrapSliceHeader(rbsp);
+        }
+        else if (nalUnitType <= 3 || (nalUnitType >= 4 && nalUnitType <= 9))
+        {
+            hasTrail = true;
+        }
+
+        return true;
+    }
+
+    private static void VerifyHevcIrapSliceHeader(ReadOnlySpan<byte> rbsp)
+    {
+        if (rbsp.IsEmpty) return;
+        var reader = new NalBitReader(rbsp);
+        if (!reader.ReadBit(out _)) return;
+        if (!reader.ReadBit(out _)) return;
+        if (!reader.ReadUe(out _)) return;
     }
 
     private static AccessUnitValidationResult ValidateAv1AccessUnit(ReadOnlySpan<byte> bitstream)
     {
-        if (bitstream.Length < 1)
+        if (bitstream.Length < 2)
         {
-            return new AccessUnitValidationResult(
-                IsValid: false,
-                HasStructurallyValidPayload: false,
-                HasCodecHeaders: false,
-                HasRandomAccessMarker: false,
-                ContainsFrameData: false,
-                IsCompleteAccessUnit: false,
-                NaluCount: 0,
-                HasParameterSets: false,
-                HasIdr: false,
-                HasRandomAccessPoint: false
-            );
+            return CreateInvalidResult();
         }
 
         int offset = 0;
@@ -242,127 +619,140 @@ public static class BitstreamValidator
         bool hasFrameHeader = false;
         bool hasTileGroup = false;
         bool hasFrame = false;
+        bool hasKeyFrame = false;
+        bool hasIntraOnlyFrame = false;
+        bool hasTemporalDelimiter = false;
         int obuCount = 0;
 
         while (offset < bitstream.Length)
         {
-            byte header = bitstream[offset];
-            // Forbidden bit must be 0
+            byte header = bitstream[offset++];
             if ((header & 0x80) != 0)
             {
-                return new AccessUnitValidationResult(
-                    IsValid: false,
-                    HasStructurallyValidPayload: false,
-                    HasCodecHeaders: false,
-                    HasRandomAccessMarker: false,
-                    ContainsFrameData: false,
-                    IsCompleteAccessUnit: false,
-                    NaluCount: obuCount,
-                    HasParameterSets: false,
-                    HasIdr: false,
-                    HasRandomAccessPoint: false
-                );
+                return CreateInvalidResult();
             }
 
             int obuType = (header >> 3) & 0x0F;
-            // Valid OBU types are 1..8:
-            // 1 = Sequence Header, 2 = Temporal Delimiter, 3 = Frame Header, 4 = Tile Group,
-            // 5 = Metadata, 6 = Frame, 7 = Redundant Frame Header, 8 = Tile List
-            if (obuType < 1 || obuType > 8)
+            if (obuType < 1 || (obuType > 8 && obuType != 15))
             {
-                return new AccessUnitValidationResult(
-                    IsValid: false,
-                    HasStructurallyValidPayload: false,
-                    HasCodecHeaders: false,
-                    HasRandomAccessMarker: false,
-                    ContainsFrameData: false,
-                    IsCompleteAccessUnit: false,
-                    NaluCount: obuCount,
-                    HasParameterSets: false,
-                    HasIdr: false,
-                    HasRandomAccessPoint: false
-                );
-            }
-
-            foundValidObu = true;
-            obuCount++;
-
-            if (obuType == 1) // Sequence Header signifies keyframe / parameter sets
-            {
-                hasSeqHeader = true;
-            }
-            else if (obuType == 3) // Frame Header
-            {
-                hasFrameHeader = true;
-            }
-            else if (obuType == 4) // Tile Group
-            {
-                hasTileGroup = true;
-            }
-            else if (obuType == 6) // Frame (Header + Tile Group)
-            {
-                hasFrame = true;
+                return CreateInvalidResult();
             }
 
             bool extensionFlag = ((header >> 2) & 0x01) != 0;
             bool hasSizeField = ((header >> 1) & 0x01) != 0;
 
-            offset++;
             if (extensionFlag)
             {
-                if (offset >= bitstream.Length) break;
-                offset++; // Skip OBU extension header
+                if (offset >= bitstream.Length)
+                {
+                    return CreateInvalidResult();
+                }
+                offset++;
             }
 
+            ReadOnlySpan<byte> payload;
             if (hasSizeField)
             {
-                ulong obuSize = 0;
-                int shift = 0;
-                int lebBytes = 0;
-                bool validLeb = false;
-                while (offset < bitstream.Length && lebBytes < 8)
+                if (!TryDecodeLeb128(bitstream[offset..], out ulong obuSize, out int lebBytes))
                 {
-                    byte b = bitstream[offset++];
-                    lebBytes++;
-                    obuSize |= (ulong)(b & 0x7F) << shift;
-                    if ((b & 0x80) == 0)
-                    {
-                        validLeb = true;
-                        break;
-                    }
-                    shift += 7;
+                    return CreateInvalidResult();
                 }
+                offset += lebBytes;
 
-                if (!validLeb) break;
                 if ((ulong)offset + obuSize > (ulong)bitstream.Length)
                 {
-                    break;
+                    return CreateInvalidResult();
                 }
+
+                payload = bitstream.Slice(offset, (int)obuSize);
                 offset += (int)obuSize;
             }
             else
             {
-                // Without explicit size field, OBU spans remainder of bitstream
-                break;
+                payload = bitstream[offset..];
+                offset = bitstream.Length;
+            }
+
+            foundValidObu = true;
+            obuCount++;
+
+            switch (obuType)
+            {
+                case 1:
+                    hasSeqHeader = true;
+                    break;
+                case 2:
+                    hasTemporalDelimiter = true;
+                    break;
+                case 3:
+                    hasFrameHeader = true;
+                    InspectAv1FrameHeader(payload, ref hasKeyFrame, ref hasIntraOnlyFrame);
+                    break;
+                case 4:
+                    hasTileGroup = true;
+                    break;
+                case 5:
+                    break;
+                case 6:
+                    hasFrame = true;
+                    InspectAv1FrameHeader(payload, ref hasKeyFrame, ref hasIntraOnlyFrame);
+                    break;
+                case 7:
+                    break;
+                case 8:
+                    break;
+                case 15:
+                    break;
             }
         }
 
+        if (!foundValidObu || obuCount == 0)
+        {
+            return CreateInvalidResult();
+        }
+
         bool hasCodecHeaders = hasSeqHeader;
-        bool hasRandomAccessMarker = hasSeqHeader;
+        bool hasRandomAccessMarker = hasSeqHeader || hasKeyFrame || hasIntraOnlyFrame;
         bool containsFrameData = hasFrame || (hasFrameHeader && hasTileGroup);
         bool isCompleteAccessUnit = hasCodecHeaders && containsFrameData;
 
         return new AccessUnitValidationResult(
-            IsValid: foundValidObu,
-            HasStructurallyValidPayload: foundValidObu,
+            IsValid: true,
+            HasStructurallyValidPayload: true,
             HasCodecHeaders: hasCodecHeaders,
             HasRandomAccessMarker: hasRandomAccessMarker,
             ContainsFrameData: containsFrameData,
             IsCompleteAccessUnit: isCompleteAccessUnit,
             NaluCount: obuCount,
             HasParameterSets: hasCodecHeaders,
-            HasIdr: hasSeqHeader,
-            HasRandomAccessPoint: hasRandomAccessMarker
+            HasIdr: hasSeqHeader || hasKeyFrame,
+            HasRandomAccessPoint: hasRandomAccessMarker,
+            ProfileIdc: 0,
+            LevelIdc: 0,
+            PictureOrderCount: 0,
+            HasAud: hasTemporalDelimiter,
+            HasCra: false,
+            HasVps: false,
+            HasSps: hasSeqHeader,
+            HasPps: false
         );
+    }
+
+    private static void InspectAv1FrameHeader(ReadOnlySpan<byte> payload, ref bool hasKeyFrame, ref bool hasIntraOnlyFrame)
+    {
+        if (payload.IsEmpty) return;
+        int showExistingFrame = (payload[0] >> 7) & 0x01;
+        if (showExistingFrame == 0)
+        {
+            int frameType = (payload[0] >> 5) & 0x03;
+            if (frameType == 0)
+            {
+                hasKeyFrame = true;
+            }
+            else if (frameType == 2)
+            {
+                hasIntraOnlyFrame = true;
+            }
+        }
     }
 }

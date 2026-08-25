@@ -59,14 +59,14 @@ public class BitstreamValidatorTests
     [Fact]
     public void BitstreamValidator_Av1Obu_ValidatesSuccessfully()
     {
-        // OBU Sequence Header: obu_type = 1 -> (1 << 3) = 0x08 | 0x02 = 0x0A
-        byte[] av1SeqHeader = [0x0A, 0x0A, 0x00, 0x00];
+        // OBU Sequence Header: obu_type = 1 -> (1 << 3) = 0x08 | 0x02 = 0x0A, size = 2
+        byte[] av1SeqHeader = [0x0A, 0x02, 0x00, 0x00];
         bool valid = BitstreamValidator.ValidateBitstream(VideoCodec.Av1, av1SeqHeader, out bool isKeyframe);
         valid.Should().BeTrue();
         isKeyframe.Should().BeTrue();
 
-        // OBU Frame: obu_type = 6 -> (6 << 3) = 0x30 | 0x02 = 0x32
-        byte[] av1Frame = [0x32, 0x10, 0x20, 0x30];
+        // OBU Frame: obu_type = 6 -> (6 << 3) = 0x30 | 0x02 = 0x32, size = 2
+        byte[] av1Frame = [0x32, 0x02, 0x20, 0x30];
         valid = BitstreamValidator.ValidateBitstream(VideoCodec.Av1, av1Frame, out isKeyframe);
         valid.Should().BeTrue();
         isKeyframe.Should().BeFalse();
@@ -86,7 +86,7 @@ public class BitstreamValidatorTests
         BitstreamValidator.ValidateBitstream(VideoCodec.Av1, invalidGarbage, out _).Should().BeFalse();
 
         // AV1 with forbidden bit set (bit 7 = 1)
-        byte[] av1ForbiddenBit = [0x8A, 0x0A, 0x00, 0x00];
+        byte[] av1ForbiddenBit = [0x8A, 0x02, 0x00, 0x00];
         BitstreamValidator.ValidateBitstream(VideoCodec.Av1, av1ForbiddenBit, out _).Should().BeFalse();
 
         // AV1 with invalid obu_type 0
@@ -301,8 +301,8 @@ public class BitstreamValidatorTests
     [Fact]
     public void ValidateAccessUnit_Av1_IdentifiesAllStructuralProperties()
     {
-        // OBU Sequence Header: obu_type = 1 -> (1 << 3) = 0x08 | 0x02 = 0x0A
-        byte[] av1SeqHeader = [0x0A, 0x0A, 0x00, 0x00];
+        // OBU Sequence Header: obu_type = 1 -> (1 << 3) = 0x08 | 0x02 = 0x0A, size = 2
+        byte[] av1SeqHeader = [0x0A, 0x02, 0x00, 0x00];
         var seqResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.Av1, av1SeqHeader);
         seqResult.IsValid.Should().BeTrue();
         seqResult.HasStructurallyValidPayload.Should().BeTrue();
@@ -315,8 +315,8 @@ public class BitstreamValidatorTests
         seqResult.HasIdr.Should().BeTrue();
         seqResult.HasRandomAccessPoint.Should().BeTrue();
 
-        // OBU Frame: obu_type = 6 -> (6 << 3) = 0x30 | 0x02 = 0x32
-        byte[] av1Frame = [0x32, 0x10, 0x20, 0x30];
+        // OBU Frame: obu_type = 6 -> (6 << 3) = 0x30 | 0x02 = 0x32, size = 2
+        byte[] av1Frame = [0x32, 0x02, 0x20, 0x30];
         var frameResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.Av1, av1Frame);
         frameResult.IsValid.Should().BeTrue();
         frameResult.HasStructurallyValidPayload.Should().BeTrue();
@@ -330,7 +330,7 @@ public class BitstreamValidatorTests
         frameResult.HasRandomAccessPoint.Should().BeFalse();
 
         // OBU Frame Header alone: obu_type = 3 -> (3 << 3) = 0x18 | 0x02 = 0x1A (without tile group -> ContainsFrameData = false)
-        byte[] av1FrameHeader = [0x1A, 0x10, 0x20, 0x30];
+        byte[] av1FrameHeader = [0x1A, 0x02, 0x20, 0x30];
         var frameHeaderResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.Av1, av1FrameHeader);
         frameHeaderResult.IsValid.Should().BeTrue();
         frameHeaderResult.HasStructurallyValidPayload.Should().BeTrue();
@@ -446,5 +446,214 @@ public class BitstreamValidatorTests
         completeTrailResult.HasCodecHeaders.Should().BeTrue();
         completeTrailResult.ContainsFrameData.Should().BeTrue();
         completeTrailResult.IsCompleteAccessUnit.Should().BeTrue();
+    }
+
+    [Fact]
+    public void BitstreamValidator_Av1_Leb128VariableLengthDecoding_BoundaryValues()
+    {
+        // 1-byte LEB128 boundary tests: 0 and 127
+        byte[] leb1_zero = [0x00];
+        BitstreamValidator.TryDecodeLeb128(leb1_zero, out ulong val1, out int read1).Should().BeTrue();
+        val1.Should().Be(0);
+        read1.Should().Be(1);
+
+        byte[] leb1_127 = [0x7F];
+        BitstreamValidator.TryDecodeLeb128(leb1_127, out ulong val2, out int read2).Should().BeTrue();
+        val2.Should().Be(127);
+        read2.Should().Be(1);
+
+        // 2-byte LEB128 boundary tests: 128 and 16383
+        byte[] leb2_128 = [0x80, 0x01];
+        BitstreamValidator.TryDecodeLeb128(leb2_128, out ulong val3, out int read3).Should().BeTrue();
+        val3.Should().Be(128);
+        read3.Should().Be(2);
+
+        byte[] leb2_16383 = [0xFF, 0x7F];
+        BitstreamValidator.TryDecodeLeb128(leb2_16383, out ulong val4, out int read4).Should().BeTrue();
+        val4.Should().Be(16383);
+        read4.Should().Be(2);
+
+        // 3-byte LEB128 test: 16384
+        byte[] leb3_16384 = [0x80, 0x80, 0x01];
+        BitstreamValidator.TryDecodeLeb128(leb3_16384, out ulong val5, out int read5).Should().BeTrue();
+        val5.Should().Be(16384);
+        read5.Should().Be(3);
+
+        // 4-byte LEB128 test: 2097152
+        byte[] leb4_2m = [0x80, 0x80, 0x80, 0x01];
+        BitstreamValidator.TryDecodeLeb128(leb4_2m, out ulong val6, out int read6).Should().BeTrue();
+        val6.Should().Be(2097152);
+        read6.Should().Be(4);
+
+        // 8-byte LEB128 test (max standard length)
+        byte[] leb8_valid = [0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01];
+        BitstreamValidator.TryDecodeLeb128(leb8_valid, out ulong val7, out int read7).Should().BeTrue();
+        read7.Should().Be(8);
+        val7.Should().BeGreaterThan(0);
+
+        // Malformed LEB128: 9 bytes without terminator
+        byte[] leb_invalid_over8 = [0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80];
+        BitstreamValidator.TryDecodeLeb128(leb_invalid_over8, out _, out _).Should().BeFalse();
+
+        // Truncated LEB128: ends with MSB=1 at end of buffer
+        byte[] leb_truncated = [0x80, 0x80];
+        BitstreamValidator.TryDecodeLeb128(leb_truncated, out _, out _).Should().BeFalse();
+
+        // Empty span
+        BitstreamValidator.TryDecodeLeb128(ReadOnlySpan<byte>.Empty, out _, out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void BitstreamValidator_Av1_AllStandardObuTypes_ParsedAndValidated()
+    {
+        // Test all valid standard OBU types: 1, 2, 3, 4, 5, 6, 7, 8, 15 (Padding)
+        byte[] obuPadding = [(15 << 3) | 0x02, 0x04, 0x00, 0x00, 0x00, 0x00]; // OBU 15 (Padding), size 4
+        var padResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.Av1, obuPadding);
+        padResult.IsValid.Should().BeTrue();
+        padResult.NaluCount.Should().Be(1);
+
+        byte[] obuMetadata = [(5 << 3) | 0x02, 0x02, 0x01, 0x02]; // OBU 5 (Metadata), size 2
+        var metaResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.Av1, obuMetadata);
+        metaResult.IsValid.Should().BeTrue();
+        metaResult.NaluCount.Should().Be(1);
+
+        byte[] obuTemporalDelimiter = [(2 << 3) | 0x02, 0x00]; // OBU 2 (Temporal Delimiter), size 0
+        var tdResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.Av1, obuTemporalDelimiter);
+        tdResult.IsValid.Should().BeTrue();
+        tdResult.HasAud.Should().BeTrue();
+
+        byte[] obuTileList = [(8 << 3) | 0x02, 0x02, 0xAA, 0xBB]; // OBU 8 (Tile List), size 2
+        var tlResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.Av1, obuTileList);
+        tlResult.IsValid.Should().BeTrue();
+
+        byte[] obuRedundantFrameHeader = [(7 << 3) | 0x02, 0x02, 0xCC, 0xDD]; // OBU 7 (Redundant Frame Header), size 2
+        var rfhResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.Av1, obuRedundantFrameHeader);
+        rfhResult.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void BitstreamValidator_Av1_UncompressedHeaderKeyframeDetection()
+    {
+        // OBU Frame (Type 6): uncompressed_header show_existing_frame = 0, frame_type = 0 (KEY_FRAME)
+        // Header byte = (6 << 3) | 0x02 = 0x32. Size = 0x02. Payload byte 0: 0x00 (bits: 00000000 -> show_existing=0, frame_type=0)
+        byte[] av1KeyFrame = [0x32, 0x02, 0x00, 0x00];
+        var keyResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.Av1, av1KeyFrame);
+        keyResult.IsValid.Should().BeTrue();
+        keyResult.HasRandomAccessPoint.Should().BeTrue();
+        keyResult.HasIdr.Should().BeTrue();
+
+        // OBU Frame (Type 6): uncompressed_header show_existing_frame = 0, frame_type = 2 (INTRA_ONLY_FRAME)
+        // Payload byte 0: 0x40 (bits: 01000000 -> show_existing=0, frame_type=2)
+        byte[] av1IntraOnly = [0x32, 0x02, 0x40, 0x00];
+        var intraResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.Av1, av1IntraOnly);
+        intraResult.IsValid.Should().BeTrue();
+        intraResult.HasRandomAccessPoint.Should().BeTrue();
+
+        // OBU Frame (Type 6): uncompressed_header show_existing_frame = 0, frame_type = 1 (INTER_FRAME)
+        // Payload byte 0: 0x20 (bits: 00100000 -> show_existing=0, frame_type=1)
+        byte[] av1Inter = [0x32, 0x02, 0x20, 0x00];
+        var interResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.Av1, av1Inter);
+        interResult.IsValid.Should().BeTrue();
+        interResult.HasRandomAccessPoint.Should().BeFalse();
+        interResult.HasIdr.Should().BeFalse();
+    }
+
+    [Fact]
+    public void BitstreamValidator_Av1_BufferOverflowPayload_RejectsTruncated()
+    {
+        // OBU with size field = 100 bytes, but bitstream only has 4 bytes total
+        byte[] av1Overflow = [0x0A, 0x64, 0x00, 0x00];
+        var res = BitstreamValidator.ValidateAccessUnit(VideoCodec.Av1, av1Overflow);
+        res.IsValid.Should().BeFalse();
+
+        // OBU with multi-byte LEB128 stating 500 bytes on truncated payload
+        byte[] av1MultiByteOverflow = [0x0A, 0xF4, 0x03, 0x01, 0x02];
+        var multiRes = BitstreamValidator.ValidateAccessUnit(VideoCodec.Av1, av1MultiByteOverflow);
+        multiRes.IsValid.Should().BeFalse();
+    }
+
+    [Fact]
+    public void BitstreamValidator_H264_ProfileLevelAndPoc_ExtractedAndVerified()
+    {
+        // SPS with Baseline profile (66 = 0x42) and Level 4.0 (40 = 0x28)
+        byte[] sps = [0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0xC0, 0x28];
+        var spsResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.H264, sps);
+        spsResult.IsValid.Should().BeTrue();
+        spsResult.ProfileIdc.Should().Be(0x42);
+        spsResult.LevelIdc.Should().Be(0x28);
+        spsResult.HasSps.Should().BeTrue();
+
+        // SPS with Level 0 (invalid level)
+        byte[] invalidSps = [0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0xC0, 0x00];
+        var invalidResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.H264, invalidSps);
+        invalidResult.IsValid.Should().BeFalse();
+
+        // IDR slice with nal_ref_idc == 0 (must be rejected per H.264 standard 7.4.1)
+        byte[] invalidIdrRefIdc = [0x00, 0x00, 0x00, 0x01, 0x05, 0x88, 0x84];
+        var idrRefResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.H264, invalidIdrRefIdc);
+        idrRefResult.IsValid.Should().BeFalse();
+
+        // AUD (Type 9)
+        byte[] h264Aud = [0x00, 0x00, 0x00, 0x01, 0x09, 0x10];
+        var audResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.H264, h264Aud);
+        audResult.IsValid.Should().BeTrue();
+        audResult.HasAud.Should().BeTrue();
+
+        // Forbidden zero bit set in H.264 NAL header
+        byte[] forbiddenNal = [0x00, 0x00, 0x00, 0x01, 0xE7, 0x42, 0xC0, 0x28];
+        var forbiddenResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.H264, forbiddenNal);
+        forbiddenResult.IsValid.Should().BeFalse();
+    }
+
+    [Fact]
+    public void BitstreamValidator_Hevc_NalUnitTypesAndSliceHeaders_ExtractedAndVerified()
+    {
+        // VPS (32) + SPS (33) + PPS (34)
+        byte[] vpsSpsPps = [
+            0x00, 0x00, 0x00, 0x01, 0x40, 0x01, 0x0C, 0x01, // VPS (32)
+            0x00, 0x00, 0x00, 0x01, 0x42, 0x01, 0x01, 0x01, // SPS (33)
+            0x00, 0x00, 0x00, 0x01, 0x44, 0x01, 0xC0, 0xF0  // PPS (34)
+        ];
+        var res = BitstreamValidator.ValidateAccessUnit(VideoCodec.HevcMain10, vpsSpsPps);
+        res.IsValid.Should().BeTrue();
+        res.HasVps.Should().BeTrue();
+        res.HasSps.Should().BeTrue();
+        res.HasPps.Should().BeTrue();
+
+        // AUD (35) - 0x46 >> 1 = 35
+        byte[] hevcAud = [0x00, 0x00, 0x00, 0x01, 0x46, 0x01, 0x10];
+        var audResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.Hevc, hevcAud);
+        audResult.IsValid.Should().BeTrue();
+        audResult.HasAud.Should().BeTrue();
+
+        // TemporalIdPlus1 == 0 (forbidden in HEVC standard)
+        byte[] invalidTemporalId = [0x00, 0x00, 0x00, 0x01, 0x26, 0x00, 0xAF, 0xFE];
+        var temporalResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.Hevc, invalidTemporalId);
+        temporalResult.IsValid.Should().BeFalse();
+
+        // Forbidden zero bit set in HEVC header0
+        byte[] forbiddenHevc = [0x00, 0x00, 0x00, 0x01, 0xA6, 0x01, 0xAF, 0xFE];
+        var forbiddenResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.Hevc, forbiddenHevc);
+        forbiddenResult.IsValid.Should().BeFalse();
+
+        // CRA (21)
+        byte[] hevcCra = [0x00, 0x00, 0x00, 0x01, 0x2A, 0x01, 0x11, 0x22];
+        var craResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.Hevc, hevcCra);
+        craResult.IsValid.Should().BeTrue();
+        craResult.HasCra.Should().BeTrue();
+        craResult.HasRandomAccessPoint.Should().BeTrue();
+    }
+
+    [Fact]
+    public void BitstreamValidator_CorruptAnnexBPrefix_RejectsNonZeroGarbage()
+    {
+        // Non-zero prefix bytes before start code
+        byte[] corruptPrefixH264 = [0xAA, 0xBB, 0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0xC0, 0x28];
+        var resH264 = BitstreamValidator.ValidateAccessUnit(VideoCodec.H264, corruptPrefixH264);
+        resH264.IsValid.Should().BeFalse();
+
+        byte[] corruptPrefixHevc = [0xAA, 0xBB, 0x00, 0x00, 0x00, 0x01, 0x40, 0x01, 0x0C, 0x01];
+        var resHevc = BitstreamValidator.ValidateAccessUnit(VideoCodec.Hevc, corruptPrefixHevc);
+        resHevc.IsValid.Should().BeFalse();
     }
 }

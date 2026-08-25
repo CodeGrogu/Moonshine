@@ -402,19 +402,115 @@ bool QsvSession::encode(
 }
 
 bool QsvSession::reconfigure(const EncoderConfig& new_config) {
-    if (!_session || !_is_configured) return false;
+    if (!_session || !_is_configured || !_api) return false;
     if (new_config.bitrate_kbps < 500 || new_config.bitrate_kbps > 150000) return false;
 
     std::lock_guard<std::mutex> lock(_mutex);
 
+    bool resolution_changed = (new_config.width != _config.width || new_config.height != _config.height);
     _config = new_config;
-    _params.mfx.TargetKbps = static_cast<uint16_t>(std::min<uint32_t>(new_config.bitrate_kbps, 65535));
-    uint32_t peak = new_config.peak_bitrate_kbps > 0 ? new_config.peak_bitrate_kbps : new_config.bitrate_kbps;
-    _params.mfx.MaxKbps = static_cast<uint16_t>(std::min<uint32_t>(peak, 65535));
+
+    uint16_t multiplier = 1;
+    uint32_t target_kbps = new_config.bitrate_kbps;
+    uint32_t max_kbps = new_config.peak_bitrate_kbps > 0 ? new_config.peak_bitrate_kbps : new_config.bitrate_kbps;
+    uint32_t highest_kbps = (std::max)(target_kbps, max_kbps);
+    if (highest_kbps > 65535) {
+        multiplier = static_cast<uint16_t>((highest_kbps + 65534) / 65535);
+    }
+
+    _params.mfx.BRCParamMultiplier = multiplier;
+    _params.mfx.TargetKbps = static_cast<uint16_t>(target_kbps / multiplier);
+    _params.mfx.MaxKbps = static_cast<uint16_t>(max_kbps / multiplier);
+    _params.mfx.BufferSizeInKB = static_cast<uint16_t>((std::max)(100u, static_cast<uint32_t>((target_kbps / 8) / multiplier)));
+    _params.mfx.InitialDelayInKB = static_cast<uint16_t>(_params.mfx.BufferSizeInKB / 2);
     _params.mfx.FrameInfo.FrameRateExtN = new_config.fps > 0 ? new_config.fps : 60;
 
-    mfxStatus sts = _api->MFXVideoENCODE_Reset(_session, &_params);
-    return sts == MFX_ERR_NONE;
+    if (resolution_changed) {
+        _params.mfx.FrameInfo.Width = static_cast<uint16_t>((new_config.width + 15) & ~15);
+        _params.mfx.FrameInfo.Height = static_cast<uint16_t>((new_config.height + 15) & ~15);
+        _params.mfx.FrameInfo.CropW = static_cast<uint16_t>(new_config.width);
+        _params.mfx.FrameInfo.CropH = static_cast<uint16_t>(new_config.height);
+
+        uint32_t buf_sz = (std::max)(1024u * 1024u, new_config.width * new_config.height * 2);
+        if (_bitstream_buffer.size() < buf_sz) {
+            _bitstream_buffer.resize(buf_sz);
+        }
+    }
+
+    mfxVideoParam inParams = _params;
+    if (_api->MFXVideoENCODE_Query) {
+        _api->MFXVideoENCODE_Query(_session, &inParams, &_params);
+    }
+
+    mfxStatus sts = MFX_ERR_NONE;
+    if (_api->MFXVideoENCODE_Reset) {
+        sts = _api->MFXVideoENCODE_Reset(_session, &_params);
+    } else {
+        sts = MFX_ERR_UNSUPPORTED;
+    }
+
+    if (sts < MFX_ERR_NONE) {
+        if (_api->MFXVideoENCODE_Close && _api->MFXVideoENCODE_Init) {
+            _api->MFXVideoENCODE_Close(_session);
+            sts = _api->MFXVideoENCODE_Init(_session, &_params);
+            _last_status = sts;
+            return sts >= MFX_ERR_NONE;
+        }
+        return false;
+    }
+
+    _last_status = sts;
+    return true;
+}
+
+bool QsvSession::drain() {
+    if (!_session || !_api || !_api->MFXVideoENCODE_EncodeFrameAsync) return false;
+    std::lock_guard<std::mutex> lock(_mutex);
+
+    mfxBitstream bs{};
+    bs.Data = _bitstream_buffer.data();
+    bs.MaxLength = static_cast<uint32_t>(_bitstream_buffer.size());
+
+    mfxSyncPoint syncp = nullptr;
+    mfxStatus sts = MFX_ERR_NONE;
+
+    for (int i = 0; i < 30; ++i) {
+        syncp = nullptr;
+        bs.DataOffset = 0;
+        bs.DataLength = 0;
+        sts = _api->MFXVideoENCODE_EncodeFrameAsync(_session, nullptr, nullptr, &bs, &syncp);
+        if (sts == MFX_ERR_NONE && syncp) {
+            if (_api->MFXVideoCORE_SyncOperation) {
+                _api->MFXVideoCORE_SyncOperation(_session, syncp, 500);
+            }
+        } else if (sts == MFX_ERR_MORE_DATA) {
+            break;
+        } else if (sts < MFX_ERR_NONE) {
+            break;
+        }
+    }
+    return true;
+}
+
+bool QsvSession::flush() {
+    if (!_session || !_api) return false;
+    std::lock_guard<std::mutex> lock(_mutex);
+
+    if (_api->MFXVideoENCODE_Reset) {
+        mfxStatus sts = _api->MFXVideoENCODE_Reset(_session, &_params);
+        if (sts >= MFX_ERR_NONE) {
+            _last_status = sts;
+            return true;
+        }
+    }
+
+    if (_api->MFXVideoENCODE_Close && _api->MFXVideoENCODE_Init) {
+        _api->MFXVideoENCODE_Close(_session);
+        mfxStatus sts = _api->MFXVideoENCODE_Init(_session, &_params);
+        _last_status = sts;
+        return sts >= MFX_ERR_NONE;
+    }
+    return false;
 }
 
 void QsvSession::close() {

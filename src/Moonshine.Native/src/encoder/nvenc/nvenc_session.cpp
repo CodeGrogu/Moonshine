@@ -237,8 +237,8 @@ bool NvencSession::configure(const EncoderConfig& config) {
     init_params.enablePTD = 1;
     init_params.enableEncodeAsync = 0;
     init_params.encodeConfig = &enc_config;
-    init_params.maxEncodeWidth = (std::max)(config.width, 4096u);
-    init_params.maxEncodeHeight = (std::max)(config.height, 4096u);
+    init_params.maxEncodeWidth = (std::max)(config.width, 8192u);
+    init_params.maxEncodeHeight = (std::max)(config.height, 8192u);
     init_params.tuningInfo = tuning_info;
 
     auto pfn_init_encoder = reinterpret_cast<PNVENCINITIALIZEENCODER>(fn.nvEncInitializeEncoder);
@@ -557,8 +557,8 @@ bool NvencSession::reconfigure(const EncoderConfig& new_config) {
         reconfig_params.reInitEncodeParams.frameRateNum = new_config.fps;
         reconfig_params.reInitEncodeParams.frameRateDen = 1;
         reconfig_params.reInitEncodeParams.enablePTD = 1;
-        reconfig_params.reInitEncodeParams.maxEncodeWidth = (std::max)(new_config.width, 4096u);
-        reconfig_params.reInitEncodeParams.maxEncodeHeight = (std::max)(new_config.height, 4096u);
+        reconfig_params.reInitEncodeParams.maxEncodeWidth = (std::max)(new_config.width, 8192u);
+        reconfig_params.reInitEncodeParams.maxEncodeHeight = (std::max)(new_config.height, 8192u);
 
         NV_ENC_CONFIG enc_config{};
         enc_config.version = NV_ENC_CONFIG_VER;
@@ -598,17 +598,52 @@ bool NvencSession::drain() {
         return false;
     }
     const auto& fn = _api->functions();
-    if (!fn.nvEncEncodePicture) {
-        return false;
+    if (fn.nvEncEncodePicture) {
+        NV_ENC_PIC_PARAMS eos_params{};
+        eos_params.version = NV_ENC_PIC_PARAMS_VER;
+        eos_params.encodePicFlags = NV_ENC_PIC_FLAG_EOS;
+
+        auto pfn_encode = reinterpret_cast<PNVENCENCODEPICTURE>(fn.nvEncEncodePicture);
+        if (pfn_encode) {
+            pfn_encode(_session, &eos_params);
+        }
     }
 
-    NV_ENC_PIC_PARAMS eos_params{};
-    eos_params.version = NV_ENC_PIC_PARAMS_VER;
-    eos_params.encodePicFlags = NV_ENC_PIC_FLAG_EOS;
+    std::lock_guard<std::mutex> lock(_in_flight_mutex);
+    for (auto& in_flight : _in_flight_frames) {
+        if (in_flight.bitstream_buffer) {
+            NvencLockedBitstreamGuard lock_guard(_session, &fn, in_flight.bitstream_buffer);
+            _bitstream_pool.release_buffer(in_flight.bitstream_buffer);
+            in_flight.bitstream_buffer = nullptr;
+        }
+    }
+    _in_flight_frames.clear();
+    return true;
+#else
+    return false;
+#endif
+}
 
-    auto pfn_encode = reinterpret_cast<PNVENCENCODEPICTURE>(fn.nvEncEncodePicture);
-    if (pfn_encode) {
-        pfn_encode(_session, &eos_params);
+bool NvencSession::flush() {
+#if defined(_WIN32)
+    if (!_session || !_api) {
+        return false;
+    }
+    const auto& fn = _api->functions();
+    std::lock_guard<std::mutex> lock(_in_flight_mutex);
+    for (auto& in_flight : _in_flight_frames) {
+        if (in_flight.bitstream_buffer) {
+            _bitstream_pool.release_buffer(in_flight.bitstream_buffer);
+            in_flight.bitstream_buffer = nullptr;
+        }
+    }
+    _in_flight_frames.clear();
+
+    if (fn.nvEncInvalidateRefFrames) {
+        auto pfn_invalidate = reinterpret_cast<nvenc::PNVENCINVALIDATEREFFRAMES>(fn.nvEncInvalidateRefFrames);
+        if (pfn_invalidate) {
+            pfn_invalidate(_session, nvenc::NV_ENC_INVALIDATE_ALL_REF_FRAMES);
+        }
     }
     return true;
 #else

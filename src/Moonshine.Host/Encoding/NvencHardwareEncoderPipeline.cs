@@ -18,8 +18,8 @@ public sealed class NvencHardwareEncoderPipeline : IVideoEncoderPipeline
     public const ulong DecoderAcceptanceLagWindow = EncoderEvidencePolicy.DecoderAcceptanceLagWindow;
 
     private IntPtr _handle;
-    private readonly uint _width;
-    private readonly uint _height;
+    private uint _width;
+    private uint _height;
     private uint _fps;
     private uint _bitrateKbps;
     private uint _peakBitrateKbps;
@@ -50,8 +50,8 @@ public sealed class NvencHardwareEncoderPipeline : IVideoEncoderPipeline
     private bool _hasValidFrame;
     private bool _hasDecoderAcceptance;
 
-    public uint Width => _width;
-    public uint Height => _height;
+    public uint Width => Volatile.Read(ref _width);
+    public uint Height => Volatile.Read(ref _height);
     public uint Fps => Volatile.Read(ref _fps);
     public uint BitrateKbps => Volatile.Read(ref _bitrateKbps);
     public VideoCodec Codec => _codec;
@@ -441,6 +441,63 @@ public sealed class NvencHardwareEncoderPipeline : IVideoEncoderPipeline
         }
         Volatile.Write(ref _fps, fps);
         return ReconfigureBitrate(bitrateKbps, peakBitrateKbps);
+    }
+
+    public bool ReconfigureResolution(uint width, uint height, uint fps = 60, uint bitrateKbps = 0)
+    {
+        lock (_lock)
+        {
+            if (_disposed || _handle == IntPtr.Zero) return false;
+
+            uint targetBitrate = bitrateKbps > 0 ? bitrateKbps : Volatile.Read(ref _bitrateKbps);
+            uint targetPeakBitrate = (uint)(targetBitrate * 1.5);
+
+            var newConfig = new MoonshineEncoderConfig
+            {
+                Width = width,
+                Height = height,
+                Fps = fps,
+                BitrateKbps = targetBitrate,
+                PeakBitrateKbps = targetPeakBitrate,
+                Codec = (uint)_codec,
+                RcMode = 0,
+                GopLength = 0,
+                EnableIntraRefresh = (byte)(_intraRefreshEnabled ? 1 : 0),
+                EnableFillerData = 1
+            };
+
+            int res = MoonshineNativeMethods.EncoderReconfigure(_handle, in newConfig);
+            if (res > 0)
+            {
+                Volatile.Write(ref _width, width);
+                Volatile.Write(ref _height, height);
+                Volatile.Write(ref _fps, fps);
+                Volatile.Write(ref _bitrateKbps, targetBitrate);
+                Volatile.Write(ref _peakBitrateKbps, targetPeakBitrate);
+                return true;
+            }
+            return false;
+        }
+    }
+
+    public bool Drain()
+    {
+        lock (_lock)
+        {
+            if (_disposed || _handle == IntPtr.Zero) return false;
+            int res = MoonshineNativeMethods.EncoderDrain(_handle);
+            return res > 0;
+        }
+    }
+
+    public bool Flush()
+    {
+        lock (_lock)
+        {
+            if (_disposed || _handle == IntPtr.Zero) return false;
+            int res = MoonshineNativeMethods.EncoderFlush(_handle);
+            return res > 0;
+        }
     }
 
     public bool ConfigureTuning(NvencPreset preset, NvencTuning tuning)

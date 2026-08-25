@@ -299,8 +299,24 @@ bool NvencVideoEncoder::set_intra_refresh(bool enabled, uint32_t period, uint32_
 }
 
 bool NvencVideoEncoder::drain() {
-    if (!_initialized || !_impl) return false;
-    return _impl->session.drain();
+    if (!_initialized || !_impl || _state == NvencLifecycleState::Faulted || _state == NvencLifecycleState::Disposed) {
+        return false;
+    }
+    _state = NvencLifecycleState::Flushing;
+    bool res = _impl->session.drain();
+    _state = NvencLifecycleState::Ready;
+    return res;
+}
+
+bool NvencVideoEncoder::flush() {
+    if (!_initialized || !_impl || _state == NvencLifecycleState::Faulted || _state == NvencLifecycleState::Disposed) {
+        return false;
+    }
+    _state = NvencLifecycleState::Flushing;
+    bool res = _impl->session.flush();
+    _force_keyframe = true;
+    _state = NvencLifecycleState::Ready;
+    return res;
 }
 
 bool NvencVideoEncoder::query_capabilities(void* d3d_device, EncoderCaps& out_caps) {

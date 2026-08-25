@@ -61,4 +61,14 @@ public class EncoderNativeTests
         // Destroying null texture must be safe and idempotent
         MoonshineNativeMethods.D3D11DestroyTexture(IntPtr.Zero);
     }
+
+    [Fact]
+    public void EncoderDrainAndFlush_NullHandle_FailClosedSafely()
+    {
+        int drainRes = MoonshineNativeMethods.EncoderDrain(IntPtr.Zero);
+        drainRes.Should().Be(0, "Null encoder handle must fail closed on drain");
+
+        int flushRes = MoonshineNativeMethods.EncoderFlush(IntPtr.Zero);
+        flushRes.Should().Be(0, "Null encoder handle must fail closed on flush");
+    }
 }

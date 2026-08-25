@@ -314,6 +314,33 @@ public sealed class UnifiedHardwareEncoderEngine : IDisposable
         }
     }
 
+    public bool ReconfigureResolution(uint width, uint height, uint fps = 60, uint bitrateKbps = 0)
+    {
+        lock (_lock)
+        {
+            if (_disposed || !_pipeline.IsActive) return false;
+            return _pipeline.ReconfigureResolution(width, height, fps, bitrateKbps);
+        }
+    }
+
+    public bool Drain()
+    {
+        lock (_lock)
+        {
+            if (_disposed || !_pipeline.IsActive) return false;
+            return _pipeline.Drain();
+        }
+    }
+
+    public bool Flush()
+    {
+        lock (_lock)
+        {
+            if (_disposed || !_pipeline.IsActive) return false;
+            return _pipeline.Flush();
+        }
+    }
+
     public void RequestKeyframe()
     {
         lock (_lock)

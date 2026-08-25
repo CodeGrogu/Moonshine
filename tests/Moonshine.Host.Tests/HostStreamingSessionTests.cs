@@ -247,6 +247,16 @@ public class HostStreamingSessionTests
             return true;
         }
 
+        public bool ReconfigureResolution(uint width, uint height, uint fps = 60, uint bitrateKbps = 0)
+        {
+            if (bitrateKbps > 0) BitrateKbps = bitrateKbps;
+            ReconfigureCallCount++;
+            return true;
+        }
+
+        public bool Drain() => true;
+        public bool Flush() => true;
+
         public void RequestKeyframe()
         {
             ForceIdrCallCount++;
@@ -779,7 +789,7 @@ public class HostStreamingSessionTests
     [Fact]
     public async Task HardwareAcceleratedEncoder_ReportsOperational_OnlyWhenValidOutputProduced()
     {
-        var capture = new TestDesktopCapturePipeline { IsAvailable = true };
+        var capture = new TestDesktopCapturePipeline { IsAvailable = true, ShouldFailAcquire = true };
         var encoderPipeline = new TestVideoEncoderPipeline
         {
             IsActive = true,

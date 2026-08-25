@@ -166,9 +166,14 @@ int main() {
               << " | Smart IDR: " << static_cast<int>(caps.supports_smart_idr)
               << std::endl;
 
-    // Select codec: prefer HEVC (1) if supported by hardware, otherwise fall back to H.264 (0)
+    // Query Direct3D 11 decoder capabilities to match encoder and decoder codec profiles
+    MoonshineDecoderCaps dec_caps{};
+    moonshine_video_query_caps(&dec_caps);
+
     uint32_t chosen_codec = 0;
-    if (caps.supported_codecs_mask & (1 << 1)) {
+    if (dec_caps.supports_10bit && (caps.supported_codecs_mask & (1 << 2))) {
+        chosen_codec = 2; // HEVC Main10
+    } else if (dec_caps.supports_hevc && (caps.supported_codecs_mask & (1 << 1))) {
         chosen_codec = 1; // HEVC
     } else if (caps.supported_codecs_mask & (1 << 0)) {
         chosen_codec = 0; // H.264
@@ -176,7 +181,7 @@ int main() {
         std::cerr << "[-] Error: Neither HEVC nor H.264 is reported as supported by NVENC caps." << std::endl;
         return 2;
     }
-    std::cout << "  [+] Selected encoder codec: " << (chosen_codec == 1 ? "HEVC" : "H.264") << std::endl;
+    std::cout << "  [+] Selected encoder/decoder codec: " << (chosen_codec == 2 ? "HEVC Main10" : (chosen_codec == 1 ? "HEVC" : "H.264")) << std::endl;
 
     // Create NVENC encoder for HEVC / H.264 via moonshine_encoder_create(1, device.Get(), &config)
     std::cout << "[*] Creating NVENC encoder session via moonshine_encoder_create..." << std::endl;
