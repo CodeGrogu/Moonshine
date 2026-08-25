@@ -1179,6 +1179,7 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                                     if (effective.TargetBitrateKbps > 0)
                                     {
                                         _encoderEngine?.ReconfigureBitrate(effective.TargetBitrateKbps, effective.RefreshRateHz);
+                                        _congestionController?.ReconfigureBitrate(effective.TargetBitrateKbps, effective.MaxBitrateKbps);
                                     }
                                     if (effective.AudioBitrateKbps > 0)
                                     {

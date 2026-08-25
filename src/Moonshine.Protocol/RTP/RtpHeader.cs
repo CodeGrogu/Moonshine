@@ -108,8 +108,8 @@ public readonly record struct RtpHeader
 /// </summary>
 public struct RtpSequenceUnwrapper
 {
-    private uint _highestSeq;
-    private uint _cycles;
+    private ushort _highestSeq;
+    private ulong _cycles;
     private bool _initialized;
 
     public ulong Unwrap(ushort sequenceNumber)
@@ -121,22 +121,22 @@ public struct RtpSequenceUnwrapper
             return sequenceNumber;
         }
 
-        short diff = (short)(sequenceNumber - (ushort)_highestSeq);
+        short diff = unchecked((short)(sequenceNumber - _highestSeq));
 
         if (diff > 0)
         {
             if (sequenceNumber < _highestSeq)
             {
-                _cycles += 0x10000;
+                _cycles += 0x10000UL;
             }
             _highestSeq = sequenceNumber;
             return _cycles + sequenceNumber;
         }
         else if (diff < 0)
         {
-            if (sequenceNumber > _highestSeq && _cycles >= 0x10000)
+            if (sequenceNumber > _highestSeq && _cycles >= 0x10000UL)
             {
-                return (_cycles - 0x10000) + sequenceNumber;
+                return (_cycles - 0x10000UL) + sequenceNumber;
             }
             return _cycles + sequenceNumber;
         }

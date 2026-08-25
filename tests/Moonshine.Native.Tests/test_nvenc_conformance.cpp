@@ -5,6 +5,7 @@
 #include <cstring>
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 
 #define ACTIVE_ASSERT(expr) \
     do { \
@@ -167,7 +168,7 @@ int main() {
     // ------------------------------------------------------------------------
     // Subtest I: Defensive Error Handling (Must pass unconditionally)
     // ------------------------------------------------------------------------
-    std::cout << "\n[*] [1/9] Running Defensive Error Handling Suite..." << std::endl;
+    std::cout << "\n[*] [1/10] Running Defensive Error Handling Suite..." << std::endl;
     {
         // 1. State & Health on null handle
         ACTIVE_ASSERT(moonshine_encoder_get_state(nullptr) == 0);
@@ -203,6 +204,14 @@ int main() {
 
         // 8. Caps query null pointer safety
         ACTIVE_ASSERT(moonshine_encoder_query_caps(1, nullptr, nullptr) == 0);
+
+        // 9. D3D11 pattern and texture utility null safety
+        ACTIVE_ASSERT(moonshine_d3d11_create_device(0x9999) == nullptr);
+        ACTIVE_ASSERT(moonshine_d3d11_create_texture(nullptr, 1920, 1080, 0) == nullptr);
+        ACTIVE_ASSERT(moonshine_d3d11_create_pattern_texture(nullptr, 1920, 1080, 0, 0) == nullptr);
+        ACTIVE_ASSERT(moonshine_d3d11_render_pattern(nullptr, nullptr, 1920, 1080, 0, 0) == 0);
+        moonshine_d3d11_destroy_texture(nullptr);
+        moonshine_d3d11_destroy_device(nullptr);
 
         std::cout << "  [+] Defensive error handling tests passed." << std::endl;
     }
@@ -281,7 +290,7 @@ int main() {
     // ------------------------------------------------------------------------
     // Subtest 1.5: Bitrate & Configuration Fail-Closed Boundary Tests
     // ------------------------------------------------------------------------
-    std::cout << "\n[*] [1.5/9] Executing Bitrate & Configuration Fail-Closed Boundary Tests..." << std::endl;
+    std::cout << "\n[*] [2/10] Executing Bitrate & Configuration Fail-Closed Boundary Tests..." << std::endl;
     {
         MoonshineEncoderConfig bad_cfg{};
         bad_cfg.width = 1920;
@@ -330,9 +339,97 @@ int main() {
     }
 
     // ------------------------------------------------------------------------
+    // Subtest 2: Real Direct3D 11 GPU Pattern Generation & NVENC Submission
+    // (Black, Solid Colour, Gradient, Moving Procedural Patterns, SMPTE Bars)
+    // ------------------------------------------------------------------------
+    std::cout << "\n[*] [3/10] Executing Real Direct3D 11 GPU Pattern Matrix Submission & Validation..." << std::endl;
+    {
+        struct PatternTest {
+            uint32_t pattern_type;
+            const char* pattern_name;
+        };
+
+        const PatternTest patterns[] = {
+            { 0, "Black (Clear 0x00)" },
+            { 1, "Solid Colour (Teal)" },
+            { 2, "2D Linear Colour Gradient" },
+            { 3, "Moving Procedural Pattern (Wave + Block)" },
+            { 4, "SMPTE Standard Colour Bars" }
+        };
+
+        uint32_t chosen_codec = supports_hevc ? 1 : 0;
+        MoonshineEncoderConfig cfg{};
+        cfg.width = 1920;
+        cfg.height = 1080;
+        cfg.fps = 60;
+        cfg.bitrate_kbps = 15000;
+        cfg.peak_bitrate_kbps = 20000;
+        cfg.codec = chosen_codec;
+        cfg.rc_mode = 0;
+
+        MoonshineEncoderHandle enc = moonshine_encoder_create(1, device.Get(), &cfg);
+        ACTIVE_ASSERT(enc != nullptr);
+        ACTIVE_ASSERT(moonshine_encoder_is_healthy(enc) == 1);
+
+        std::vector<uint8_t> bitstream(1920 * 1080 * 4);
+
+        void* pattern_tex = moonshine_d3d11_create_pattern_texture(device.Get(), 1920, 1080, 0, 0);
+        ACTIVE_ASSERT(pattern_tex != nullptr);
+
+        for (const auto& p : patterns) {
+            std::cout << "  -> Submitting Pattern: " << p.pattern_name << " (Type " << p.pattern_type << ")..." << std::endl;
+            int render_res = moonshine_d3d11_render_pattern(device.Get(), pattern_tex, 1920, 1080, p.pattern_type, 0);
+            ACTIVE_ASSERT(render_res == 1);
+
+            MoonshineEncodedPacketDesc desc{};
+            uint32_t written = 0;
+
+            int enc_res = moonshine_encoder_encode_frame(
+                enc, pattern_tex, 1, &desc, bitstream.data(), static_cast<uint32_t>(bitstream.size()), &written
+            );
+
+            ACTIVE_ASSERT(enc_res == 1);
+            ACTIVE_ASSERT(written > 0);
+            ACTIVE_ASSERT(desc.is_keyframe == 1);
+            ACTIVE_ASSERT(desc.payload_size == written);
+            ACTIVE_ASSERT(desc.timestamp_qpc > 0);
+
+            // Verify NALU headers for the encoded pattern bitstream
+            if (chosen_codec == 1) { // HEVC
+                auto nalus = parse_hevc_nalus(bitstream.data(), written);
+                ACTIVE_ASSERT(!nalus.empty());
+                bool has_vps = false, has_sps = false, has_pps = false, has_idr = false;
+                for (const auto& nal : nalus) {
+                    if (nal.nal_type == 32) has_vps = true;
+                    if (nal.nal_type == 33) has_sps = true;
+                    if (nal.nal_type == 34) has_pps = true;
+                    if (nal.nal_type == 19 || nal.nal_type == 20) has_idr = true;
+                }
+                ACTIVE_ASSERT(has_vps && has_sps && has_pps && has_idr);
+            } else if (chosen_codec == 0) { // H.264
+                auto nalus = parse_h264_nalus(bitstream.data(), written);
+                ACTIVE_ASSERT(!nalus.empty());
+                bool has_sps = false, has_pps = false, has_idr = false;
+                for (const auto& nal : nalus) {
+                    if (nal.nal_type == 7) has_sps = true;
+                    if (nal.nal_type == 8) has_pps = true;
+                    if (nal.nal_type == 5) has_idr = true;
+                }
+                ACTIVE_ASSERT(has_sps && has_pps && has_idr);
+            }
+
+            std::cout << "     [+] " << p.pattern_name << " encoded and structurally validated (" << written << " bytes)." << std::endl;
+        }
+
+        moonshine_d3d11_destroy_texture(pattern_tex);
+        moonshine_encoder_destroy(enc);
+        std::cout << "  [+] All 5 Direct3D 11 GPU patterns encoded and validated successfully." << std::endl;
+    }
+
+    // ------------------------------------------------------------------------
     // Subtest A: Resolution Matrix Tests (720p, 1080p, 1440p, 4K)
     // ------------------------------------------------------------------------
-    std::cout << "\n[*] [2/9] Executing Resolution Matrix Conformance..." << std::endl;
+    std::cout << "\n[*] [4/10] Executing Resolution Matrix Conformance..." << std::endl;
     {
         struct ResTest {
             uint32_t width;
@@ -401,7 +498,7 @@ int main() {
     // ------------------------------------------------------------------------
     // Subtest B: Codec Matrix Tests (H.264, HEVC, AV1)
     // ------------------------------------------------------------------------
-    std::cout << "\n[*] [3/9] Executing Codec Matrix Conformance..." << std::endl;
+    std::cout << "\n[*] [5/10] Executing Codec Matrix Conformance..." << std::endl;
     {
         const float colour[4] = { 0.8f, 0.2f, 0.3f, 1.0f };
         auto texture = create_test_texture(device.Get(), context.Get(), 1920, 1080, colour);
@@ -474,13 +571,10 @@ int main() {
     }
 
     // ------------------------------------------------------------------------
-    // Subtest C: Deep NALU Validation across Multiple Frames
+    // Subtest C: Deep NALU Validation across Animated Sequence
     // ------------------------------------------------------------------------
-    std::cout << "\n[*] [4/9] Executing Deep NALU Bitstream Validation across 10 Sequential Frames..." << std::endl;
+    std::cout << "\n[*] [6/10] Executing Deep NALU Bitstream Validation across 10 Animated Frames..." << std::endl;
     {
-        const float colour[4] = { 0.1f, 0.7f, 0.3f, 1.0f };
-        auto texture = create_test_texture(device.Get(), context.Get(), 1920, 1080, colour);
-
         uint32_t chosen_codec = supports_hevc ? 1 : 0;
         MoonshineEncoderConfig cfg{};
         cfg.width = 1920;
@@ -497,13 +591,19 @@ int main() {
         std::vector<uint8_t> bitstream(1920 * 1080 * 4);
         int64_t last_qpc = 0;
 
+        void* moving_tex = moonshine_d3d11_create_pattern_texture(device.Get(), 1920, 1080, 3, 0);
+        ACTIVE_ASSERT(moving_tex != nullptr);
+
         for (uint32_t f = 0; f < 10; ++f) {
+            // Update procedural moving pattern for current frame
+            ACTIVE_ASSERT(moonshine_d3d11_render_pattern(device.Get(), moving_tex, 1920, 1080, 3, f) == 1);
+
             bool force_key = (f == 0 || f == 5);
             MoonshineEncodedPacketDesc desc{};
             uint32_t written = 0;
 
             int enc_res = moonshine_encoder_encode_frame(
-                enc, texture.Get(), force_key ? 1 : 0, &desc, bitstream.data(), static_cast<uint32_t>(bitstream.size()), &written
+                enc, moving_tex, force_key ? 1 : 0, &desc, bitstream.data(), static_cast<uint32_t>(bitstream.size()), &written
             );
             ACTIVE_ASSERT(enc_res == 1);
             ACTIVE_ASSERT(written > 0);
@@ -547,17 +647,18 @@ int main() {
             }
         }
 
+        moonshine_d3d11_destroy_texture(moving_tex);
         moonshine_encoder_destroy(enc);
         std::cout << "  [+] Deep NALU sequence, monotonic indexing, and QPC validation passed." << std::endl;
     }
 
     // ------------------------------------------------------------------------
-    // Subtest D: Direct3D 11 Video Decoder Hardware Loopback
+    // Subtest D: Direct3D 11 Video Decoder Hardware Loopback & Dimension Check
     // ------------------------------------------------------------------------
-    std::cout << "\n[*] [5/9] Executing Direct3D 11 Video Decoder Hardware Loopback..." << std::endl;
+    std::cout << "\n[*] [7/10] Executing Direct3D 11 Video Decoder Loopback & Dimension Verification..." << std::endl;
     {
-        const float colour[4] = { 0.5f, 0.2f, 0.8f, 1.0f };
-        auto texture = create_test_texture(device.Get(), context.Get(), 1920, 1080, colour);
+        void* smpte_tex = moonshine_d3d11_create_pattern_texture(device.Get(), 1920, 1080, 4, 0);
+        ACTIVE_ASSERT(smpte_tex != nullptr);
 
         uint32_t chosen_codec = supports_hevc ? 1 : 0;
         MoonshineDecoderHandle dec = moonshine_video_create_d3d11(nullptr, 1920, 1080, chosen_codec);
@@ -581,7 +682,7 @@ int main() {
         MoonshineEncodedPacketDesc desc0{};
         uint32_t written0 = 0;
         int enc_res0 = moonshine_encoder_encode_frame(
-            enc, texture.Get(), 1, &desc0, bitstream.data(), static_cast<uint32_t>(bitstream.size()), &written0
+            enc, smpte_tex, 1, &desc0, bitstream.data(), static_cast<uint32_t>(bitstream.size()), &written0
         );
         ACTIVE_ASSERT(enc_res0 == 1 && written0 > 0);
 
@@ -598,11 +699,18 @@ int main() {
         void* decoded_tex0 = moonshine_video_get_texture(dec);
         ACTIVE_ASSERT(decoded_tex0 != nullptr);
 
+        // Verify decoded dimensions match exact source resolution
+        uint32_t dec_w = 0, dec_h = 0;
+        int dim_res = moonshine_video_get_dimensions(dec, &dec_w, &dec_h);
+        ACTIVE_ASSERT(dim_res == 0);
+        ACTIVE_ASSERT(dec_w == 1920);
+        ACTIVE_ASSERT(dec_h == 1080);
+
         // Frame 1 (Inter-frame)
         MoonshineEncodedPacketDesc desc1{};
         uint32_t written1 = 0;
         int enc_res1 = moonshine_encoder_encode_frame(
-            enc, texture.Get(), 0, &desc1, bitstream.data(), static_cast<uint32_t>(bitstream.size()), &written1
+            enc, smpte_tex, 0, &desc1, bitstream.data(), static_cast<uint32_t>(bitstream.size()), &written1
         );
         ACTIVE_ASSERT(enc_res1 == 1 && written1 > 0);
 
@@ -619,15 +727,16 @@ int main() {
         void* decoded_tex1 = moonshine_video_get_texture(dec);
         ACTIVE_ASSERT(decoded_tex1 != nullptr);
 
+        moonshine_d3d11_destroy_texture(smpte_tex);
         moonshine_video_destroy(dec);
         moonshine_encoder_destroy(enc);
-        std::cout << "  [+] Direct3D 11 Video Decoder loopback test passed." << std::endl;
+        std::cout << "  [+] Direct3D 11 Video Decoder loopback test and dimensions (" << dec_w << "x" << dec_h << ") verified." << std::endl;
     }
 
     // ------------------------------------------------------------------------
     // Subtest E: Dynamic IDR Keyframe & Bitrate Reconfiguration
     // ------------------------------------------------------------------------
-    std::cout << "\n[*] [6/9] Executing Dynamic IDR Keyframe & Bitrate Reconfiguration..." << std::endl;
+    std::cout << "\n[*] [8/10] Executing Dynamic IDR Keyframe & Bitrate Reconfiguration..." << std::endl;
     {
         const float colour[4] = { 0.9f, 0.4f, 0.1f, 1.0f };
         auto texture = create_test_texture(device.Get(), context.Get(), 1920, 1080, colour);
@@ -681,7 +790,7 @@ int main() {
     // ------------------------------------------------------------------------
     // Subtest F: Buffer Overrun Protection (Tiny Buffer Memory Hardening)
     // ------------------------------------------------------------------------
-    std::cout << "\n[*] [7/9] Executing Buffer Overrun Protection..." << std::endl;
+    std::cout << "\n[*] [9/10] Executing Buffer Overrun Protection..." << std::endl;
     {
         const float colour[4] = { 0.3f, 0.3f, 0.3f, 1.0f };
         auto texture = create_test_texture(device.Get(), context.Get(), 1920, 1080, colour);
@@ -745,9 +854,9 @@ int main() {
     }
 
     // ------------------------------------------------------------------------
-    // Subtest G: Rapid Start/Stop Lifecycle Cycles (10 Sequential Cycles)
+    // Subtest G: Rapid Start/Stop Lifecycle & Concurrency (10 Cycles & Multi-Instance)
     // ------------------------------------------------------------------------
-    std::cout << "\n[*] [8/9] Executing Rapid Start/Stop Lifecycle Cycles (10 Sequential Cycles)..." << std::endl;
+    std::cout << "\n[*] [10/10] Executing Rapid Start/Stop Cycles & Multi-Instance Concurrency..." << std::endl;
     {
         const float colour[4] = { 0.4f, 0.6f, 0.2f, 1.0f };
         auto texture = create_test_texture(device.Get(), context.Get(), 1920, 1080, colour);
@@ -780,13 +889,8 @@ int main() {
             moonshine_encoder_destroy(enc);
         }
         std::cout << "  [+] 10 sequential create/encode/destroy cycles completed cleanly." << std::endl;
-    }
 
-    // ------------------------------------------------------------------------
-    // Subtest H: Multi-Instance Concurrency
-    // ------------------------------------------------------------------------
-    std::cout << "\n[*] [9/9] Executing Multi-Instance Concurrency (2 Simultaneous Instances)..." << std::endl;
-    {
+        // Multi-Instance Concurrency (2 simultaneous instances)
         const float colour1[4] = { 0.2f, 0.7f, 0.9f, 1.0f };
         const float colour2[4] = { 0.9f, 0.6f, 0.1f, 1.0f };
         auto texture1 = create_test_texture(device.Get(), context.Get(), 1920, 1080, colour1);

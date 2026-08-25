@@ -434,7 +434,7 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
 
         while (!receivedHelloResp && !handshakeCts.Token.IsCancellationRequested)
         {
-            if (++packetsExamined > 256 || malformedPackets > 32)
+            if (++packetsExamined > MoonshineProtocolStateMachine.MaxHandshakeExaminedPackets)
             {
                 _protocolStateMachine.Fault("Handshake exceeded maximum allowed packet inspections.");
                 throw new InvalidOperationException("Handshake exceeded maximum examined packet ceiling.");
@@ -443,21 +443,33 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
             SocketReceiveFromResult result = await _controlSocket.ReceiveFromAsync(respBuffer.AsMemory(), SocketFlags.None, remoteEp, handshakeCts.Token).ConfigureAwait(false);
             if (result.ReceivedBytes < MoonshineProtocolConstants.HeaderSize)
             {
-                malformedPackets++;
+                if (++malformedPackets > MoonshineProtocolStateMachine.MaxHandshakeMalformedPackets)
+                {
+                    _protocolStateMachine.Fault("Handshake exceeded maximum malformed packet ceiling.");
+                    throw new InvalidOperationException("Handshake exceeded maximum malformed packet ceiling.");
+                }
                 continue;
             }
 
             MoonshineErrorCode err = MoonshineProtocolCodec.TryReadHeader(respBuffer.AsSpan(0, result.ReceivedBytes), out var respHeader);
             if (err != MoonshineErrorCode.Success)
             {
-                malformedPackets++;
+                if (++malformedPackets > MoonshineProtocolStateMachine.MaxHandshakeMalformedPackets)
+                {
+                    _protocolStateMachine.Fault("Handshake exceeded maximum malformed packet ceiling.");
+                    throw new InvalidOperationException("Handshake exceeded maximum malformed packet ceiling.");
+                }
                 continue;
             }
 
             err = _protocolStateMachine.IngestPacketHeader(in respHeader, (ulong)Stopwatch.GetTimestamp());
             if (err != MoonshineErrorCode.Success)
             {
-                malformedPackets++;
+                if (++malformedPackets > MoonshineProtocolStateMachine.MaxHandshakeMalformedPackets)
+                {
+                    _protocolStateMachine.Fault("Handshake exceeded maximum malformed packet ceiling.");
+                    throw new InvalidOperationException("Handshake exceeded maximum malformed packet ceiling.");
+                }
                 continue;
             }
 
@@ -543,7 +555,7 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
 
         while (!receivedSetupResp && !handshakeCts.Token.IsCancellationRequested)
         {
-            if (++packetsExamined > 256 || malformedPackets > 32)
+            if (++packetsExamined > MoonshineProtocolStateMachine.MaxHandshakeExaminedPackets)
             {
                 _protocolStateMachine.Fault("SessionSetup exceeded maximum allowed packet inspections.");
                 throw new InvalidOperationException("SessionSetup exceeded maximum examined packet ceiling.");
@@ -552,21 +564,33 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
             SocketReceiveFromResult result = await _controlSocket.ReceiveFromAsync(respBuffer.AsMemory(), SocketFlags.None, remoteEp, handshakeCts.Token).ConfigureAwait(false);
             if (result.ReceivedBytes < MoonshineProtocolConstants.HeaderSize)
             {
-                malformedPackets++;
+                if (++malformedPackets > MoonshineProtocolStateMachine.MaxHandshakeMalformedPackets)
+                {
+                    _protocolStateMachine.Fault("SessionSetup exceeded maximum malformed packet ceiling.");
+                    throw new InvalidOperationException("SessionSetup exceeded maximum malformed packet ceiling.");
+                }
                 continue;
             }
 
             MoonshineErrorCode err = MoonshineProtocolCodec.TryReadHeader(respBuffer.AsSpan(0, result.ReceivedBytes), out var setupRespHeader);
             if (err != MoonshineErrorCode.Success)
             {
-                malformedPackets++;
+                if (++malformedPackets > MoonshineProtocolStateMachine.MaxHandshakeMalformedPackets)
+                {
+                    _protocolStateMachine.Fault("SessionSetup exceeded maximum malformed packet ceiling.");
+                    throw new InvalidOperationException("SessionSetup exceeded maximum malformed packet ceiling.");
+                }
                 continue;
             }
 
             err = _protocolStateMachine.IngestPacketHeader(in setupRespHeader, (ulong)Stopwatch.GetTimestamp());
             if (err != MoonshineErrorCode.Success)
             {
-                malformedPackets++;
+                if (++malformedPackets > MoonshineProtocolStateMachine.MaxHandshakeMalformedPackets)
+                {
+                    _protocolStateMachine.Fault("SessionSetup exceeded maximum malformed packet ceiling.");
+                    throw new InvalidOperationException("SessionSetup exceeded maximum malformed packet ceiling.");
+                }
                 continue;
             }
 

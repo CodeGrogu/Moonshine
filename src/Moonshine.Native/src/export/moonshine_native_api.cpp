@@ -496,6 +496,18 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_video_reset(MoonshineDecoderHandle ha
     }
 }
 
+MOONSHINE_API int MOONSHINE_CONV moonshine_video_get_dimensions(MoonshineDecoderHandle handle, uint32_t* out_width, uint32_t* out_height) {
+    try {
+        if (!handle || !out_width || !out_height) return -1;
+        auto* dec = static_cast<video::IVideoDecoder*>(handle);
+        return dec->GetDimensions(*out_width, *out_height);
+    } catch (const std::exception&) {
+        return -999;
+    } catch (...) {
+        return -999;
+    }
+}
+
 // ============================================================================
 // Low-Latency DXGI Flip Model Swapchain APIs
 // ============================================================================
@@ -2803,6 +2815,165 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_d3d11_destroy_texture(void* texture)
         return;
     } catch (...) {
         return;
+    }
+}
+
+namespace {
+
+void generate_test_pattern_bgra(
+    uint32_t* out_pixels,
+    uint32_t width,
+    uint32_t height,
+    uint32_t pattern_type,
+    uint32_t frame_index
+) {
+    if (!out_pixels || width == 0 || height == 0) return;
+
+    switch (pattern_type) {
+        case 0: { // Black
+            for (uint32_t i = 0; i < width * height; ++i) {
+                out_pixels[i] = 0xFF000000;
+            }
+            break;
+        }
+        case 1: { // Solid Colour (Vibrant Teal: R=32, G=178, B=170, A=255)
+            const uint32_t solid_color = 0xFF20B2AA;
+            for (uint32_t i = 0; i < width * height; ++i) {
+                out_pixels[i] = solid_color;
+            }
+            break;
+        }
+        case 2: { // Linear 2D Gradient
+            for (uint32_t y = 0; y < height; ++y) {
+                for (uint32_t x = 0; x < width; ++x) {
+                    uint32_t r = (x * 255) / width;
+                    uint32_t g = (y * 255) / height;
+                    uint32_t b = ((x + y) * 255) / (width + height);
+                    out_pixels[y * width + x] = 0xFF000000 | (r << 16) | (g << 8) | b;
+                }
+            }
+            break;
+        }
+        case 3: { // Moving Procedural Pattern
+            uint32_t box_size = 128;
+            uint32_t max_x = width > box_size ? width - box_size : 1;
+            uint32_t max_y = height > box_size ? height - box_size : 1;
+            uint32_t box_x = (frame_index * 24) % max_x;
+            uint32_t box_y = (frame_index * 16) % max_y;
+
+            for (uint32_t y = 0; y < height; ++y) {
+                for (uint32_t x = 0; x < width; ++x) {
+                    if (x >= box_x && x < box_x + box_size && y >= box_y && y < box_y + box_size) {
+                        bool check = (((x - box_x) / 16) + ((y - box_y) / 16)) % 2 == 0;
+                        out_pixels[y * width + x] = check ? 0xFFFFFFFF : 0xFF00FF00;
+                    } else {
+                        float wave_val = std::sin((x + frame_index * 12) * 0.04f) * 0.5f + 0.5f;
+                        uint32_t r = static_cast<uint32_t>(wave_val * 255.0f);
+                        uint32_t g = (x * 255) / width;
+                        uint32_t b = (y * 255) / height;
+                        out_pixels[y * width + x] = 0xFF000000 | (r << 16) | (g << 8) | b;
+                    }
+                }
+            }
+            break;
+        }
+        case 4: // SMPTE Colour Bars
+        default: {
+            const uint32_t smpte_colors[7] = {
+                0xFFBFBFBF, // 75% White
+                0xFF00BFBF, // Yellow
+                0xFFBFBF00, // Cyan
+                0xFF00BF00, // Green
+                0xFFBF00BF, // Magenta
+                0xFF0000BF, // Red
+                0xFFBF0000  // Blue
+            };
+            for (uint32_t y = 0; y < height; ++y) {
+                for (uint32_t x = 0; x < width; ++x) {
+                    uint32_t bar_index = std::min<uint32_t>(6, (x * 7) / width);
+                    out_pixels[y * width + x] = smpte_colors[bar_index];
+                }
+            }
+            break;
+        }
+    }
+}
+
+} // namespace
+
+MOONSHINE_API void* MOONSHINE_CONV moonshine_d3d11_create_pattern_texture(
+    void* d3d_device,
+    uint32_t width,
+    uint32_t height,
+    uint32_t pattern_type,
+    uint32_t frame_index
+) {
+    try {
+    #if defined(_WIN32)
+        if (!d3d_device || width == 0 || height == 0) return nullptr;
+        auto* dev = static_cast<ID3D11Device*>(d3d_device);
+
+        std::vector<uint32_t> pixels(width * height);
+        generate_test_pattern_bgra(pixels.data(), width, height, pattern_type, frame_index);
+
+        D3D11_TEXTURE2D_DESC desc{};
+        desc.Width = width;
+        desc.Height = height;
+        desc.MipLevels = 1;
+        desc.ArraySize = 1;
+        desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+        desc.SampleDesc.Count = 1;
+        desc.SampleDesc.Quality = 0;
+        desc.Usage = D3D11_USAGE_DEFAULT;
+        desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+
+        D3D11_SUBRESOURCE_DATA init_data{};
+        init_data.pSysMem = pixels.data();
+        init_data.SysMemPitch = width * sizeof(uint32_t);
+
+        Microsoft::WRL::ComPtr<ID3D11Texture2D> tex;
+        if (FAILED(dev->CreateTexture2D(&desc, &init_data, &tex)) || !tex) {
+            return nullptr;
+        }
+        return tex.Detach();
+    #else
+        (void)d3d_device; (void)width; (void)height; (void)pattern_type; (void)frame_index;
+        return nullptr;
+    #endif
+    } catch (...) {
+        return nullptr;
+    }
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_d3d11_render_pattern(
+    void* d3d_device,
+    void* texture,
+    uint32_t width,
+    uint32_t height,
+    uint32_t pattern_type,
+    uint32_t frame_index
+) {
+    try {
+    #if defined(_WIN32)
+        if (!d3d_device || !texture || width == 0 || height == 0) return 0;
+        auto* dev = static_cast<ID3D11Device*>(d3d_device);
+        auto* p_tex = static_cast<ID3D11Texture2D*>(texture);
+
+        std::vector<uint32_t> pixels(width * height);
+        generate_test_pattern_bgra(pixels.data(), width, height, pattern_type, frame_index);
+
+        Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
+        dev->GetImmediateContext(&context);
+        if (!context) return 0;
+
+        context->UpdateSubresource(p_tex, 0, nullptr, pixels.data(), width * sizeof(uint32_t), 0);
+        return 1;
+    #else
+        (void)d3d_device; (void)texture; (void)width; (void)height; (void)pattern_type; (void)frame_index;
+        return 0;
+    #endif
+    } catch (...) {
+        return 0;
     }
 }
 

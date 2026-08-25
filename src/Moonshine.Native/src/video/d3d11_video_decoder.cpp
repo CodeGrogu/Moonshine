@@ -302,6 +302,17 @@ void* D3D11VideoDecoder::GetTextureHandle() const noexcept {
     return output_texture_;
 }
 
+int D3D11VideoDecoder::GetDimensions(uint32_t& out_width, uint32_t& out_height) const noexcept {
+    if (!initialized_) {
+        out_width = 0;
+        out_height = 0;
+        return -1;
+    }
+    out_width = width_;
+    out_height = height_;
+    return 0;
+}
+
 int D3D11VideoDecoder::Reset(uint32_t width, uint32_t height) {
     return Initialize(hwnd_, width, height, codec_);
 }
@@ -566,6 +577,17 @@ int D3D12VideoDecoder::SubmitFrame(const MoonshineFrameDesc& frame) {
 
 void* D3D12VideoDecoder::GetTextureHandle() const noexcept {
     return nullptr;
+}
+
+int D3D12VideoDecoder::GetDimensions(uint32_t& out_width, uint32_t& out_height) const noexcept {
+    if (!initialized_) {
+        out_width = 0;
+        out_height = 0;
+        return -1;
+    }
+    out_width = width_;
+    out_height = height_;
+    return 0;
 }
 
 int D3D12VideoDecoder::Reset(uint32_t width, uint32_t height) {

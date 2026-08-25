@@ -33,7 +33,7 @@ public sealed class CongestionController
     public const uint DefaultMaxQueueDepthThreshold = 8; // 8 frames queued
 
     private readonly uint _minBitrateKbps;
-    private readonly uint _maxBitrateKbps;
+    private uint _maxBitrateKbps;
     private readonly long _hysteresisHoldTicks;
     private readonly Action<uint>? _onBitrateChanged;
     private readonly Action<uint>? _onPacingChanged;
@@ -109,6 +109,23 @@ public sealed class CongestionController
         _onPacingChanged = onPacingChanged;
         _onIdrRequested = onIdrRequested;
         _lastBitrateIncreaseTimestamp = 0;
+    }
+
+    /// <summary>
+    /// Dynamically reconfigures the target bitrate and optionally updates the maximum bitrate limit.
+    /// </summary>
+    public void ReconfigureBitrate(uint newBitrateKbps, uint newMaxBitrateKbps = 0)
+    {
+        lock (_lock)
+        {
+            if (newMaxBitrateKbps >= _minBitrateKbps)
+            {
+                _maxBitrateKbps = newMaxBitrateKbps;
+            }
+            _currentBitrateKbps = Math.Clamp(newBitrateKbps, _minBitrateKbps, _maxBitrateKbps);
+            _targetBitrateKbps = _currentBitrateKbps;
+            _lastBitrateIncreaseTimestamp = Stopwatch.GetTimestamp();
+        }
     }
 
     /// <summary>

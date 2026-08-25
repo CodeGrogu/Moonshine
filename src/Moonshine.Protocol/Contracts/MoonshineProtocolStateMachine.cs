@@ -45,6 +45,8 @@ public sealed class MoonshineProtocolStateMachine
     public const ulong DefaultConnectionTimeoutUs = 5_000_000; // 5 seconds
     public const uint DefaultMaxMtu = 65507;
     public const uint DefaultMinMtu = 576;
+    public const int MaxHandshakeExaminedPackets = 256;
+    public const int MaxHandshakeMalformedPackets = 32;
 
     private readonly object _syncLock = new();
     private MoonshineProtocolState _state = MoonshineProtocolState.Created;
@@ -243,7 +245,7 @@ public sealed class MoonshineProtocolStateMachine
                 return MoonshineErrorCode.InvalidSession;
 
             case MoonshineProtocolState.HandshakeInitiated:
-                if (messageType is MoonshineMessageType.HelloResponse or MoonshineMessageType.Hello or MoonshineMessageType.KeepAlive)
+                if (messageType is MoonshineMessageType.HelloResponse or MoonshineMessageType.Hello or MoonshineMessageType.KeepAlive or MoonshineMessageType.KeepAliveAck)
                 {
                     return MoonshineErrorCode.Success;
                 }

@@ -473,12 +473,36 @@ inline MoonshineErrorCode read_header(std::span<const uint8_t> source, Moonshine
     return MoonshineErrorCode::Success;
 }
 
+[[nodiscard]] inline constexpr bool is_newer_sequence16(uint16_t candidate, uint16_t previous) noexcept {
+    return candidate != previous && static_cast<int16_t>(static_cast<uint16_t>(candidate - previous)) > 0;
+}
+
 [[nodiscard]] inline constexpr bool is_newer_sequence(uint32_t candidate, uint32_t previous) noexcept {
     return candidate != previous && static_cast<int32_t>(candidate - previous) > 0;
 }
 
+[[nodiscard]] inline constexpr bool is_newer_sequence32(uint32_t candidate, uint32_t previous) noexcept {
+    return is_newer_sequence(candidate, previous);
+}
+
 [[nodiscard]] inline constexpr bool is_newer_frame_index(uint64_t candidate, uint64_t previous) noexcept {
     return candidate != previous && static_cast<int64_t>(candidate - previous) > 0;
+}
+
+[[nodiscard]] inline constexpr bool is_newer_sequence64(uint64_t candidate, uint64_t previous) noexcept {
+    return is_newer_frame_index(candidate, previous);
+}
+
+[[nodiscard]] inline constexpr int16_t sequence_distance16(uint16_t candidate, uint16_t previous) noexcept {
+    return static_cast<int16_t>(static_cast<uint16_t>(candidate - previous));
+}
+
+[[nodiscard]] inline constexpr int32_t sequence_distance32(uint32_t candidate, uint32_t previous) noexcept {
+    return static_cast<int32_t>(candidate - previous);
+}
+
+[[nodiscard]] inline constexpr int64_t sequence_distance64(uint64_t candidate, uint64_t previous) noexcept {
+    return static_cast<int64_t>(candidate - previous);
 }
 
 [[nodiscard]] inline constexpr bool requires_session_id(MoonshineMessageType message_type) noexcept {

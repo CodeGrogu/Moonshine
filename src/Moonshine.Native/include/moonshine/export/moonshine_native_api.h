@@ -383,6 +383,7 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_video_destroy(MoonshineDecoderHandle
 MOONSHINE_API int MOONSHINE_CONV moonshine_video_submit_frame(MoonshineDecoderHandle handle, const MoonshineFrameDesc* frame);
 MOONSHINE_API void* MOONSHINE_CONV moonshine_video_get_texture(MoonshineDecoderHandle handle);
 MOONSHINE_API int MOONSHINE_CONV moonshine_video_reset(MoonshineDecoderHandle handle, uint32_t width, uint32_t height);
+MOONSHINE_API int MOONSHINE_CONV moonshine_video_get_dimensions(MoonshineDecoderHandle handle, uint32_t* out_width, uint32_t* out_height);
 
 // ============================================================================
 // Low-Latency DXGI Flip Model Swapchain APIs
@@ -1008,6 +1009,8 @@ MOONSHINE_API void* MOONSHINE_CONV moonshine_d3d11_create_device(uint32_t vendor
 MOONSHINE_API void MOONSHINE_CONV moonshine_d3d11_destroy_device(void* d3d_device);
 MOONSHINE_API void* MOONSHINE_CONV moonshine_d3d11_create_texture(void* d3d_device, uint32_t width, uint32_t height, uint32_t format);
 MOONSHINE_API void MOONSHINE_CONV moonshine_d3d11_destroy_texture(void* texture);
+MOONSHINE_API void* MOONSHINE_CONV moonshine_d3d11_create_pattern_texture(void* d3d_device, uint32_t width, uint32_t height, uint32_t pattern_type, uint32_t frame_index);
+MOONSHINE_API int MOONSHINE_CONV moonshine_d3d11_render_pattern(void* d3d_device, void* texture, uint32_t width, uint32_t height, uint32_t pattern_type, uint32_t frame_index);
 
 // ============================================================================
 // NVIDIA NVENC Dedicated Custom APIs

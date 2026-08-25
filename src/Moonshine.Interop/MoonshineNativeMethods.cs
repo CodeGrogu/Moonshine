@@ -188,6 +188,10 @@ public static unsafe partial class MoonshineNativeMethods
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial IntPtr VideoGetTexture(IntPtr handle);
 
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_video_get_dimensions")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int VideoGetDimensions(IntPtr handle, out uint outWidth, out uint outHeight);
+
     [LibraryImport(LibraryName, EntryPoint = "moonshine_video_reset")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int VideoReset(IntPtr handle, uint width, uint height);
@@ -911,6 +915,14 @@ public static unsafe partial class MoonshineNativeMethods
     [LibraryImport(LibraryName, EntryPoint = "moonshine_d3d11_destroy_texture")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial void D3D11DestroyTexture(IntPtr texture);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_d3d11_create_pattern_texture")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial IntPtr D3D11CreatePatternTexture(IntPtr d3dDevice, uint width, uint height, uint patternType, uint frameIndex);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_d3d11_render_pattern")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int D3D11RenderPattern(IntPtr d3dDevice, IntPtr texture, uint width, uint height, uint patternType, uint frameIndex);
 
     // ========================================================================
     // AMD AMF Dedicated Custom APIs

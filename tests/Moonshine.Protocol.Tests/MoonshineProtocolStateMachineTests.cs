@@ -474,4 +474,101 @@ public class MoonshineProtocolStateMachineTests
         MoonshineProtocolCodec.GetMinimumPayloadSize(MoonshineMessageType.AudioPacket).Should().Be(24);
         MoonshineProtocolCodec.GetMinimumPayloadSize(MoonshineMessageType.MicPacket).Should().Be(20);
     }
+
+    [Fact]
+    public void StateMachine_HandshakeFlooding_AllowsValidKeepAlivesDuringHandshakeInitiated()
+    {
+        var fsm = new MoonshineProtocolStateMachine();
+        fsm.RecordHelloSent().Should().BeTrue();
+        fsm.State.Should().Be(MoonshineProtocolState.HandshakeInitiated);
+
+        // Ingest 255 valid-but-irrelevant KeepAlive packets
+        for (uint i = 1; i <= 255; i++)
+        {
+            var keepAlive = new MoonshinePacketHeader(
+                Magic: MoonshineProtocolConstants.Magic,
+                Version: MoonshineProtocolConstants.Version10,
+                MessageType: MoonshineMessageType.KeepAlive,
+                PayloadSize: 0,
+                SequenceNumber: i,
+                SessionId: 0,
+                TimestampUs: i * 100);
+
+            MoonshineErrorCode err = fsm.IngestPacketHeader(in keepAlive, i * 100);
+            err.Should().Be(MoonshineErrorCode.Success);
+            fsm.State.Should().Be(MoonshineProtocolState.HandshakeInitiated);
+        }
+
+        // Packet 256 is valid HelloResponse -> Handshake succeeds
+        var helloRespHeader = new MoonshinePacketHeader(
+            Magic: MoonshineProtocolConstants.Magic,
+            Version: MoonshineProtocolConstants.Version10,
+            MessageType: MoonshineMessageType.HelloResponse,
+            PayloadSize: 48,
+            SequenceNumber: 256,
+            SessionId: 0x9988776655443322UL,
+            TimestampUs: 25600);
+
+        fsm.IngestPacketHeader(in helloRespHeader, 25600).Should().Be(MoonshineErrorCode.Success);
+        fsm.RecordHelloResponseReceived(0x9988776655443322UL).Should().BeTrue();
+        fsm.State.Should().Be(MoonshineProtocolState.HandshakeCompleted);
+    }
+
+    [Fact]
+    public void StateMachine_HandshakeOutOrderMessage_TransitionsToFaultedImmediately()
+    {
+        var fsm = new MoonshineProtocolStateMachine();
+        fsm.RecordHelloSent().Should().BeTrue();
+        fsm.State.Should().Be(MoonshineProtocolState.HandshakeInitiated);
+
+        // VideoPacket is forbidden during HandshakeInitiated
+        var invalidPacket = new MoonshinePacketHeader(
+            Magic: MoonshineProtocolConstants.Magic,
+            Version: MoonshineProtocolConstants.Version10,
+            MessageType: MoonshineMessageType.VideoPacket,
+            PayloadSize: 200,
+            SequenceNumber: 1,
+            SessionId: 0,
+            TimestampUs: 100);
+
+        MoonshineErrorCode err = fsm.IngestPacketHeader(in invalidPacket, 100);
+        err.Should().Be(MoonshineErrorCode.MalformedHeader);
+        fsm.State.Should().Be(MoonshineProtocolState.Faulted);
+        fsm.FaultReason.Should().Contain("Out-of-order message VideoPacket received during state HandshakeInitiated");
+    }
+
+    [Fact]
+    public void StateMachine_StateResetExploitImmunity_IllegitimateStateResetPacketsRejected()
+    {
+        var fsm = new MoonshineProtocolStateMachine();
+        fsm.RecordHelloSent().Should().BeTrue();
+        fsm.State.Should().Be(MoonshineProtocolState.HandshakeInitiated);
+
+        // Attacker sends Teardown to try resetting state
+        var teardownPkt = new MoonshinePacketHeader(
+            Magic: MoonshineProtocolConstants.Magic,
+            Version: MoonshineProtocolConstants.Version10,
+            MessageType: MoonshineMessageType.Teardown,
+            PayloadSize: 0,
+            SequenceNumber: 1,
+            SessionId: 0,
+            TimestampUs: 100);
+
+        MoonshineErrorCode err = fsm.IngestPacketHeader(in teardownPkt, 100);
+        err.Should().Be(MoonshineErrorCode.MalformedHeader);
+        fsm.State.Should().Be(MoonshineProtocolState.Faulted);
+        fsm.IsTerminated.Should().BeTrue();
+
+        // Subsequent packets on faulted state fail closed
+        var helloPkt = new MoonshinePacketHeader(
+            Magic: MoonshineProtocolConstants.Magic,
+            Version: MoonshineProtocolConstants.Version10,
+            MessageType: MoonshineMessageType.Hello,
+            PayloadSize: 32,
+            SequenceNumber: 2,
+            SessionId: 0,
+            TimestampUs: 200);
+
+        fsm.IngestPacketHeader(in helloPkt, 200).Should().Be(MoonshineErrorCode.InvalidSession);
+    }
 }

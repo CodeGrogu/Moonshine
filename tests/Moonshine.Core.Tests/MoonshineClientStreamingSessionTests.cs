@@ -501,4 +501,488 @@ public class MoonshineClientStreamingSessionTests
         session.Metrics.RoundTripTimeUs.Should().BeGreaterThan(0);
         session.Metrics.RoundTripTimeUs.Should().BeGreaterThanOrEqualTo(14000);
     }
+
+    [Fact]
+    public async Task ClientStreamingSession_HandshakeFloodLimit_255ValidIrrelevantPackets_AllowsHandshakeToSucceedOnPacket256()
+    {
+        using var hostControlSocket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+        hostControlSocket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+        int hostPort = ((IPEndPoint)hostControlSocket.LocalEndPoint!).Port;
+
+        var config = new ClientSessionConfig
+        {
+            HostAddress = IPAddress.Loopback,
+            HostControlFeedbackPort = hostPort,
+            LocalVideoPort = 0,
+            LocalAudioPort = 0,
+            LocalControlFeedbackPort = 0,
+            PerformHandshake = true,
+            HandshakeTimeoutMs = 5000
+        };
+
+        var session = new MoonshineClientStreamingSession(config);
+
+        var hostTask = Task.Run(async () =>
+        {
+            byte[] recvBuf = new byte[1024];
+            var remoteEp = new IPEndPoint(IPAddress.Any, 0);
+
+            // 1. Receive Hello
+            var r1 = await hostControlSocket.ReceiveFromAsync(recvBuf.AsMemory(), SocketFlags.None, remoteEp);
+            MoonshineProtocolCodec.TryReadHeader(recvBuf.AsSpan(0, r1.ReceivedBytes), out var hHeader).Should().Be(MoonshineErrorCode.Success);
+            hHeader.MessageType.Should().Be(MoonshineMessageType.Hello);
+
+            // 2. Send 255 valid KeepAlive packets (valid-but-irrelevant)
+            byte[] keepAliveBuf = new byte[MoonshineProtocolConstants.HeaderSize];
+            for (uint i = 1; i <= 255; i++)
+            {
+                var kaHdr = new MoonshinePacketHeader(
+                    Magic: MoonshineProtocolConstants.Magic,
+                    Version: MoonshineProtocolConstants.Version10,
+                    MessageType: MoonshineMessageType.KeepAlive,
+                    PayloadSize: 0,
+                    SequenceNumber: i,
+                    SessionId: 0,
+                    TimestampUs: (ulong)Stopwatch.GetTimestamp());
+                MoonshineProtocolCodec.TryWriteHeader(in kaHdr, keepAliveBuf);
+                await hostControlSocket.SendToAsync(keepAliveBuf, SocketFlags.None, r1.RemoteEndPoint);
+            }
+
+            // 3. Send 1 valid HelloResponse (packet 256, at ceiling boundary)
+            byte[] helloRespBuf = CreateHelloResponseBuffer(hHeader.SequenceNumber, 0x1122334455667788UL);
+            await hostControlSocket.SendToAsync(helloRespBuf, SocketFlags.None, r1.RemoteEndPoint);
+
+            // 4. Receive SessionSetup -> Send SessionSetupResponse
+            var r2 = await hostControlSocket.ReceiveFromAsync(recvBuf.AsMemory(), SocketFlags.None, remoteEp);
+            MoonshineProtocolCodec.TryReadHeader(recvBuf.AsSpan(0, r2.ReceivedBytes), out var sHeader).Should().Be(MoonshineErrorCode.Success);
+            sHeader.MessageType.Should().Be(MoonshineMessageType.SessionSetup);
+
+            byte[] setupRespBuf = CreateSessionSetupResponseBuffer(sHeader.SequenceNumber, 0x1122334455667788UL, hostPort);
+            await hostControlSocket.SendToAsync(setupRespBuf, SocketFlags.None, r2.RemoteEndPoint);
+        });
+
+        await session.StartAsync();
+        await hostTask;
+
+        session.State.Should().Be(ClientSessionState.Streaming);
+        session.ProtocolStateMachine.State.Should().Be(MoonshineProtocolState.StreamingActive);
+
+        await session.StopAsync();
+    }
+
+    [Fact]
+    public async Task ClientStreamingSession_HandshakeFloodLimit_256ValidIrrelevantPackets_Packet257TransitionsToFaulted()
+    {
+        using var hostControlSocket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+        hostControlSocket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+        int hostPort = ((IPEndPoint)hostControlSocket.LocalEndPoint!).Port;
+
+        var config = new ClientSessionConfig
+        {
+            HostAddress = IPAddress.Loopback,
+            HostControlFeedbackPort = hostPort,
+            LocalVideoPort = 0,
+            LocalAudioPort = 0,
+            LocalControlFeedbackPort = 0,
+            PerformHandshake = true,
+            HandshakeTimeoutMs = 3000
+        };
+
+        var session = new MoonshineClientStreamingSession(config);
+
+        var hostTask = Task.Run(async () =>
+        {
+            byte[] recvBuf = new byte[1024];
+            var remoteEp = new IPEndPoint(IPAddress.Any, 0);
+
+            // 1. Receive Hello
+            var r1 = await hostControlSocket.ReceiveFromAsync(recvBuf.AsMemory(), SocketFlags.None, remoteEp);
+
+            // 2. Send 257 valid KeepAlive packets (packet 257 trips ceiling)
+            byte[] keepAliveBuf = new byte[MoonshineProtocolConstants.HeaderSize];
+            for (uint i = 1; i <= 257; i++)
+            {
+                var kaHdr = new MoonshinePacketHeader(
+                    Magic: MoonshineProtocolConstants.Magic,
+                    Version: MoonshineProtocolConstants.Version10,
+                    MessageType: MoonshineMessageType.KeepAlive,
+                    PayloadSize: 0,
+                    SequenceNumber: i,
+                    SessionId: 0,
+                    TimestampUs: (ulong)Stopwatch.GetTimestamp());
+                MoonshineProtocolCodec.TryWriteHeader(in kaHdr, keepAliveBuf);
+                await hostControlSocket.SendToAsync(keepAliveBuf, SocketFlags.None, r1.RemoteEndPoint);
+            }
+        });
+
+        var act = async () => await session.StartAsync();
+        await act.Should().ThrowAsync<Exception>();
+
+        await hostTask;
+
+        session.State.Should().Be(ClientSessionState.Faulted);
+        session.ProtocolStateMachine.State.Should().Be(MoonshineProtocolState.Faulted);
+        session.ProtocolStateMachine.FaultReason.Should().Contain("Handshake exceeded maximum examined packet ceiling");
+    }
+
+    [Fact]
+    public async Task ClientStreamingSession_HandshakeMalformedLimit_32MalformedPackets_Packet33ValidHelloResponse_Succeeds()
+    {
+        using var hostControlSocket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+        hostControlSocket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+        int hostPort = ((IPEndPoint)hostControlSocket.LocalEndPoint!).Port;
+
+        var config = new ClientSessionConfig
+        {
+            HostAddress = IPAddress.Loopback,
+            HostControlFeedbackPort = hostPort,
+            LocalVideoPort = 0,
+            LocalAudioPort = 0,
+            LocalControlFeedbackPort = 0,
+            PerformHandshake = true,
+            HandshakeTimeoutMs = 5000
+        };
+
+        var session = new MoonshineClientStreamingSession(config);
+
+        var hostTask = Task.Run(async () =>
+        {
+            byte[] recvBuf = new byte[1024];
+            var remoteEp = new IPEndPoint(IPAddress.Any, 0);
+
+            // 1. Receive Hello
+            var r1 = await hostControlSocket.ReceiveFromAsync(recvBuf.AsMemory(), SocketFlags.None, remoteEp);
+            MoonshineProtocolCodec.TryReadHeader(recvBuf.AsSpan(0, r1.ReceivedBytes), out var hHeader).Should().Be(MoonshineErrorCode.Success);
+
+            // 2. Send exactly 32 malformed packets (at ceiling boundary)
+            byte[] malformedBuf = [0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x01, 0x02, 0x03];
+            for (int i = 0; i < 32; i++)
+            {
+                await hostControlSocket.SendToAsync(malformedBuf, SocketFlags.None, r1.RemoteEndPoint);
+            }
+
+            // 3. Send 1 valid HelloResponse (packet 33)
+            byte[] helloRespBuf = CreateHelloResponseBuffer(hHeader.SequenceNumber, 0x9988AABBCCDDEEFFUL);
+            await hostControlSocket.SendToAsync(helloRespBuf, SocketFlags.None, r1.RemoteEndPoint);
+
+            // 4. Receive SessionSetup -> Send SessionSetupResponse
+            var r2 = await hostControlSocket.ReceiveFromAsync(recvBuf.AsMemory(), SocketFlags.None, remoteEp);
+            MoonshineProtocolCodec.TryReadHeader(recvBuf.AsSpan(0, r2.ReceivedBytes), out var sHeader).Should().Be(MoonshineErrorCode.Success);
+
+            byte[] setupRespBuf = CreateSessionSetupResponseBuffer(sHeader.SequenceNumber, 0x9988AABBCCDDEEFFUL, hostPort);
+            await hostControlSocket.SendToAsync(setupRespBuf, SocketFlags.None, r2.RemoteEndPoint);
+        });
+
+        await session.StartAsync();
+        await hostTask;
+
+        session.State.Should().Be(ClientSessionState.Streaming);
+        session.ProtocolStateMachine.State.Should().Be(MoonshineProtocolState.StreamingActive);
+
+        await session.StopAsync();
+    }
+
+    [Fact]
+    public async Task ClientStreamingSession_HandshakeMalformedLimit_33MalformedPackets_FaultsImmediately()
+    {
+        using var hostControlSocket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+        hostControlSocket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+        int hostPort = ((IPEndPoint)hostControlSocket.LocalEndPoint!).Port;
+
+        var config = new ClientSessionConfig
+        {
+            HostAddress = IPAddress.Loopback,
+            HostControlFeedbackPort = hostPort,
+            LocalVideoPort = 0,
+            LocalAudioPort = 0,
+            LocalControlFeedbackPort = 0,
+            PerformHandshake = true,
+            HandshakeTimeoutMs = 3000
+        };
+
+        var session = new MoonshineClientStreamingSession(config);
+
+        var hostTask = Task.Run(async () =>
+        {
+            byte[] recvBuf = new byte[1024];
+            var remoteEp = new IPEndPoint(IPAddress.Any, 0);
+
+            // 1. Receive Hello
+            var r1 = await hostControlSocket.ReceiveFromAsync(recvBuf.AsMemory(), SocketFlags.None, remoteEp);
+
+            // 2. Send 33 malformed packets (exceeds malformed ceiling of 32)
+            byte[] malformedBuf = [0xAA, 0xBB, 0xCC];
+            for (int i = 0; i < 33; i++)
+            {
+                await hostControlSocket.SendToAsync(malformedBuf, SocketFlags.None, r1.RemoteEndPoint);
+            }
+        });
+
+        var act = async () => await session.StartAsync();
+        await act.Should().ThrowAsync<Exception>();
+
+        await hostTask;
+
+        session.State.Should().Be(ClientSessionState.Faulted);
+        session.ProtocolStateMachine.State.Should().Be(MoonshineProtocolState.Faulted);
+        session.ProtocolStateMachine.FaultReason.Should().Contain("Handshake exceeded maximum malformed packet ceiling");
+    }
+
+    [Fact]
+    public async Task ClientStreamingSession_MixedTraffic_31MalformedAnd224IrrelevantAndHelloResponse_Succeeds()
+    {
+        using var hostControlSocket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+        hostControlSocket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+        int hostPort = ((IPEndPoint)hostControlSocket.LocalEndPoint!).Port;
+
+        var config = new ClientSessionConfig
+        {
+            HostAddress = IPAddress.Loopback,
+            HostControlFeedbackPort = hostPort,
+            LocalVideoPort = 0,
+            LocalAudioPort = 0,
+            LocalControlFeedbackPort = 0,
+            PerformHandshake = true,
+            HandshakeTimeoutMs = 5000
+        };
+
+        var session = new MoonshineClientStreamingSession(config);
+
+        var hostTask = Task.Run(async () =>
+        {
+            byte[] recvBuf = new byte[1024];
+            var remoteEp = new IPEndPoint(IPAddress.Any, 0);
+
+            // 1. Receive Hello
+            var r1 = await hostControlSocket.ReceiveFromAsync(recvBuf.AsMemory(), SocketFlags.None, remoteEp);
+            MoonshineProtocolCodec.TryReadHeader(recvBuf.AsSpan(0, r1.ReceivedBytes), out var hHeader).Should().Be(MoonshineErrorCode.Success);
+
+            // 2. Send 31 malformed packets
+            byte[] malformedBuf = [0x01, 0x02, 0x03, 0x04];
+            for (int i = 0; i < 31; i++)
+            {
+                await hostControlSocket.SendToAsync(malformedBuf, SocketFlags.None, r1.RemoteEndPoint);
+            }
+
+            // 3. Send 224 valid KeepAlive packets (total packets examined so far = 255)
+            byte[] keepAliveBuf = new byte[MoonshineProtocolConstants.HeaderSize];
+            for (uint i = 1; i <= 224; i++)
+            {
+                var kaHdr = new MoonshinePacketHeader(
+                    Magic: MoonshineProtocolConstants.Magic,
+                    Version: MoonshineProtocolConstants.Version10,
+                    MessageType: MoonshineMessageType.KeepAlive,
+                    PayloadSize: 0,
+                    SequenceNumber: i,
+                    SessionId: 0,
+                    TimestampUs: (ulong)Stopwatch.GetTimestamp());
+                MoonshineProtocolCodec.TryWriteHeader(in kaHdr, keepAliveBuf);
+                await hostControlSocket.SendToAsync(keepAliveBuf, SocketFlags.None, r1.RemoteEndPoint);
+            }
+
+            // 4. Send 1 valid HelloResponse (packet 256, within ceiling)
+            byte[] helloRespBuf = CreateHelloResponseBuffer(hHeader.SequenceNumber, 0x445566778899AABBUL);
+            await hostControlSocket.SendToAsync(helloRespBuf, SocketFlags.None, r1.RemoteEndPoint);
+
+            // 5. Receive SessionSetup -> Send SessionSetupResponse
+            var r2 = await hostControlSocket.ReceiveFromAsync(recvBuf.AsMemory(), SocketFlags.None, remoteEp);
+            MoonshineProtocolCodec.TryReadHeader(recvBuf.AsSpan(0, r2.ReceivedBytes), out var sHeader).Should().Be(MoonshineErrorCode.Success);
+
+            byte[] setupRespBuf = CreateSessionSetupResponseBuffer(sHeader.SequenceNumber, 0x445566778899AABBUL, hostPort);
+            await hostControlSocket.SendToAsync(setupRespBuf, SocketFlags.None, r2.RemoteEndPoint);
+        });
+
+        await session.StartAsync();
+        await hostTask;
+
+        session.State.Should().Be(ClientSessionState.Streaming);
+        session.ProtocolStateMachine.State.Should().Be(MoonshineProtocolState.StreamingActive);
+
+        await session.StopAsync();
+    }
+
+    [Fact]
+    public async Task ClientStreamingSession_MixedTraffic_32MalformedAnd225Irrelevant_FailsClosed()
+    {
+        using var hostControlSocket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+        hostControlSocket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+        int hostPort = ((IPEndPoint)hostControlSocket.LocalEndPoint!).Port;
+
+        var config = new ClientSessionConfig
+        {
+            HostAddress = IPAddress.Loopback,
+            HostControlFeedbackPort = hostPort,
+            LocalVideoPort = 0,
+            LocalAudioPort = 0,
+            LocalControlFeedbackPort = 0,
+            PerformHandshake = true,
+            HandshakeTimeoutMs = 3000
+        };
+
+        var session = new MoonshineClientStreamingSession(config);
+
+        var hostTask = Task.Run(async () =>
+        {
+            byte[] recvBuf = new byte[1024];
+            var remoteEp = new IPEndPoint(IPAddress.Any, 0);
+
+            // 1. Receive Hello
+            var r1 = await hostControlSocket.ReceiveFromAsync(recvBuf.AsMemory(), SocketFlags.None, remoteEp);
+
+            // 2. Send 32 malformed packets
+            byte[] malformedBuf = [0x01, 0x02, 0x03];
+            for (int i = 0; i < 32; i++)
+            {
+                await hostControlSocket.SendToAsync(malformedBuf, SocketFlags.None, r1.RemoteEndPoint);
+            }
+
+            // 3. Send 225 valid KeepAlive packets (total packets examined reaches 257)
+            byte[] keepAliveBuf = new byte[MoonshineProtocolConstants.HeaderSize];
+            for (uint i = 1; i <= 225; i++)
+            {
+                var kaHdr = new MoonshinePacketHeader(
+                    Magic: MoonshineProtocolConstants.Magic,
+                    Version: MoonshineProtocolConstants.Version10,
+                    MessageType: MoonshineMessageType.KeepAlive,
+                    PayloadSize: 0,
+                    SequenceNumber: i,
+                    SessionId: 0,
+                    TimestampUs: (ulong)Stopwatch.GetTimestamp());
+                MoonshineProtocolCodec.TryWriteHeader(in kaHdr, keepAliveBuf);
+                await hostControlSocket.SendToAsync(keepAliveBuf, SocketFlags.None, r1.RemoteEndPoint);
+            }
+        });
+
+        var act = async () => await session.StartAsync();
+        await act.Should().ThrowAsync<Exception>();
+
+        await hostTask;
+
+        session.State.Should().Be(ClientSessionState.Faulted);
+        session.ProtocolStateMachine.State.Should().Be(MoonshineProtocolState.Faulted);
+    }
+
+    [Fact]
+    public async Task ClientStreamingSession_StateResetExploitImmunity_IllegitimateStateResetPacketsRejected()
+    {
+        using var hostControlSocket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+        hostControlSocket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+        int hostPort = ((IPEndPoint)hostControlSocket.LocalEndPoint!).Port;
+
+        var config = new ClientSessionConfig
+        {
+            HostAddress = IPAddress.Loopback,
+            HostControlFeedbackPort = hostPort,
+            LocalVideoPort = 0,
+            LocalAudioPort = 0,
+            LocalControlFeedbackPort = 0,
+            PerformHandshake = true,
+            HandshakeTimeoutMs = 3000
+        };
+
+        var session = new MoonshineClientStreamingSession(config);
+
+        var hostTask = Task.Run(async () =>
+        {
+            byte[] recvBuf = new byte[1024];
+            var remoteEp = new IPEndPoint(IPAddress.Any, 0);
+
+            // 1. Receive Hello
+            var r1 = await hostControlSocket.ReceiveFromAsync(recvBuf.AsMemory(), SocketFlags.None, remoteEp);
+
+            // 2. Send 30 malformed packets
+            byte[] malformedBuf = [0x01, 0x02];
+            for (int i = 0; i < 30; i++)
+            {
+                await hostControlSocket.SendToAsync(malformedBuf, SocketFlags.None, r1.RemoteEndPoint);
+            }
+
+            // 3. Attacker sends illegitimate Teardown message attempting to reset state/counters
+            byte[] teardownBuf = new byte[MoonshineProtocolConstants.HeaderSize];
+            var teardownHdr = new MoonshinePacketHeader(
+                Magic: MoonshineProtocolConstants.Magic,
+                Version: MoonshineProtocolConstants.Version10,
+                MessageType: MoonshineMessageType.Teardown,
+                PayloadSize: 0,
+                SequenceNumber: 99,
+                SessionId: 0,
+                TimestampUs: (ulong)Stopwatch.GetTimestamp());
+            MoonshineProtocolCodec.TryWriteHeader(in teardownHdr, teardownBuf);
+            await hostControlSocket.SendToAsync(teardownBuf, SocketFlags.None, r1.RemoteEndPoint);
+
+            // 4. Send 2 more malformed packets (total malformed = 33)
+            for (int i = 0; i < 2; i++)
+            {
+                await hostControlSocket.SendToAsync(malformedBuf, SocketFlags.None, r1.RemoteEndPoint);
+            }
+        });
+
+        var act = async () => await session.StartAsync();
+        await act.Should().ThrowAsync<Exception>();
+
+        await hostTask;
+
+        session.State.Should().Be(ClientSessionState.Faulted);
+        session.ProtocolStateMachine.State.Should().Be(MoonshineProtocolState.Faulted);
+    }
+
+    private static byte[] CreateHelloResponseBuffer(uint sequenceNumber, ulong sessionId)
+    {
+        byte[] respBuf = new byte[MoonshineProtocolConstants.HeaderSize + 48];
+        var respHdr = new MoonshinePacketHeader(
+            Magic: MoonshineProtocolConstants.Magic,
+            Version: MoonshineProtocolConstants.Version10,
+            MessageType: MoonshineMessageType.HelloResponse,
+            PayloadSize: 48,
+            SequenceNumber: sequenceNumber,
+            SessionId: sessionId,
+            TimestampUs: (ulong)Stopwatch.GetTimestamp());
+
+        var respPayload = new MoonshineHelloResponsePayload
+        {
+            ServerVersionMajor = 1,
+            ServerVersionMinor = 0,
+            NegotiatedCapabilities = MoonshineCapabilities.Hevc | MoonshineCapabilities.ReedSolomonFec,
+            AssignedSessionId = sessionId,
+            ServerNonce = 0xABCDEF123456UL,
+            ChallengeSalt = new MoonshineUuid128(Guid.NewGuid()),
+            SessionLeaseSeconds = 3600,
+            Reserved = 0
+        };
+
+        MoonshineProtocolCodec.TryWriteHeader(in respHdr, respBuf);
+        MoonshineProtocolCodec.TryWriteHelloResponse(in respPayload, respBuf.AsSpan(MoonshineProtocolConstants.HeaderSize));
+        return respBuf;
+    }
+
+    private static byte[] CreateSessionSetupResponseBuffer(uint sequenceNumber, ulong sessionId, int hostPort)
+    {
+        byte[] respBuf = new byte[MoonshineProtocolConstants.HeaderSize + 32];
+        var respHdr = new MoonshinePacketHeader(
+            Magic: MoonshineProtocolConstants.Magic,
+            Version: MoonshineProtocolConstants.Version10,
+            MessageType: MoonshineMessageType.SessionSetupResponse,
+            PayloadSize: 32,
+            SequenceNumber: sequenceNumber,
+            SessionId: sessionId,
+            TimestampUs: (ulong)Stopwatch.GetTimestamp());
+
+        var respPayload = new MoonshineSessionSetupResponsePayload
+        {
+            StatusCode = MoonshineErrorCode.Success,
+            VideoStreamId = 1,
+            AudioStreamId = 2,
+            FeedbackStreamId = 3,
+            HostUdpVideoPort = (ushort)hostPort,
+            HostUdpAudioPort = (ushort)hostPort,
+            HostUdpFeedbackPort = (ushort)hostPort,
+            HostUdpInputPort = (ushort)hostPort,
+            NegotiatedMtu = 1188,
+            Reserved = 0
+        };
+
+        MoonshineProtocolCodec.TryWriteHeader(in respHdr, respBuf);
+        MoonshineProtocolCodec.TryWriteSessionSetupResponse(in respPayload, respBuf.AsSpan(MoonshineProtocolConstants.HeaderSize));
+        return respBuf;
+    }
 }

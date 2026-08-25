@@ -543,13 +543,28 @@ public static class MoonshineProtocolCodec
     }
 
     /// <summary>
-    /// Evaluates whether candidate sequence number is newer than previous using RFC 1982 modular serial arithmetic.
+    /// Evaluates whether candidate 16-bit sequence number is newer than previous using RFC 1982 modular serial arithmetic.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool IsNewerSequence16(ushort candidate, ushort previous)
+    {
+        return candidate != previous && unchecked((short)(candidate - previous)) > 0;
+    }
+
+    /// <summary>
+    /// Evaluates whether candidate 32-bit sequence number is newer than previous using RFC 1982 modular serial arithmetic.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool IsNewerSequence(uint candidate, uint previous)
     {
         return candidate != previous && unchecked((int)(candidate - previous)) > 0;
     }
+
+    /// <summary>
+    /// Evaluates whether candidate 32-bit sequence number is newer than previous using RFC 1982 modular serial arithmetic.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool IsNewerSequence32(uint candidate, uint previous) => IsNewerSequence(candidate, previous);
 
     /// <summary>
     /// Evaluates whether candidate frame index is newer than previous using modular serial arithmetic.
@@ -559,6 +574,30 @@ public static class MoonshineProtocolCodec
     {
         return candidate != previous && unchecked((long)(candidate - previous)) > 0;
     }
+
+    /// <summary>
+    /// Evaluates whether candidate 64-bit sequence number / frame index is newer than previous using modular serial arithmetic.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool IsNewerSequence64(ulong candidate, ulong previous) => IsNewerFrameIndex(candidate, previous);
+
+    /// <summary>
+    /// Returns the signed 16-bit modular sequence distance (candidate - previous) under RFC 1982 rules.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static short SequenceDistance16(ushort candidate, ushort previous) => unchecked((short)(candidate - previous));
+
+    /// <summary>
+    /// Returns the signed 32-bit modular sequence distance (candidate - previous) under RFC 1982 rules.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static int SequenceDistance32(uint candidate, uint previous) => unchecked((int)(candidate - previous));
+
+    /// <summary>
+    /// Returns the signed 64-bit modular sequence distance (candidate - previous) under RFC 1982 rules.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static long SequenceDistance64(ulong candidate, ulong previous) => unchecked((long)(candidate - previous));
 
     /// <summary>
     /// Returns whether the given message type strictly requires a non-zero negotiated Session ID.
