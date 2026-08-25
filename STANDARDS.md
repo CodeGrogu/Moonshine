@@ -16,6 +16,36 @@ These engineering standards replace the missing reviewer with deterministic mech
 
 Compilation is not proof of correctness. Test suite execution is proof only if the assertions validate real transformed data values rather than simply verifying that no exception was thrown.
 
+### The Universal Definition of Done (DoD)
+
+A task is NEVER complete because a reviewer says "looks good" or because code "did not throw". The universal completion condition is:
+
+$$\text{Implementation} + \text{Tests} + \text{Independent Review} + \text{Evidence} + \text{Definition of Done} + \text{No Unresolved Blockers} = \mathbf{DONE}$$
+
+### The TODO Program Execution Protocol (`/TODO` and `/CONTINUE`)
+
+When invoked via `/TODO`, the Orchestrator does not merely list tasks. It executes the 18-step TODO program continuously:
+1. Read `TODO.md`.
+2. Parse TODOs and dependencies.
+3. Select highest-priority actionable TODO.
+4. Check repository state.
+5. Understand the task.
+6. Research authoritative documentation.
+7. Inspect existing implementation.
+8. Implement.
+9. Build (`scripts/build.ps1 -SkipTests`).
+10. Test (`ctest`, `dotnet test`).
+11. Review (Adversarial self-critique Rule 2 and specialist evaluation).
+12. Correct (fix edge cases and issues).
+13. Re-test.
+14. Re-review.
+15. Verify evidence (`scripts/verify_codebase.ps1`, Rule 9 provenance).
+16. Mark the TODO complete in `TODO.md`.
+17. Commit/checkpoint the state with commit-to-issue association.
+18. Select the next actionable TODO and repeat until all TODOs are genuinely complete.
+
+If interrupted, `/CONTINUE` recovers execution from the persisted checkpoint state in `TODO.md` and `task.md` without restarting from scratch.
+
 ---
 
 ## The Ten Core Rules
