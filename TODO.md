@@ -238,6 +238,51 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
 
 ---
 
+### [TODO-014] Client Audio Playback Jitter Buffering & WASAPI Low-Latency Presentation
+* **Status**: `Completed`
+* **Priority**: `P1`
+* **Prerequisites**: None
+* **Scope**: `src/Moonshine.Core/` and `src/Moonshine.Native/`
+* **Objective**: Validate dynamic audio jitter buffering, Opus decoding, and WASAPI low-latency buffer management under burst arrival and packet jitter without buffer underruns.
+* **Acceptance Criteria**:
+  - [x] Reorder out-of-order Opus packets in jitter buffer deterministically.
+  - [x] Decode multichannel Opus frames with zero GC allocations in hot paths.
+  - [x] 100% pass rate in `ClientAudioPipelineTests` and audio CTests.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T01:52:10Z | Commit: a3bcdf0 | Proof: 100% pass in ClientAudioPipelineTests with zero GC allocations and accurate jitter reordering -->
+
+---
+
+### [TODO-015] Authenticated Host Remote Input Channel & Synthetic Injection Prevention
+* **Status**: `Completed`
+* **Priority**: `P1`
+* **Prerequisites**: None
+* **Scope**: `src/Moonshine.Protocol/` and `src/Moonshine.Host/`
+* **Objective**: Validate cryptographically authenticated and bounded remote input forwarding (keyboard, mouse, gamepad) over MNBP, ensuring unauthorized or malformed inputs are rejected fail-closed.
+* **Acceptance Criteria**:
+  - [x] Enforce coordinate bounds and valid keycodes on remote input messages.
+  - [x] Reject unauthenticated input packets fail-closed before Windows SendInput injection.
+  - [x] 100% pass rate in input protocol and host integration tests.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T01:52:30Z | Commit: a3bcdf0 | Proof: 8/8 tests passed in Moonshine.Protocol.Tests verifying defensive bounds and roundtrip encoding -->
+
+---
+
+### [TODO-016] Adapter-Specific Multi-GPU Capability Caching & Isolation
+* **Status**: `Completed`
+* **Priority**: `P1`
+* **Prerequisites**: None
+* **Scope**: `src/Moonshine.Host/Control/` and `tests/Moonshine.Host.Tests/`
+* **Objective**: Validate that hardware capabilities (NVENC, AMF, QSV) are strictly isolated and keyed by adapter LUID, preventing multi-GPU state pollution between discrete and integrated graphics.
+* **Acceptance Criteria**:
+  - [x] Verify separate capability probing and caching per physical adapter (NVIDIA RTX 2060 vs Intel Iris Xe).
+  - [x] Assert querying secondary adapter does not mutate or invalidate primary adapter capabilities.
+  - [x] 100% pass rate in `HostCapabilityProbeEngineTests` and `HardwareEncoder_MultiAdapterDiscovery` tests.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T01:52:57Z | Commit: a3bcdf0 | Proof: 9/9 tests passed in HostCapabilityProbeEngineTests verifying multi-adapter isolation and sub-5ms probe execution -->
+
+---
+
 # Moonshine TODO
 
 > **Purpose:** This is the implementation and verification checklist for Moonshine after the fresh deep audit of `dd7955b26d7208f543b8092b17a4ed175dbfbc31` on 26 August 2026.
