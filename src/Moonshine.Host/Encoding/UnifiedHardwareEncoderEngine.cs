@@ -325,6 +325,20 @@ public sealed class UnifiedHardwareEncoderEngine : IDisposable
         }
     }
 
+    public bool TryRecoverDevice(IntPtr newD3dDevice)
+    {
+        lock (_lock)
+        {
+            if (_disposed) return false;
+            bool recovered = _pipeline.TryRecoverDevice(newD3dDevice);
+            if (recovered)
+            {
+                Volatile.Write(ref _hasProducedValidOutput, false);
+            }
+            return recovered;
+        }
+    }
+
     public static bool TryQueryCapabilities(
         EncoderVendor vendor,
         out MoonshineEncoderCaps caps,

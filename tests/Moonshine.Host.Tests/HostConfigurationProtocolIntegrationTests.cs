@@ -184,6 +184,7 @@ public class HostConfigurationProtocolIntegrationTests
         }
 
         public void RequestKeyframe() { }
+        public bool TryRecoverDevice(IntPtr newD3dDevice) => true;
         public void Dispose() { }
     }
 

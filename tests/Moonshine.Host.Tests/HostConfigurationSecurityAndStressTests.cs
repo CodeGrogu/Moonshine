@@ -187,6 +187,7 @@ public class HostConfigurationSecurityAndStressTests
         }
 
         public void RequestKeyframe() { }
+        public bool TryRecoverDevice(IntPtr newD3dDevice) => true;
         public void Dispose() { }
     }
 

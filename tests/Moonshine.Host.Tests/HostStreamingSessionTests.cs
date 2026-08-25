@@ -251,6 +251,8 @@ public class HostStreamingSessionTests
             ForceIdrCallCount++;
         }
 
+        public bool TryRecoverDevice(IntPtr newD3dDevice) => true;
+
         public void Dispose()
         {
             IsActive = false;

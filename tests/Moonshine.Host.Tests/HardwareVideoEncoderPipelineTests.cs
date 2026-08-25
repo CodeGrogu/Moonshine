@@ -920,6 +920,7 @@ public class HardwareVideoEncoderPipelineTests
 
         public bool Reconfigure(uint bitrateKbps, uint fps, uint peakBitrateKbps = 0) => true;
         public void RequestKeyframe() { }
+        public bool TryRecoverDevice(IntPtr newD3dDevice) => true;
         public void Dispose()
         {
             _disposed = true;

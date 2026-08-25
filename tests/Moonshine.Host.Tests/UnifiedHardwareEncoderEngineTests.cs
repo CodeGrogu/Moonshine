@@ -84,17 +84,17 @@ public class UnifiedHardwareEncoderEngineTests
         (afterAlloc - beforeAlloc).Should().Be(0, "Hardware video encoder hot path must have zero GC allocations");
     }
 
-    [Fact]
+    [SkippableFact]
     public unsafe void UnifiedHardwareEncoderEngine_AutoSelection_WithHardwareDevice_SelectsVendorAndEncodesRealFrames()
     {
         IntPtr dev = MoonshineNativeMethods.D3D11CreateDevice(0);
-        if (dev == IntPtr.Zero) return;
+        Skip.If(dev == IntPtr.Zero, "Physical Direct3D 11 device (GPU) is unavailable on this runner.");
 
         IntPtr tex = MoonshineNativeMethods.D3D11CreateTexture(dev, 1920, 1080, 0);
         if (tex == IntPtr.Zero)
         {
             MoonshineNativeMethods.D3D11DestroyDevice(dev);
-            return;
+            Skip.If(true, "Direct3D 11 test texture allocation failed.");
         }
 
         IntPtr decoder = MoonshineNativeMethods.VideoCreateD3D11(IntPtr.Zero, 1920, 1080, (uint)VideoCodec.Hevc);
@@ -111,7 +111,7 @@ public class UnifiedHardwareEncoderEngineTests
                 d3dDevice: dev
             );
 
-            if (!engine.IsActive) return;
+            Skip.IfNot(engine.IsActive, "Hardware video encoder is unavailable on this runner.");
 
             engine.RuntimeState.Should().Be(EncoderRuntimeState.Ready);
             engine.Vendor.Should().NotBe(EncoderVendor.Auto);
@@ -170,17 +170,17 @@ public class UnifiedHardwareEncoderEngineTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public void UnifiedHardwareEncoderEngine_RapidStartStop_10Cycles_SoakTest()
     {
         IntPtr dev = MoonshineNativeMethods.D3D11CreateDevice(0);
-        if (dev == IntPtr.Zero) return;
+        Skip.If(dev == IntPtr.Zero, "Physical Direct3D 11 device (GPU) is unavailable on this runner.");
 
         IntPtr tex = MoonshineNativeMethods.D3D11CreateTexture(dev, 1280, 720, 0);
         if (tex == IntPtr.Zero)
         {
             MoonshineNativeMethods.D3D11DestroyDevice(dev);
-            return;
+            Skip.If(true, "Direct3D 11 test texture allocation failed.");
         }
 
         try
@@ -203,7 +203,6 @@ public class UnifiedHardwareEncoderEngineTests
                 var result = engine.SubmitFrame(tex, true, buffer, out int written);
                 result.Submitted.Should().BeTrue();
                 written.Should().BeGreaterThan(0);
-                engine.RecordDecoderAcceptance(result.PacketDesc.FrameIndex);
             }
         }
         finally
@@ -213,7 +212,7 @@ public class UnifiedHardwareEncoderEngineTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task UnifiedHardwareEncoderEngine_MultiInstance_Concurrency_SoakTest()
     {
         IntPtr dev1 = MoonshineNativeMethods.D3D11CreateDevice(0);
@@ -222,7 +221,7 @@ public class UnifiedHardwareEncoderEngineTests
         {
             if (dev1 != IntPtr.Zero) MoonshineNativeMethods.D3D11DestroyDevice(dev1);
             if (dev2 != IntPtr.Zero) MoonshineNativeMethods.D3D11DestroyDevice(dev2);
-            return;
+            Skip.If(true, "Dual Direct3D 11 device creation failed (GPU unavailable).");
         }
 
         IntPtr tex1 = MoonshineNativeMethods.D3D11CreateTexture(dev1, 1920, 1080, 0);
@@ -233,7 +232,7 @@ public class UnifiedHardwareEncoderEngineTests
             if (tex2 != IntPtr.Zero) MoonshineNativeMethods.D3D11DestroyTexture(tex2);
             MoonshineNativeMethods.D3D11DestroyDevice(dev1);
             MoonshineNativeMethods.D3D11DestroyDevice(dev2);
-            return;
+            Skip.If(true, "Direct3D 11 test texture allocation failed.");
         }
 
         try
@@ -241,7 +240,7 @@ public class UnifiedHardwareEncoderEngineTests
             using var engine1 = new UnifiedHardwareEncoderEngine(1920, 1080, 60, 20000, VideoCodec.Hevc, preferredVendor: EncoderVendor.Auto, d3dDevice: dev1);
             using var engine2 = new UnifiedHardwareEncoderEngine(1280, 720, 60, 10000, VideoCodec.H264, preferredVendor: EncoderVendor.Auto, d3dDevice: dev2);
 
-            if (!engine1.IsActive || !engine2.IsActive) return;
+            Skip.If(!engine1.IsActive || !engine2.IsActive, "Hardware video encoder engines are unavailable on this runner.");
 
             using var startBarrier = new ManualResetEventSlim(false);
 
@@ -254,7 +253,6 @@ public class UnifiedHardwareEncoderEngineTests
                     var res1 = engine1.SubmitFrame(tex1, i == 0, buffer1, out int written1);
                     res1.Submitted.Should().BeTrue();
                     written1.Should().BeGreaterThan(0);
-                    engine1.RecordDecoderAcceptance(res1.PacketDesc.FrameIndex);
                 }
             });
 
@@ -267,7 +265,6 @@ public class UnifiedHardwareEncoderEngineTests
                     var res2 = engine2.SubmitFrame(tex2, i == 0, buffer2, out int written2);
                     res2.Submitted.Should().BeTrue();
                     written2.Should().BeGreaterThan(0);
-                    engine2.RecordDecoderAcceptance(res2.PacketDesc.FrameIndex);
                 }
             });
 
@@ -283,6 +280,66 @@ public class UnifiedHardwareEncoderEngineTests
             MoonshineNativeMethods.D3D11DestroyTexture(tex2);
             MoonshineNativeMethods.D3D11DestroyDevice(dev1);
             MoonshineNativeMethods.D3D11DestroyDevice(dev2);
+        }
+    }
+
+    [SkippableFact]
+    public async Task UnifiedHardwareEncoderEngine_SingleInstance_ConcurrentCallers_ThreadSafetyTest()
+    {
+        IntPtr dev = MoonshineNativeMethods.D3D11CreateDevice(0);
+        Skip.If(dev == IntPtr.Zero, "Physical Direct3D 11 device (GPU) is unavailable on this runner.");
+
+        IntPtr tex = MoonshineNativeMethods.D3D11CreateTexture(dev, 1920, 1080, 0);
+        if (tex == IntPtr.Zero)
+        {
+            MoonshineNativeMethods.D3D11DestroyDevice(dev);
+            Skip.If(true, "Direct3D 11 test texture allocation failed.");
+        }
+
+        try
+        {
+            using var engine = new UnifiedHardwareEncoderEngine(
+                1920,
+                1080,
+                fps: 60,
+                bitrateKbps: 20000,
+                codec: VideoCodec.Hevc,
+                preferredVendor: EncoderVendor.Auto,
+                d3dDevice: dev
+            );
+
+            Skip.IfNot(engine.IsActive, "Hardware video encoder is unavailable on this runner.");
+
+            using var startBarrier = new ManualResetEventSlim(false);
+            const int callerCount = 4;
+            const int framesPerCaller = 10;
+            var tasks = new Task[callerCount];
+
+            for (int t = 0; t < callerCount; t++)
+            {
+                tasks[t] = Task.Run(() =>
+                {
+                    startBarrier.Wait();
+                    byte[] localBuffer = new byte[1024 * 1024 * 2];
+                    for (int f = 0; f < framesPerCaller; f++)
+                    {
+                        var res = engine.SubmitFrame(tex, f == 0, localBuffer, out int written);
+                        res.Submitted.Should().BeTrue();
+                        written.Should().BeGreaterThan(0);
+                    }
+                });
+            }
+
+            startBarrier.Set();
+            await Task.WhenAll(tasks);
+
+            engine.FramesEncoded.Should().Be((long)(callerCount * framesPerCaller));
+            engine.EncodingErrors.Should().Be(0);
+        }
+        finally
+        {
+            MoonshineNativeMethods.D3D11DestroyTexture(tex);
+            MoonshineNativeMethods.D3D11DestroyDevice(dev);
         }
     }
 }

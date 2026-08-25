@@ -181,86 +181,9 @@ public sealed class NvencHardwareEncoderPipeline : IVideoEncoderPipeline
         out int bytesWritten
     )
     {
-        desc = default;
-        bytesWritten = 0;
-        long startQpc = System.Diagnostics.Stopwatch.GetTimestamp();
-
         lock (_lock)
         {
-            Volatile.Write(ref _frameSubmitted, true);
-            if (_disposed || _handle == IntPtr.Zero || d3dTexture == IntPtr.Zero) return false;
-
-            _runtimeState = EncoderRuntimeState.Encoding;
-            try
-            {
-                fixed (byte* bufferPtr = outBitstream)
-                {
-                    int res = MoonshineNativeMethods.EncoderEncodeFrame(
-                        _handle,
-                        d3dTexture,
-                        forceIdr ? 1 : 0,
-                        out desc,
-                        bufferPtr,
-                        (uint)outBitstream.Length,
-                        out uint written
-                    );
-
-                    if (res > 0)
-                    {
-                        bytesWritten = (int)written;
-                        long elapsed = System.Diagnostics.Stopwatch.GetTimestamp() - startQpc;
-                        Interlocked.Increment(ref _framesEncoded);
-                        Interlocked.Add(ref _totalEncodingTimeQpc, (ulong)elapsed);
-
-                        desc.FrameIndex = frameId;
-                        if (timestampUs > 0)
-                        {
-                            desc.TimestampQpc = (long)timestampUs;
-                        }
-
-                        if (bytesWritten > 0)
-                        {
-                            Volatile.Write(ref _outputReceived, true);
-                            var auResult = BitstreamValidator.ValidateAccessUnit(_codec, outBitstream[..bytesWritten]);
-                            if (auResult.HasStructurallyValidPayload)
-                            {
-                                Volatile.Write(ref _bitstreamStructurallyValid, true);
-                            }
-
-                            if (!auResult.IsValid || !auResult.ContainsFrameData)
-                            {
-                                bytesWritten = 0;
-                                _runtimeState = EncoderRuntimeState.Ready;
-                                return false;
-                            }
-
-                            Volatile.Write(ref _accessUnitValid, true);
-                            Volatile.Write(ref _hasProducedValidOutput, true);
-
-                            if (!_hasValidFrame)
-                            {
-                                Volatile.Write(ref _firstValidFrameId, frameId);
-                                Volatile.Write(ref _hasValidFrame, true);
-                            }
-                            Volatile.Write(ref _lastValidFrameId, frameId);
-
-                            bool isKeyframe = auResult.HasCodecHeaders || auResult.HasRandomAccessMarker || auResult.HasParameterSets || auResult.HasIdr || auResult.HasRandomAccessPoint;
-                            desc.IsKeyframe = (byte)(isKeyframe ? 1 : desc.IsKeyframe);
-                        }
-
-                        _runtimeState = EncoderRuntimeState.Ready;
-                        return true;
-                    }
-
-                    _runtimeState = EncoderRuntimeState.Ready;
-                    return false;
-                }
-            }
-            catch
-            {
-                _runtimeState = EncoderRuntimeState.Faulted;
-                throw;
-            }
+            return TryEncodeFrameCore(d3dTexture, frameId, timestampUs, forceIdr, out desc, outBitstream, out bytesWritten);
         }
     }
 
@@ -276,7 +199,97 @@ public sealed class NvencHardwareEncoderPipeline : IVideoEncoderPipeline
         {
             ulong frameId = Interlocked.Increment(ref _submittedFrameCounter);
             ulong timestampUs = MoonshineMediaClock.GetCurrentTimestampMicroseconds();
-            return TryEncodeFrame(d3dTexture, frameId, timestampUs, forceIdr, out desc, outBitstream, out bytesWritten);
+            return TryEncodeFrameCore(d3dTexture, frameId, timestampUs, forceIdr, out desc, outBitstream, out bytesWritten);
+        }
+    }
+
+    private unsafe bool TryEncodeFrameCore(
+        IntPtr d3dTexture,
+        ulong frameId,
+        ulong timestampUs,
+        bool forceIdr,
+        out MoonshineEncodedPacketDesc desc,
+        Span<byte> outBitstream,
+        out int bytesWritten
+    )
+    {
+        desc = default;
+        bytesWritten = 0;
+        long startQpc = System.Diagnostics.Stopwatch.GetTimestamp();
+
+        Volatile.Write(ref _frameSubmitted, true);
+        if (_disposed || _handle == IntPtr.Zero || d3dTexture == IntPtr.Zero) return false;
+
+        _runtimeState = EncoderRuntimeState.Encoding;
+        try
+        {
+            fixed (byte* bufferPtr = outBitstream)
+            {
+                int res = MoonshineNativeMethods.EncoderEncodeFrame(
+                    _handle,
+                    d3dTexture,
+                    forceIdr ? 1 : 0,
+                    out desc,
+                    bufferPtr,
+                    (uint)outBitstream.Length,
+                    out uint written
+                );
+
+                if (res > 0)
+                {
+                    bytesWritten = (int)written;
+                    long elapsed = System.Diagnostics.Stopwatch.GetTimestamp() - startQpc;
+                    Interlocked.Increment(ref _framesEncoded);
+                    Interlocked.Add(ref _totalEncodingTimeQpc, (ulong)elapsed);
+
+                    desc.FrameIndex = frameId;
+                    if (timestampUs > 0)
+                    {
+                        desc.TimestampQpc = (long)timestampUs;
+                    }
+
+                    if (bytesWritten > 0)
+                    {
+                        Volatile.Write(ref _outputReceived, true);
+                        var auResult = BitstreamValidator.ValidateAccessUnit(_codec, outBitstream[..bytesWritten]);
+                        if (auResult.HasStructurallyValidPayload)
+                        {
+                            Volatile.Write(ref _bitstreamStructurallyValid, true);
+                        }
+
+                        if (!auResult.IsValid || !auResult.ContainsFrameData)
+                        {
+                            bytesWritten = 0;
+                            _runtimeState = EncoderRuntimeState.Ready;
+                            return false;
+                        }
+
+                        Volatile.Write(ref _accessUnitValid, true);
+                        Volatile.Write(ref _hasProducedValidOutput, true);
+
+                        if (!_hasValidFrame)
+                        {
+                            Volatile.Write(ref _firstValidFrameId, frameId);
+                            Volatile.Write(ref _hasValidFrame, true);
+                        }
+                        Volatile.Write(ref _lastValidFrameId, frameId);
+
+                        bool isKeyframe = auResult.HasCodecHeaders || auResult.HasRandomAccessMarker || auResult.HasParameterSets || auResult.HasIdr || auResult.HasRandomAccessPoint;
+                        desc.IsKeyframe = (byte)(isKeyframe ? 1 : desc.IsKeyframe);
+                    }
+
+                    _runtimeState = EncoderRuntimeState.Ready;
+                    return true;
+                }
+
+                _runtimeState = EncoderRuntimeState.Ready;
+                return false;
+            }
+        }
+        catch
+        {
+            _runtimeState = EncoderRuntimeState.Faulted;
+            throw;
         }
     }
 
@@ -284,7 +297,10 @@ public sealed class NvencHardwareEncoderPipeline : IVideoEncoderPipeline
     {
         lock (_lock)
         {
-            if (_disposed) return;
+            if (_disposed || !_hasValidFrame) return;
+            ulong lastValid = Volatile.Read(ref _lastValidFrameId);
+            if (frameId > lastValid) return;
+
             Volatile.Write(ref _hasDecoderAcceptance, true);
             ulong currentLast = Volatile.Read(ref _lastDecoderAcceptedFrameId);
             if (frameId >= currentLast)
@@ -300,6 +316,36 @@ public sealed class NvencHardwareEncoderPipeline : IVideoEncoderPipeline
     }
 
     public EncodeSubmissionResult SubmitFrame(
+        IntPtr d3dTexture,
+        ulong frameId,
+        ulong timestampUs,
+        bool forceIdr,
+        Span<byte> outBitstream,
+        out int bytesWritten
+    )
+    {
+        lock (_lock)
+        {
+            return SubmitFrameCore(d3dTexture, frameId, timestampUs, forceIdr, outBitstream, out bytesWritten);
+        }
+    }
+
+    public EncodeSubmissionResult SubmitFrame(
+        IntPtr d3dTexture,
+        bool forceIdr,
+        Span<byte> outBitstream,
+        out int bytesWritten
+    )
+    {
+        lock (_lock)
+        {
+            ulong frameId = Interlocked.Increment(ref _submittedFrameCounter);
+            ulong timestampUs = MoonshineMediaClock.GetCurrentTimestampMicroseconds();
+            return SubmitFrameCore(d3dTexture, frameId, timestampUs, forceIdr, outBitstream, out bytesWritten);
+        }
+    }
+
+    private EncodeSubmissionResult SubmitFrameCore(
         IntPtr d3dTexture,
         ulong frameId,
         ulong timestampUs,
@@ -334,7 +380,7 @@ public sealed class NvencHardwareEncoderPipeline : IVideoEncoderPipeline
             );
         }
 
-        bool success = TryEncodeFrame(d3dTexture, frameId, timestampUs, forceIdr, out var desc, outBitstream, out bytesWritten);
+        bool success = TryEncodeFrameCore(d3dTexture, frameId, timestampUs, forceIdr, out var desc, outBitstream, out bytesWritten);
         return new EncodeSubmissionResult(
             Submitted: true,
             OutputAvailable: success && bytesWritten > 0,
@@ -343,21 +389,6 @@ public sealed class NvencHardwareEncoderPipeline : IVideoEncoderPipeline
             PacketDesc: desc,
             Result: success ? EncoderResult.Success : EncoderResult.EncoderFailure
         );
-    }
-
-    public EncodeSubmissionResult SubmitFrame(
-        IntPtr d3dTexture,
-        bool forceIdr,
-        Span<byte> outBitstream,
-        out int bytesWritten
-    )
-    {
-        lock (_lock)
-        {
-            ulong frameId = Interlocked.Increment(ref _submittedFrameCounter);
-            ulong timestampUs = MoonshineMediaClock.GetCurrentTimestampMicroseconds();
-            return SubmitFrame(d3dTexture, frameId, timestampUs, forceIdr, outBitstream, out bytesWritten);
-        }
     }
 
     public bool ReconfigureBitrate(uint bitrateKbps, uint peakBitrateKbps)
@@ -455,6 +486,45 @@ public sealed class NvencHardwareEncoderPipeline : IVideoEncoderPipeline
             {
                 MoonshineNativeMethods.EncoderRequestKeyframe(_handle);
             }
+        }
+    }
+
+    public bool TryRecoverDevice(IntPtr newD3dDevice)
+    {
+        lock (_lock)
+        {
+            if (_disposed) return false;
+            if (_handle != IntPtr.Zero)
+            {
+                MoonshineNativeMethods.EncoderDestroy(_handle);
+                _handle = IntPtr.Zero;
+            }
+
+            var config = new MoonshineEncoderConfig
+            {
+                Width = _width,
+                Height = _height,
+                Fps = _fps,
+                BitrateKbps = _bitrateKbps,
+                PeakBitrateKbps = _peakBitrateKbps,
+                Codec = (uint)_codec,
+                RcMode = 0,
+                GopLength = 0,
+                EnableIntraRefresh = (byte)(_intraRefreshEnabled ? 1 : 0),
+                EnableFillerData = 1
+            };
+
+            _handle = MoonshineNativeMethods.EncoderCreate((uint)EncoderVendor.NvidiaNvenc, newD3dDevice, in config);
+            if (_handle != IntPtr.Zero)
+            {
+                _runtimeState = EncoderRuntimeState.Ready;
+                _ = MoonshineNativeMethods.NvencSetTuning(_handle, (uint)_preset, (uint)_tuning);
+                Volatile.Write(ref _hasProducedValidOutput, false);
+                return true;
+            }
+
+            _runtimeState = EncoderRuntimeState.Faulted;
+            return false;
         }
     }
 

@@ -71,4 +71,5 @@ public interface IVideoEncoderPipeline : IDisposable
 
     bool Reconfigure(uint bitrateKbps, uint fps, uint peakBitrateKbps = 0);
     void RequestKeyframe();
+    bool TryRecoverDevice(IntPtr newD3dDevice);
 }

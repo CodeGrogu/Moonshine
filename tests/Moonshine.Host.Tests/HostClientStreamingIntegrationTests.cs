@@ -193,6 +193,8 @@ public class HostClientStreamingIntegrationTests
             ForceIdrCount++;
         }
 
+        public bool TryRecoverDevice(IntPtr newD3dDevice) => true;
+
         public void Dispose() { }
     }
 
