@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Evaluates the 6-term Definition of Done (DoD) mathematical formula for a specific Moonshine task.
 .DESCRIPTION
@@ -65,9 +65,24 @@ $failedTerms = @()
 
 # Term 1: Implementation
 Write-Host "  [Term 1/6] Implementation... " -NoNewline
-# Check that git repository is in a working state
-$gitStatus = git status --porcelain
-Write-Host "VERIFIED" -ForegroundColor Green
+# Check if working tree or commit history shows active transformation
+$gitDiffCount = @(git status --porcelain).Count
+if ($hasValidEvidence) {
+    $commitSha = $matches[2]
+    & git cat-file -e "$($commitSha)^{commit}" 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "VERIFIED (Committed in $commitSha)" -ForegroundColor Green
+    } elseif ($gitDiffCount -gt 0) {
+        Write-Host "VERIFIED (Staged/Uncommitted in working tree)" -ForegroundColor Green
+    } else {
+        Write-Host "FAILED" -ForegroundColor Red
+        $failedTerms += "Term 1 (Implementation): No implementation changes found in working tree or commit $commitSha."
+    }
+} elseif ($gitDiffCount -gt 0) {
+    Write-Host "VERIFIED (Uncommitted in working tree)" -ForegroundColor Green
+} else {
+    Write-Host "VERIFIED (Working tree consistent)" -ForegroundColor Green
+}
 
 # Term 2: Tests
 Write-Host "  [Term 2/6] Tests & Toolchain Preflight... " -NoNewline
@@ -95,16 +110,33 @@ if ($checkedMatches.Count -eq 0) {
     Write-Host "FAILED" -ForegroundColor Red
     $failedTerms += "Term 3 (Independent Review): Task has zero verified acceptance criteria."
 } else {
-    Write-Host "VERIFIED" -ForegroundColor Green
+    Write-Host "VERIFIED ($($checkedMatches.Count) criteria verified)" -ForegroundColor Green
 }
 
-# Term 4: Evidence (Rule 9 Provenance Tag)
+# Term 4: Evidence (Rule 9 Provenance Tag & Cryptographic Commit Verification)
 Write-Host "  [Term 4/6] Rule 9 Provenance Evidence... " -NoNewline
 if (-not $hasValidEvidence) {
     Write-Host "FAILED" -ForegroundColor Red
     $failedTerms += "Term 4 (Evidence): Missing valid timestamped Rule 9 provenance tag matching schema '<!-- VERIFIED: <ISO8601> | Commit: <SHA> | Proof: <desc> -->'."
 } else {
-    Write-Host "VERIFIED ($($matches[1]))" -ForegroundColor Green
+    $provTimestamp = $matches[1]
+    $provCommit = $matches[2]
+    $provProof = $matches[3]
+
+    # Verify commit exists cryptographically in local git DAG
+    & git cat-file -e "$($provCommit)^{commit}" 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "FAILED" -ForegroundColor Red
+        $failedTerms += "Term 4 (Evidence): Recorded commit SHA '$provCommit' does not exist in the local Git repository history."
+    } else {
+        # Verify commit message includes issue reference
+        $commitMsg = git log -1 --pretty=format:"%s" $provCommit
+        if ($commitMsg -notmatch '#\d+') {
+            Write-Host "WARNING" -ForegroundColor Yellow
+            Write-Host "    Note: Commit $provCommit subject line lacks issue reference (#<num>)." -ForegroundColor Yellow
+        }
+        Write-Host "VERIFIED (Timestamp: $provTimestamp | Commit: $provCommit)" -ForegroundColor Green
+    }
 }
 
 # Term 5: Definition of Done Checkboxes
