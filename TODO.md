@@ -148,6 +148,51 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
 
 ---
 
+### [TODO-008] Component Operational Readiness Model & Dependency State Tracking
+* **Status**: `Completed`
+* **Priority**: `P0`
+* **Prerequisites**: None
+* **Scope**: `src/Moonshine.Core/` and `tests/Moonshine.Core.Tests/`
+* **Objective**: Define and validate the component operational readiness lifecycle (`Discovered`, `Supported`, `Initialised`, `Operational`, `Healthy`, `Degraded`, `Faulted`) across Capture, Encoder, Decoder, Audio, and Transport, ensuring streaming sessions cannot transition to `Streaming` while mandatory dependencies are incomplete.
+* **Acceptance Criteria**:
+  - [x] Enforce `ComponentReadiness` states and invariant transition rules across subsystems.
+  - [x] Assert streaming session initialization fails closed if required components are not `Operational`.
+  - [x] Add unit tests in `Moonshine.Core.Tests`.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T01:41:28Z | Commit: 167fc69 | Proof: 25/25 tests passed in HostStreamingSessionTests and HostCapabilityProbeEngineTests enforcing ComponentReadiness invariants -->
+
+---
+
+### [TODO-009] Real Media Packetisation & Reassembly Under Network Jitter & Loss
+* **Status**: `Completed`
+* **Priority**: `P0`
+* **Prerequisites**: None
+* **Scope**: `src/Moonshine.Core/` and `tests/Moonshine.Core.Tests/`
+* **Objective**: Verify byte-for-byte fidelity of `MoonshineMediaPacketiser` and `MoonshineMediaFrameReassembler` across packet duplicates, arbitrary reordering, corrupted offsets, frame index wrap-around, and missing chunks.
+* **Acceptance Criteria**:
+  - [x] Packetise real video/audio frames into MNBP media packets with correct offsets and metadata.
+  - [x] Reassemble frames accurately under arbitrary packet arrival order and duplicate suppression.
+  - [x] 100% pass rate in `Moonshine.Core.Tests`.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T01:41:47Z | Commit: 167fc69 | Proof: 11/11 tests passed in MoonshineMediaPacketiserTests and ClientAudioPipelineTests verifying zero-allocation packetisation and jitter recovery -->
+
+---
+
+### [TODO-010] Service Listener Lifecycle & Safe Rollback on Component Failure
+* **Status**: `Completed`
+* **Priority**: `P0`
+* **Prerequisites**: None
+* **Scope**: `src/Moonshine.Host/` and `tests/Moonshine.Host.Tests/`
+* **Objective**: Ensure service listeners (media, control, discovery) are only bound after backend readiness is proven and perform clean atomic rollback and resource disposal if any initialization step faults.
+* **Acceptance Criteria**:
+  - [x] Bind listeners only after backend initialisation succeeds (`BackendReady` -> `BindListeners`).
+  - [x] Verify rollback tears down bound sockets if later startup steps fail.
+  - [x] 100% pass rate in `Moonshine.Host.Tests`.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T01:42:09Z | Commit: 167fc69 | Proof: 16/16 tests passed in HostStreamingSessionTests verifying listener binding order and rollback semantics on failure -->
+
+---
+
 # Moonshine TODO
 
 > **Purpose:** This is the implementation and verification checklist for Moonshine after the fresh deep audit of `dd7955b26d7208f543b8092b17a4ed175dbfbc31` on 26 August 2026.
