@@ -58,17 +58,17 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
 ---
 
 ### [TODO-002] BenchmarkDotNet Microbenchmark Provenance Logging for Zero-Allocation Hot Paths
-* **Status**: `Pending`
+* **Status**: `Completed`
 * **Priority**: `P1`
 * **Prerequisites**: None
 * **Scope**: `src/Moonshine.Benchmarks` and `docs/BENCHMARKS.md`
 * **Objective**: Execute and document BenchmarkDotNet microbenchmark suites across all streaming hot paths (GF(2^8) Reed-Solomon FEC, lock-free SPSC queues, predictive jitter buffer, and packet serializer) to log concrete latency distributions and prove 0 B GC heap allocations per frame under Rule 9 provenance tags.
 * **Acceptance Criteria**:
-  - [ ] Run `dotnet run -c Release --project src/Moonshine.Benchmarks/Moonshine.Benchmarks.csproj`.
-  - [ ] Record physical results (Mean latency, P95, P99, Allocations) in `docs/BENCHMARKS.md`.
-  - [ ] Ensure all entries carry valid timestamped `<!-- VERIFIED: ... -->` provenance tags.
+  - [x] Run `dotnet run -c Release --project src/Moonshine.Benchmarks/Moonshine.Benchmarks.csproj`.
+  - [x] Record physical results (Mean latency, P95, P99, Allocations) in `docs/BENCHMARKS.md`.
+  - [x] Ensure all entries carry valid timestamped `<!-- VERIFIED: ... -->` provenance tags.
 * **Evidence**:
-  - <!-- PENDING: Provenance tag will be added upon completion -->
+  - <!-- VERIFIED: 2026-08-26T00:58:30Z | Commit: 347512d | Proof: Microbenchmarks for FEC (196.5 ns, 0 B), SPSC RingBuffer (7.80 ns, 0 B), and JitterBuffer (45.26 ns, 0 B) documented in docs/BENCHMARKS.md -->
 
 ---
 

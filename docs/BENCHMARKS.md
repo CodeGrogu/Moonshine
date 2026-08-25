@@ -299,6 +299,60 @@ BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
 > [!NOTE]
 > **Measurement Semantics & Design Invariants**: Capture source selection operates deterministically across heterogeneous multi-monitor, multi-adapter Windows topologies (8 displays, 3 GPU adapters with mixed HDR/SDR, rotated portrait 90 deg, inverted 180 deg, negative coordinates, duplicate resolutions, and detached outputs) in 16 to 115 nanoseconds with strictly **0 B** heap allocations (`readonly record struct CaptureSourceSelectionResult` and pre-allocated `DisplayOutputInfo.Descriptor`). Strict dimension checking in `RequireExactResolution` runs in 34.77 ns on dual-monitor and 95.04 ns on 8-display configurations. Non-HDR displays are strictly skipped when `RequireHdr = true`. Deterministic 5-stage tie-breaking eliminates array traversal dependencies.
 
+---
+
+### Galois Field GF(2^8) Reed-Solomon Forward Error Correction & SIMD Shard Recovery (Issue #82)
+<!-- VERIFIED: 2026-08-26T00:57:28Z | Commit: 347512d | Proof: dotnet run -c Release --project src/Moonshine.Benchmarks -- --filter *FecBenchmarks* --inProcess --job short in Windows 11 Pro build 26200, x64 RyuJIT AVX-512 -->
+
+```
+BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
+.NET SDK 10.0.400 / Host: .NET 9.0.16 (9.0.1626.22923), X64 RyuJIT AVX-512F+CD+BW+DQ+VL+VBMI
+
+| Method                     | Mean Latency | Error       | StdDev    | Ratio | Allocated Memory |
+| :------------------------- | -----------: | ----------: | --------: | ----: | ---------------: |
+| ScalarXorRecovery          |    903.52 ns | 1,006.66 ns | 55.178 ns |  1.00 |              0 B |
+| SimdVectorXor              |     39.27 ns |    20.01 ns |  1.097 ns |  0.04 |              0 B |
+| SimdReedSolomonFecRecovery |    196.52 ns |   103.85 ns |  5.692 ns |  0.22 |              0 B |
+```
+
+> [!NOTE]
+> **Measurement Semantics**: Measures local SIMD-accelerated Galois Field matrix multiplication and parity reconstruction over MTU-sized video payload buffers (1188 B). AVX2/AVX-512 SIMD kernels achieve a $23\times$ speedup over baseline scalar XOR recovery with strictly **0 B** managed allocations on the streaming hot path.
+
+---
+
+### Lock-Free SPSC Native & Managed Ring Buffer Operations (Issue #82)
+<!-- VERIFIED: 2026-08-26T00:58:07Z | Commit: 347512d | Proof: dotnet run -c Release --project src/Moonshine.Benchmarks -- --filter *RingBufferBenchmarks* --inProcess --job short in Windows 11 Pro build 26200, x64 RyuJIT AVX-512 -->
+
+```
+BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
+.NET SDK 10.0.400 / Host: .NET 9.0.16 (9.0.1626.22923), X64 RyuJIT AVX-512F+CD+BW+DQ+VL+VBMI
+
+| Method                      | Mean Latency | Error    | StdDev    | Allocated Memory |
+| :-------------------------- | -----------: | -------: | --------: | ---------------: |
+| EnqueueAndDequeue           |     10.36 ns |  5.27 ns | 0.2888 ns |              0 B |
+| SlotReturnEnqueueAndDequeue |      7.80 ns |  2.46 ns | 0.1349 ns |              0 B |
+```
+
+> [!NOTE]
+> **Measurement Semantics**: Evaluates cross-thread lock-free single-producer single-consumer (SPSC) queue operations with explicit 64-byte cacheline separation. Single round-trip acquire/release enqueue and dequeue completes in 7.8 to 10.3 nanoseconds with zero locks, zero atomic contention, and strictly **0 B** GC heap allocations.
+
+---
+
+### Client-Side Predictive Jitter Buffer Resequencing & Frame Extraction (Issue #82)
+<!-- VERIFIED: 2026-08-26T00:58:29Z | Commit: 347512d | Proof: dotnet run -c Release --project src/Moonshine.Benchmarks -- --filter *JitterBufferBenchmarks* --inProcess --job short in Windows 11 Pro build 26200, x64 RyuJIT AVX-512 -->
+
+```
+BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.9168)
+.NET SDK 10.0.400 / Host: .NET 9.0.16 (9.0.1626.22923), X64 RyuJIT AVX-512F+CD+BW+DQ+VL+VBMI
+
+| Method              | Mean Latency | Error    | StdDev   | Allocated Memory |
+| :------------------ | -----------: | -------: | -------: | ---------------: |
+| AssembleAndPopFrame |     45.26 ns | 42.70 ns | 2.340 ns |              0 B |
+```
+
+> [!NOTE]
+> **Measurement Semantics**: Evaluates packet resequencing, missing sequence hole tracking, adaptive delay estimation, and contiguous frame slice extraction on the client-side media ingestion path (45.26 ns per frame assembly with **0 B** heap allocation).
+
 
 
 
