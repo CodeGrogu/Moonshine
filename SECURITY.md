@@ -2,10 +2,11 @@
 
 ## Supported Versions
 
-| Version | Supported          |
-| :---    | :---               |
-| 1.0.x   | :white_check_mark: |
-| < 1.0   | :x:                |
+| Version | Status | Supported |
+| :--- | :--- | :---: |
+| 0.5.6-alpha | Active Development (Pre-release) | :white_check_mark: |
+
+> **Note**: Moonshine is in active pre-release development. No stable release has been published yet. The first planned stable release is `1.0.0-alpha`.
 
 ## Reporting a Vulnerability
 
@@ -13,7 +14,7 @@ Moonshine handles sensitive cryptographic keys, pairing certificates, and real-t
 
 If you discover a security vulnerability within Moonshine, please **do not open a public issue**. Instead, follow these steps:
 
-1. Send an email to the security response team: `security@moonshine-stream.org`
+1. Use [GitHub Security Advisories](https://github.com/CodeGrogu/Moonshine/security/advisories/new) to report the vulnerability privately.
 2. Include the following details:
    - Detailed description of the vulnerability.
    - Steps to reproduce or proof-of-concept (PoC) code.
@@ -24,5 +25,5 @@ If you discover a security vulnerability within Moonshine, please **do not open 
 ## Cryptographic Standards
 
 - **Pairing Authentication**: Moonshine strictly uses authenticated AES-128/256-GCM / CBC with SHA-256 key derivation and ephemeral client/server random challenges.
-- **Certificate Verification**: All TLS/HTTPS and RTSP sessions mandate strict validation of host certificate fingerprints.
+- **Certificate Verification**: All TLS/HTTPS and control sessions mandate strict validation of host certificate fingerprints.
 - **Memory Zeroing**: Sensitive buffers (private keys, pin numbers, salts) are securely wiped from memory using `CryptographicOperations.ZeroMemory` / `SecureZeroMemory` after use.

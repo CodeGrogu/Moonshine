@@ -1,6 +1,9 @@
+> [!NOTE]
+> **Development Status (v0.5.6-alpha)**: The microphone passthrough subsystem is at **Prototype** maturity. Individual components have been tested in isolation, but no end-to-end voice streaming pipeline is operational. The latency budget below is a design target. The RTP backchannel framing shown below is legacy compatibility code; Moonshine's native protocol is MNBP v1.
+
 # Low-Latency Client-to-Host Microphone Passthrough & Virtual Audio Sink
 
-The **Moonshine Microphone Passthrough Engine** enables real-time, low-latency streaming of client voice audio to the Moonshine host with a sub-15ms end-to-end latency budget. Decoded microphone streams are routed directly to Windows virtual audio recording devices (such as Steam Streaming Microphone, VB-CABLE, or Windows CoreAudio virtual audio sinks) for in-game voice chat and Discord communication.
+The **Moonshine Microphone Passthrough Engine** is designed to enable real-time, low-latency streaming of client voice audio to the Moonshine host with a target sub-15ms end-to-end latency budget. Decoded microphone streams are routed directly to Windows virtual audio recording devices (such as the Moonshine Virtual Microphone endpoint, or third-party sinks like VB-CABLE) for in-game voice chat and communication applications.
 
 ---
 

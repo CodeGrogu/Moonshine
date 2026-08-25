@@ -1,12 +1,16 @@
-# HDR10 & Dynamic Color Space Metadata Engine
+> [!WARNING]
+> **Status: Incomplete / Fail-Closed**
+> Moonshine is in early development (v0.5.6-alpha). The HDR10 subsystem is not fully operational. Moonshine uses the custom MNBP v1 protocol, not RTSP/SDP.
 
-The **Moonshine Host HDR10 Subsystem** provides dynamic high-dynamic-range (HDR) display metadata extraction, real-time SMPTE ST 2084 / BT.2020 color volume serialization, and Direct3D 11/12 GPU color conversion.
+# HDR10 & Dynamic Colour Space Metadata Engine
+
+The **Moonshine Host HDR10 Subsystem** provides dynamic high-dynamic-range (HDR) display metadata extraction, real-time SMPTE ST 2084 / BT.2020 colour volume serialisation, and Direct3D 11/12 GPU colour conversion.
 
 ---
 
 ## 1. Architectural Overview
 
-When HDR is enabled on the host system, desktop backbuffers are rendered in wide-gamut 10-bit format (`DXGI_FORMAT_R10G10B10A2_UNORM`). To stream this content losslessly to HDR10-capable clients (such as OLED displays, HDR monitors, and TVs), Moonshine extracts display colorimetry and performs zero-CPU-overhead GPU color format adaptation.
+When HDR is enabled on the host system, desktop backbuffers are rendered in wide-gamut 10-bit format (`DXGI_FORMAT_R10G10B10A2_UNORM`). To stream this content losslessly to HDR10-capable clients (such as OLED displays, HDR monitors, and TVs), Moonshine extracts display colourimetry and performs zero-CPU-overhead GPU colour format adaptation.
 
 ```
 ┌──────────────────────────────────────────────────────────┐
@@ -17,7 +21,7 @@ When HDR is enabled on the host system, desktop backbuffers are rendered in wide
               ┌──────────────┴──────────────┐
               ▼                             ▼
 ┌───────────────────────────┐ ┌───────────────────────────┐
-│   IDXGIOutput6 (Desc1)    │ │   D3DColorSpaceConverter   │
+│   IDXGIOutput6 (Desc1)    │ │  D3DColourSpaceConverter  │
 │  - SMPTE ST 2086 Primaries│ │  - RGB10A2 -> P010 Surface │
 │  - MaxCLL / MaxFALL       │ │  - BGRA8 -> NV12 Surface   │
 │  - Peak / Min Luminance   │ │  - Zero CPU Memory Copies  │
@@ -26,21 +30,21 @@ When HDR is enabled on the host system, desktop backbuffers are rendered in wide
               ▼                             ▼
 ┌───────────────────────────┐ ┌───────────────────────────┐
 │   SEI Mastering Volume    │ │  Hardware Video Encoders  │
-│  & RTSP / SDP Descriptors │ │  (NVENC HEVC Main10 / AV1)│
+│  & MNBP / FEC Descriptors │ │  (NVENC HEVC Main10 / AV1)│
 └───────────────────────────┘ └───────────────────────────┘
 ```
 
 ---
 
-## 2. Mathematical Color Model & Transfer Functions
+## 2. Mathematical Colour Model & Transfer Functions
 
 ### A. BT.2020 RGB-to-YUV Conversion Matrix
-For 10-bit HDR10 color encoding:
+For 10-bit HDR10 colour encoding:
 $$Y = 0.2627 \cdot R + 0.6780 \cdot G + 0.0593 \cdot B$$
 $$U = -0.1396 \cdot R - 0.3604 \cdot G + 0.5000 \cdot B + \frac{512}{1023}$$
 $$V = 0.5000 \cdot R - 0.4598 \cdot G - 0.0402 \cdot B + \frac{512}{1023}$$
 
-### B. SMPTE ST 2084 Perceptual Quantizer (PQ)
+### B. SMPTE ST 2084 Perceptual Quantiser (PQ)
 The non-linear optical-to-electrical transfer function maps absolute luminance $L$ ($0 \le L \le 10000 \text{ cd/m}^2$):
 $$V = \left( \frac{c_1 + c_2 \cdot L^{m_1}}{1 + c_3 \cdot L^{m_1}} \right)^{m_2}$$
 
@@ -101,10 +105,10 @@ MOONSHINE_API void moonshine_color_converter_destroy(
 
 ---
 
-## 4. Managed Orchestration & Protocol Serialization
+## 4. Managed Orchestration & Protocol Serialisation
 
 ### A. SEI Mastering Display Colour Volume Generation
-Moonshine constructs ITU-T H.265 / H.264 Annex D.2.27 compliant SEI NAL units containing display color volume and Content Light Level (CLL) metadata to inform the client decoder:
+Moonshine constructs ITU-T H.265 / H.264 Annex D.2.27 compliant SEI NAL units containing display colour volume and Content Light Level (CLL) metadata to inform the client decoder:
 
 ```csharp
 if (Hdr10MetadataExtractor.TryExtractMetadata(hmonitor, out var metadata))
@@ -114,8 +118,8 @@ if (Hdr10MetadataExtractor.TryExtractMetadata(hmonitor, out var metadata))
 }
 ```
 
-### B. RTSP / SDP Negotiation
+### B. MNBP Negotiation
 ```csharp
-string sdpAttributes = Hdr10MetadataExtractor.FormatSdpHdrAttributes(metadata, payloadType: 96);
+string mnbpAttributes = Hdr10MetadataExtractor.FormatMnbpHdrAttributes(metadata, payloadType: 96);
 // Emits: a=fmtp:96 color-primaries=9;transfer-characteristics=16;matrix-coefficients=9;mastering-display-color-volume=...;content-light-level=...
 ```

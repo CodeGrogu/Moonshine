@@ -1,8 +1,11 @@
 # High-Throughput Zero-Copy UDP Ingestion Pipeline
 
-Moonshine implements an ultra-high-throughput UDP packet receiver engineered to ingest up to 250,000 packets per second (150+ Mbps video bitrates) with zero Garbage Collection allocations in the streaming hot path.
+> [!NOTE]
+> **PROJECT STATUS**
+> Moonshine is in active development (v0.5.6-alpha). The application is fail-closed.
+> Please note that the RTP references below represent legacy compatibility code. MNBP v1 is the native data plane protocol.
 
----
+Moonshine implements an ultra-high-throughput UDP packet receiver engineered to ingest up to 250,000 packets per second (150+ Mbps video bitrates) as a design target or microbenchmark result, with zero Garbage Collection allocations in the streaming hot path.
 
 ## 1. Zero-Copy Pipeline Architecture
 
@@ -27,8 +30,6 @@ Native Interop Dispatch
       └─► SIMD AVX2/AVX-512 Galois Field FEC / Jitter Buffer
 ```
 
----
-
 ## 2. Pinned Native Buffer Pool (`PinnedBufferPool`)
 
 To eliminate GC pause jitter and heap fragmentation during high-bitrate streaming:
@@ -38,8 +39,6 @@ To eliminate GC pause jitter and heap fragmentation during high-bitrate streamin
 - **Fixed Slot Sizing**: Default 2048 slots of 2048 bytes (4 MB contiguous native block) matching network MTUs.
 - **Cacheline Alignment**: Memory boundaries are aligned to 64-byte L1 CPU cacheline boundaries to prevent false sharing and misaligned vector reads.
 - **O(1) Lease/Return Lifecycle**: Zero heap allocations when leasing slots (`TryRent`) and returning slots (`Return`).
-
----
 
 ## 3. Real-Time Packet Demuxing and Descriptors
 
@@ -55,8 +54,6 @@ The UDP ingestion engine parses incoming datagrams in-place over `ReadOnlySpan<b
 3. **C-ABI Blittable Descriptor Dispatch**:
    - Constructs a 1:1 binary-compatible `MoonshinePacketDesc` struct containing raw payload pointers (`byte*`), sequence number, frame timestamp, payload size, and frame boundary flags.
    - Enqueues directly into the lock-free single-producer single-consumer circular ring buffer in C++23 (`moonshine_spsc_enqueue`).
-
----
 
 ## 4. Telemetry and Diagnostic Metrics
 

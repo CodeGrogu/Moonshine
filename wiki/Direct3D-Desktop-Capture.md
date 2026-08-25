@@ -1,3 +1,7 @@
+> [!WARNING]
+> **Status: Prototype**
+> Moonshine is in early development (v0.5.6-alpha). The capture-to-encoder pipeline is a prototype and not fully operational. Performance figures are design targets.
+
 # Direct3D Desktop Capture Engine
 
 The **Moonshine Host Desktop Capture Subsystem** provides a zero-copy, ultra-low-latency desktop screen capture pipeline implemented directly on top of Microsoft DirectX Graphics Infrastructure (DXGI) Desktop Duplication (`IDXGIOutputDuplication`), Windows.Graphics.Capture (WGC), and Direct3D 11/12.
@@ -108,6 +112,6 @@ if (engine.TryAcquireNextFrame(timeoutMs: 16, out MoonshineCaptureFrameDesc fram
 
 ## 5. Performance Verification
 
-- **Capture Latency**: Sub-0.8ms average frame acquisition time at 4K (3840x2160) 120Hz.
-- **Memory Allocations**: 0 bytes GC heap allocation in hot acquisition paths.
-- **CPU Overhead**: < 0.3% CPU usage on 8-core host systems during 120fps capture.
+- **Capture Latency**: Sub-0.8ms average frame acquisition time at 4K (3840x2160) 120Hz (Design Target).
+- **Memory Allocations**: 0 bytes GC heap allocation in hot acquisition paths (Design Target).
+- **CPU Overhead**: < 0.3% CPU usage on 8-core host systems during 120fps capture (Design Target).

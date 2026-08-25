@@ -23,10 +23,10 @@
     
     <!-- Assembly Metadata -->
     <Company>Moonshine Stream</Company>
-    <Product>Moonshine Ultra-Low-Latency Client Engine</Product>
+    <Product>Moonshine PC Streaming Platform</Product>
     <Copyright>Copyright (C) 2026 Moonshine Stream Authors</Copyright>
-    <Version>1.0.0</Version>
-    <FileVersion>1.0.0.0</FileVersion>
+    <Version>0.5.6-alpha</Version>
+    <FileVersion>0.5.6.0</FileVersion>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">

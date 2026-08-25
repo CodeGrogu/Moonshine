@@ -1,4 +1,6 @@
-# ⚡ Moonshine Performance Manifesto & Guidelines
+# Moonshine Performance Manifesto and Guidelines
+
+> **Development Status**: The latency and allocation budgets documented below are **design targets**, not achieved end-to-end measurements. Individual subsystem microbenchmarks have been verified (see `docs/BENCHMARKS.md`), but no real host-to-client streaming pipeline has been measured yet. See `BASELINE_AUDIT.md` for current evidence boundaries.
 
 Performance in Moonshine is the primary design constraint. Every line of code, data structure, and system call must be justified by its latency, throughput, and CPU cache impact.
 

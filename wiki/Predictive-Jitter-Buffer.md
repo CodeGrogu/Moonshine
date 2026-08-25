@@ -1,8 +1,11 @@
+> [!WARNING]
+> **Status Disclaimer:** Moonshine is in active development (v0.5.6-alpha). It is its own platform with its own protocol (MNBP v1), not a GameStream client or Moonlight replacement. No end-to-end streaming works yet. The application is fail-closed.
+
 # Predictive Jitter Buffer and Frame Reassembler
 
 ## 1. Problem Statement: Network Jitter and Multi-Packet Video Slices
 
-In GameStream and Sunshine video streaming, each video frame (such as a 4K 120 FPS frame) exceeds standard Ethernet MTU sizes (typically 1,400 to 1,500 bytes) and is fragmented across multiple UDP packets (ranging from 10 to over 80 packets per frame).
+In streaming applications (using MNBP v1 or legacy compatibility layers like Sunshine/GameStream), each video frame (such as a 4K 120 FPS frame) exceeds standard Ethernet MTU sizes (typically 1,400 to 1,500 bytes) and is fragmented across multiple UDP packets (ranging from 10 to over 80 packets per frame).
 
 Due to Wi-Fi retransmissions and network path variances:
 1. Packets arrive out-of-order.
@@ -16,7 +19,7 @@ Due to Wi-Fi retransmissions and network path variances:
 Moonshine uses a custom predictive frame reassembly buffer based on a fixed circular ring of pre-allocated frame slots (`kMaxTrackedFrames = 32`).
 
 ```
-Incoming RTP Packet (Frame #42, Packet #3 of 10)
+Incoming Network Packet (Frame #42, Packet #3 of 10)
         │
         ▼
 Slot Lookup: index = 42 & (32 - 1) = Slot #10
@@ -91,6 +94,9 @@ bool JitterBuffer::PushPacket(const MoonshinePacketDesc& packet, MoonshineFrameD
 ---
 
 ## 4. Latency Verification
+
+> [!NOTE]
+> Latency claims require Rule 9 provenance tags to verify the testing methodology.
 
 Under simulated network jitter with 15% out-of-order packet delivery:
 - Frame Reassembly Overhead: **$< 0.12\,\mu\text{s}$ per frame**.

@@ -1,8 +1,10 @@
 # End-to-End Cryptographic Pairing Pipeline
 
-Moonshine implements an industrial-grade cryptographic pairing subsystem designed to authenticate and establish mutual trust with Sunshine and NVIDIA GameStream servers. The protocol uses RSA 2048-bit X.509 certificates, SHA-256 / PBKDF2 key derivation, and AES-128 cryptographic challenge-response validation.
+> [!WARNING]
+> **LEGACY COMPATIBILITY REFERENCE**
+> This document describes the legacy GameStream challenge-response pairing protocol, not Moonshine's native authentication. This code is classified as **Incompatible** and is unreachable from the production composition root. Moonshine is its own platform with its own protocol (MNBP v1), defined in `docs/PROTOCOL_SPEC_V1.md`.
 
----
+Moonshine implements an industrial-grade cryptographic pairing subsystem designed to authenticate and establish mutual trust with Sunshine and NVIDIA GameStream hosts. The protocol uses RSA 2048-bit X.509 certificates, SHA-256 / PBKDF2 key derivation, and AES-128 cryptographic challenge-response validation.
 
 ## 1. Cryptographic Handshake Architecture
 
@@ -40,8 +42,6 @@ Client (Moonshine)                                  Host (Sunshine / GameStream)
       v                                                        v
 ```
 
----
-
 ## 2. Mathematical Specification and Key Derivation
 
 ### Client Identity Generation
@@ -62,8 +62,6 @@ For modern extensions, Moonshine also supports PBKDF2 key derivation:
 
 $$K_{\text{PBKDF2}} = \text{PBKDF2}(\text{HMAC-SHA256}, \text{PIN}, S_{\text{client}}, 1000, 16)$$
 
----
-
 ## 3. Challenge-Response Authentication Protocol
 
 ### Phase 1: Certificate & Salt Exchange (`getservercert`)
@@ -73,7 +71,7 @@ The client sends an HTTP GET request containing the unique ID, client device nam
 GET /pair?uniqueid=UUID&devicename=Moonshine&update=1&phrase=getservercert&salt=SALT_HEX&clientcert=CERT_HEX HTTP/1.1
 ```
 
-The host responds with XML containing the server's X.509 certificate:
+The host responds with XML containing the host's X.509 certificate:
 ```xml
 <root status_code="200">
     <paired>1</paired>
@@ -82,16 +80,16 @@ The host responds with XML containing the server's X.509 certificate:
 ```
 
 ### Phase 2: Client Challenge (`getchallengeresp`)
-The client generates a 16-byte random challenge $C_{\text{client}} \leftarrow \text{CSPRNG}(16)$, encrypts it using $K_{\text{AES}}$ in AES-128-ECB mode, and transmits it to the server:
+The client generates a 16-byte random challenge $C_{\text{client}} \leftarrow \text{CSPRNG}(16)$, encrypts it using $K_{\text{AES}}$ in AES-128-ECB mode, and transmits it to the host:
 
 ```http
 GET /pair?uniqueid=UUID&devicename=Moonshine&clientchallenge=ENCRYPTED_CHALLENGE_HEX HTTP/1.1
 ```
 
-The server decrypts $C_{\text{client}}$ using the PIN entered into the Sunshine Web UI. If the PIN matches, the server returns an encrypted challenge response $E_K(C_{\text{server}})$.
+The host decrypts $C_{\text{client}}$ using the PIN entered into the Sunshine Web UI. If the PIN matches, the host returns an encrypted challenge response $E_K(C_{\text{server}})$.
 
 ### Phase 3: Server Challenge Response (`getserverchallengeresp`)
-The client decrypts the server's challenge $C_{\text{server}}$, computes its SHA-256 digest, encrypts the first 16 bytes using $K_{\text{AES}}$, and submits the response:
+The client decrypts the host's challenge $C_{\text{server}}$, computes its SHA-256 digest, encrypts the first 16 bytes using $K_{\text{AES}}$, and submits the response:
 
 $$R_{\text{client}} = \text{AES-ECB}_{K}(\text{SHA256}(C_{\text{server}})[0 \dots 15])$$
 
@@ -106,13 +104,11 @@ The client confirms pairing completion by issuing:
 GET /pair?uniqueid=UUID&devicename=Moonshine&phrase=getclientcert HTTP/1.1
 ```
 
----
-
 ## 4. KeyStore and Credential Persistence
 
 Moonshine separates key management into clear storage abstractions:
 
-- **`IPairingKeyStore`**: High-level contract for identity retrieval and server certificate storage.
+- **`IPairingKeyStore`**: High-level contract for identity retrieval and host certificate storage.
 - **`InMemoryPairingKeyStore`**: Thread-safe ephemeral store used during testing and transient sessions.
 - **`FilePairingKeyStore`**: Atomic JSON and PEM storage located in `%LOCALAPPDATA%/Moonshine/keystore/`.
 

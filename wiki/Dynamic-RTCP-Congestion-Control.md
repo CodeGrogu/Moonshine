@@ -1,8 +1,10 @@
 # Dynamic RTCP Bitrate Adaptation & Congestion Control
 
-Moonshine integrates an active feedback-driven bandwidth estimation and predictive congestion control engine using real-time RTCP loss statistics and round-trip time (RTT) measurements to scale streaming video bitrates dynamically and trigger Instantaneous Decoder Refresh (IDR) frames upon burst packet loss.
+> [!WARNING]
+> **LEGACY COMPATIBILITY REFERENCE**
+> This document describes legacy RTCP/RTSP compatibility code which belongs to the **Incompatible** layer and is unreachable from the production composition root. Moonshine's native protocol is MNBP v1.
 
----
+Moonshine integrates an active feedback-driven bandwidth estimation and predictive congestion control engine using real-time RTCP loss statistics and round-trip time (RTT) measurements to scale streaming video bitrates dynamically and trigger Instantaneous Decoder Refresh (IDR) frames upon burst packet loss.
 
 ## 1. Congestion Control Architectural Pipeline
 
@@ -33,8 +35,6 @@ CongestionController (.NET 9 Managed Layer)
 RTSP Stream Control Client (Dynamic ANNOUNCE Bitrate Scaling)
 ```
 
----
-
 ## 2. RTCP Packet Specifications
 
 All RTCP control and feedback structures conform to standard RFC 3550 / RFC 4585 specifications:
@@ -44,7 +44,7 @@ All RTCP control and feedback structures conform to standard RFC 3550 / RFC 4585
 | :--- | :--- | :--- | :--- |
 | `0..1` | `uint16` | `Header` | `0x81C9` (V=2, P=0, Count=1, PT=201 / Receiver Report) |
 | `2..3` | `uint16` | `Length` | 32-bit word count minus one |
-| `4..7` | `uint32` | `SSRC` | Synchronization source identifier |
+| `4..7` | `uint32` | `SSRC` | Synchronisation source identifier |
 | `8..11` | `uint32` | `PacketsReceived` | Total monotonic RTP packets received |
 | `12..15` | `uint32` | `PacketsLost` | Total sequence gap packets lost |
 | `16..19` | `uint32` | `PacketsRecovered` | Packets successfully recovered via GF(2^8) FEC |
@@ -58,8 +58,6 @@ All RTCP control and feedback structures conform to standard RFC 3550 / RFC 4585
 | `2..3` | `uint16` | `Length` | 32-bit word count minus one (2) |
 | `4..7` | `uint32` | `SenderSSRC` | Client sender SSRC |
 | `8..11` | `uint32` | `MediaSSRC` | Target video stream media SSRC |
-
----
 
 ## 3. Mathematical Adaptation Formulation
 

@@ -1,8 +1,11 @@
 # Zero-Allocation Data Plane
 
-One of the primary architectural goals of Moonshine is eliminating managed Garbage Collection (GC) pauses completely during streaming sessions. In legacy streaming clients, high-frequency socket buffer allocations cause periodic Gen0 and Gen1 GC sweeps, resulting in micro-stutter and frame presentation spikes.
+> [!NOTE]
+> **PROJECT STATUS**
+> Moonshine is in active development (v0.5.6-alpha). The application is fail-closed.
+> The RTP parsing examples below represent legacy compatibility code. MNBP v1 is the native data plane protocol.
 
----
+One of the primary architectural goals of Moonshine is eliminating managed Garbage Collection (GC) pauses completely during streaming sessions. In legacy streaming clients, high-frequency socket buffer allocations cause periodic Gen0 and Gen1 GC sweeps, resulting in micro-stutter and frame presentation spikes.
 
 ## 1. Zero-Allocation Design Principles
 
@@ -26,8 +29,6 @@ One of the primary architectural goals of Moonshine is eliminating managed Garba
 1. No Managed Heap Allocations per Packet: Every UDP packet received is read directly into a pre-allocated unmanaged memory pool (`NativeMemoryOwner`). Slicing and header extraction are performed entirely via `ReadOnlySpan<byte>`.
 2. ValueTask and Ref Struct Discipline: Asynchronous socket calls return `ValueTask` or execute on dedicated polling threads without Task allocations.
 3. ArrayPool and Pinned Buffers: Any auxiliary scratch buffers are rented from `ArrayPool<byte>.Shared` and returned immediately upon frame dispatch.
-
----
 
 ## 2. Pinned Native Memory Arena (NativeMemoryOwner)
 
@@ -59,8 +60,6 @@ public sealed unsafe class NativeMemoryOwner : IMemoryOwner<byte>
     }
 }
 ```
-
----
 
 ## 3. High-Performance Span-Based RTP Parsing
 

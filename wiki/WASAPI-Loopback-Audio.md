@@ -1,6 +1,10 @@
+> [!WARNING]
+> **Status: Incomplete / Fail-Closed**
+> Moonshine is in early development (v0.5.6-alpha). End-to-end streaming is not yet operational. Moonshine uses the custom MNBP v1 protocol, not RTP.
+
 # WASAPI Loopback Audio Capture & Low-Latency Streaming
 
-The **Moonshine Host WASAPI Loopback Audio Engine** intercepts the master Windows audio mix directly from the kernel mixing engine (`AUDCLNT_STREAMFLAGS_LOOPBACK`) with sub-3ms latency. It supports Stereo 2.0, Surround 5.1, and Surround 7.1 channel topologies at 48kHz, packetising audio into RFC 3550 RTP frames with zero GC allocations.
+The **Moonshine Host WASAPI Loopback Audio Engine** intercepts the master Windows audio mix directly from the kernel mixing engine (`AUDCLNT_STREAMFLAGS_LOOPBACK`) with sub-3ms latency. It supports Stereo 2.0, Surround 5.1, and Surround 7.1 channel topologies at 48kHz, packetising audio into MNBP frames with zero GC allocations.
 
 ---
 
@@ -42,8 +46,8 @@ The **Moonshine Host WASAPI Loopback Audio Engine** intercepts the master Window
                               │
                               ▼
 ┌────────────────────────────────────────────────────────────┐
-│              Zero-Allocation RTP Audio Packetiser          │
-│    - RFC 3550 Standard 12-byte RTP Header                  │
+│              Zero-Allocation MNBP Audio Packetiser         │
+│    - MNBP Header                                           │
 │    - Monotonic 48kHz Timestamps                            │
 │    - UDP Datagram Emission -> Client Audio Pipeline        │
 └────────────────────────────────────────────────────────────┘
@@ -108,24 +112,24 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_audio_capture_get_metrics(
 ```csharp
 using Moonshine.Host.Audio;
 
-// Initialize 5ms WASAPI Loopback Capture at 48kHz Stereo
+// Initialise 5ms WASAPI Loopback Capture at 48kHz Stereo
 using var capture = new WasapiLoopbackAudioPipeline(
     sampleRate: 48000,
     topology: AudioChannelTopology.Stereo,
     bufferDurationMs: 5
 );
 
-var packetiser = new RtpAudioPacketiser(payloadType: 97, ssrc: 0x11223344);
+var packetiser = new MnbpAudioPacketiser(payloadType: 97, streamId: 0x11223344);
 
 Span<short> pcmBuffer = stackalloc short[480]; // 240 samples * 2 channels
-Span<byte> rtpBuffer = stackalloc byte[1024];
+Span<byte> mnbpBuffer = stackalloc byte[1024];
 
 if (capture.TryReadSamplesPcm16(pcmBuffer, out int samplesRead, out ulong timestampQpc))
 {
     ReadOnlySpan<byte> pcmBytes = MemoryMarshal.AsBytes(pcmBuffer.Slice(0, samplesRead));
-    if (packetiser.TryPacketise(pcmBytes, timestamp: (uint)(timestampQpc / 1000), marker: false, rtpBuffer, out int written))
+    if (packetiser.TryPacketise(pcmBytes, timestamp: (uint)(timestampQpc / 1000), marker: false, mnbpBuffer, out int written))
     {
-        // Dispatch rtpBuffer.Slice(0, written) over UDP
+        // Dispatch mnbpBuffer.Slice(0, written) over UDP
     }
 }
 ```

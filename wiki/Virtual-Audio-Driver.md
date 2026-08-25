@@ -1,6 +1,9 @@
+> [!NOTE]
+> **Development Status (v0.5.6-alpha)**: The virtual audio driver is at **Prototype** maturity (Rule 8). The driver source, user-mode bridge, and shared memory IPC pipeline are implemented and verified in software test suites. Compilation of the binary `MoonshineAudio.sys` driver package requires the Windows Driver Kit (WDK), and live Windows PnP installation requires test-signing mode or WHQL production signing. The driver has not been deployed to physical hardware in a streaming configuration. Full deployment procedures are documented in `docs/AUDIO_DRIVER.md`.
+
 # Dedicated Windows Virtual Audio Driver
 
-The **Moonshine Virtual Audio Driver** is a custom Microsoft Windows Driver Kit (WDK) PortCls WaveRT miniport driver (`IMiniportWaveRT` and `IMiniportTopology`) providing isolated, persistent hardware audio endpoints for the Moonshine host ecosystem on Windows 11.
+The **Moonshine Virtual Audio Driver** is a custom Microsoft Windows Driver Kit (WDK) PortCls WaveRT miniport driver (`IMiniportWaveRT` and `IMiniportTopology`) designed to provide isolated, persistent hardware audio endpoints for the Moonshine host on Windows 11.
 
 ---
 

@@ -1,6 +1,9 @@
+> [!WARNING]
+> **Status Disclaimer:** Moonshine is in active development (v0.5.6-alpha). It is its own platform with its own protocol (MNBP v1), not a GameStream client or Moonlight replacement. No end-to-end streaming works yet. The application is fail-closed.
+
 # Custom SIMD Galois Field GF(2^8) Reed-Solomon Forward Error Correction
 
-Moonshine implements a custom-engineered, multi-tiered SIMD Galois Field $GF(2^8)$ Reed-Solomon Forward Error Correction (FEC) engine supporting AVX-512BW, AVX2, and 64-bit scalar execution paths.
+Moonshine implements a custom-engineered, multi-tiered SIMD Galois Field $GF(2^8)$ Reed-Solomon Forward Error Correction (FEC) engine supporting AVX-512BW, AVX2, and 64-bit scalar execution paths. This engine serves Moonshine's native MNBP v1 framing for reliable delivery.
 
 ---
 

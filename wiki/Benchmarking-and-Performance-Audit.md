@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Status Disclaimer:** Moonshine is in active development (v0.5.6-alpha). It is its own platform with its own protocol (MNBP v1), not a GameStream client or Moonlight replacement. No end-to-end streaming works yet. The application is fail-closed. These benchmarks are microbenchmark baselines, not streaming throughput claims.
+
 # Continuous Performance Benchmarking & Latency Telemetry Harness
 
 Moonshine enforces strict zero-allocation performance discipline and sub-millisecond execution guarantees across all streaming pipelines. The benchmarking subsystem incorporates BenchmarkDotNet suites and high-precision native timers executed continuously in CI.
@@ -17,11 +20,11 @@ BenchmarkDotNet Execution Harness (src/Moonshine.Benchmarks)
                      │
                      ├─► FecMatrixBenchmarks (GF(2^8) SIMD Shard Reconstruction)
                      ├─► RingBufferBenchmarks (Lock-Free SPSC Throughput)
-                     ├─► RtpParsingBenchmarks (Zero-Allocation Span Parsing)
+                     ├─► RtpParsingBenchmarks (Zero-Allocation Span Parsing - Legacy Compatibility)
                      ├─► UdpIngestionBenchmarks (Socket Ingestion & Buffer Renting)
                      ├─► JitterBufferBenchmarks (Frame Assembly & Out-of-Order Reordering)
                      ├─► InputPollingBenchmarks (1000Hz HID/Controller Serialisation)
-                     └─► CongestionControlBenchmarks (RTCP Loss Feedback & AIMD Scaling)
+                     └─► CongestionControlBenchmarks (RTCP Loss Feedback - Legacy Compatibility)
                      │
                      ▼
 Zero-Allocation Verification Gate (0 Bytes Allocated in Hot Path)
@@ -41,7 +44,7 @@ Measures execution time across multi-shard parity matrices using SIMD AVX2 / AVX
 | `FecRecovery_Matrix_40_8` | 40 Data + 8 Parity | 8 Shards | **12.45 μs** | **0 B** |
 
 ### B. RTP Protocol Parsing (`RtpParsingBenchmarks`)
-Compares classic array allocation against Moonshine's zero-copy span parser over 1,000,000 packet iterations:
+Note: Exercises legacy compatibility code. Compares classic array allocation against Moonshine's zero-copy span parser over 1,000,000 packet iterations:
 
 | Method | Mean Latency | Error | StdDev | Allocated |
 | :--- | :--- | :--- | :--- | :--- |
@@ -63,7 +66,7 @@ Evaluates packet ingestion, sequence unwrapping, and complete frame release:
 | `AssembleAndPopFrame` | **18.70 ns** | **0 B** |
 
 ### E. 1000Hz Input Serialisation (`InputPollingBenchmarks`)
-Measures serialization into stack-allocated spans for mouse motion, button transitions, and controller state:
+Measures serialisation into stack-allocated spans for mouse motion, button transitions, and controller state:
 
 | Method | Mean Latency | Allocated |
 | :--- | :--- | :--- |
@@ -73,7 +76,7 @@ Measures serialization into stack-allocated spans for mouse motion, button trans
 | `ParseControllerState` | **2.95 ns** | **0 B** |
 
 ### F. RTCP Feedback & Congestion Control (`CongestionControlBenchmarks`)
-Evaluates real-time packet loss processing and AIMD bandwidth scaling calculation:
+Note: Exercises legacy compatibility code. Evaluates real-time packet loss processing and AIMD bandwidth scaling calculation:
 
 | Method | Mean Latency | Allocated |
 | :--- | :--- | :--- |

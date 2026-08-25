@@ -1,6 +1,10 @@
+> [!WARNING]
+> **Status: Incomplete / Fail-Closed**
+> Moonshine is in early development (v0.5.6-alpha) and is fail-closed by design. End-to-end streaming is not yet operational. Hardware encoders are not fully operational; the pipeline described here is a design target. Moonshine uses the custom MNBP v1 protocol, not RTP/RTCP.
+
 # GPU Hardware Video Encoding Subsystem
 
-The **Moonshine Host GPU Video Encoding Subsystem** provides a zero-copy, multi-vendor hardware video encoding engine engineered for sub-2ms encode latency at up to 4K 240 FPS across NVIDIA NVENC, AMD AMF (Advanced Media Framework), Intel QuickSync / oneVPL, and Direct3D 11/12 hardware surfaces.
+The **Moonshine Host GPU Video Encoding Subsystem** provides a zero-copy, multi-vendor hardware video encoding engine engineered for a design target of sub-2ms encode latency at up to 4K 240 FPS across NVIDIA NVENC, AMD AMF (Advanced Media Framework), Intel QuickSync / oneVPL, and Direct3D 11/12 hardware surfaces.
 
 ---
 
@@ -8,8 +12,8 @@ The **Moonshine Host GPU Video Encoding Subsystem** provides a zero-copy, multi-
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│             Desktop Frame Capture & Color Conversion     │
-│             (DXGI / WGC -> D3DColorSpaceConverter)       │
+│             Desktop Frame Capture & Colour Conversion    │
+│             (DXGI / WGC -> D3DColourSpaceConverter)      │
 └────────────────────────────┬─────────────────────────────┘
                              │ Direct3D Texture Pointer
                              ▼
@@ -35,13 +39,13 @@ The **Moonshine Host GPU Video Encoding Subsystem** provides a zero-copy, multi-
 ┌──────────────────────────────────────────────────────────┐
 │              Annex B / OBU Bitstream Emission            │
 │         - Monotonically increasing QPC timestamps        │
-│         - Instant IDR Keyframe on RTCP Packet Loss       │
+│         - Instant IDR Keyframe on MNBP Packet Loss       │
 │         - Zero GC Allocations in Streaming Hot Path      │
 └────────────────────────────┬─────────────────────────────┘
                              │
                              ▼
 ┌──────────────────────────────────────────────────────────┐
-│               RTP / FEC Packet Streaming Layer           │
+│               MNBP / FEC Packet Streaming Layer          │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -61,7 +65,7 @@ $$\text{Keyframe Target Size} \approx 1.5 \cdot \text{Average Frame Size}$$
 - **Preset**: Ultra-low latency (NVIDIA `P1`/`P2`, AMD `AMF_VIDEO_ENCODER_QUALITY_PRESET_SPEED`, Intel `MFX_TARGETUSAGE_BEST_SPEED`).
 - **B-Frames**: Strictly 0 (`GOP length = infinite` or `0`, `max_b_frames = 0`) to eliminate frame reordering delays.
 - **Intra-Refresh Mode**: Optional progressive intra-refresh across macroblock columns for seamless recovery without large I-frame burst spikes.
-- **Dynamic IDR Injection**: Immediate generation of a keyframe upon client packet loss signaled via RTCP without destroying or reinitializing the encoder pipeline.
+- **Dynamic IDR Injection**: Immediate generation of a keyframe upon client packet loss signalled via MNBP without destroying or reinitialising the encoder pipeline.
 
 ---
 
@@ -145,7 +149,7 @@ MOONSHINE_API void moonshine_encoder_destroy(
 
 ## 4. Managed Host Orchestration
 
-### A. Initialization & Auto Vendor Selection
+### A. Initialisation & Auto Vendor Selection
 ```csharp
 using var engine = new UnifiedHardwareEncoderEngine(
     width: 3840,
@@ -163,13 +167,13 @@ using var engine = new UnifiedHardwareEncoderEngine(
 Span<byte> bitstreamBuffer = stackalloc byte[1024 * 512];
 if (engine.TryEncodeFrame(d3dTextureHandle, forceIdr: false, out var desc, bitstreamBuffer, out int written))
 {
-    // Dispatch slice data directly into RTP packetizer with zero GC allocations
-    _rtpStreamer.DispatchVideoPayload(desc, bitstreamBuffer.Slice(0, written));
+    // Dispatch slice data directly into MNBP packetiser with zero GC allocations
+    _mnbpStreamer.DispatchVideoPayload(desc, bitstreamBuffer.Slice(0, written));
 }
 ```
 
 ### C. Congestion Feedback & Dynamic Reconfiguration
-When RTCP receiver reports detect network packet drop or bandwidth constraints:
+When MNBP receiver reports detect network packet drop or bandwidth constraints:
 ```csharp
 engine.ReconfigureBitrate(newBitrateKbps: 30000, newFps: 120);
 ```

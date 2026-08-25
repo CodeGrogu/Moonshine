@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Status Disclaimer:** Moonshine is in active development (v0.5.6-alpha). It is its own platform with its own protocol (MNBP v1), not a GameStream client or Moonlight replacement. No end-to-end streaming works yet. The application is fail-closed.
+
 # Exhaustive Testing Strategy and Quality Assurance
 
 Moonshine enforces a cautious, multi-tier testing discipline. Every module, helper, mathematical operation, and memory boundary is tested against edge cases, corrupted inputs, out-of-order packet delivery, and concurrent thread contention.
@@ -12,10 +15,10 @@ Moonshine enforces a cautious, multi-tier testing discipline. Every module, help
             ┌────────────────────────────────────┼────────────────────────────────────┐
             ▼                                    ▼                                    ▼
 [ Native C++23 CTest Suites ]         [ Managed .NET 9 xUnit Suites ]      [ Memory & Concurrency Sanitizers ]
-- test_fec_simd                       - Moonshine.Protocol.Tests           - ASan (AddressSanitizer)
-- test_spsc_ring_buffer               - Moonshine.Interop.Tests            - UBSan (UndefinedBehavior)
-- test_jitter_buffer                  - Moonshine.Core.Tests               - TSan (ThreadSanitizer)
-- test_c_abi_export                                                        - BenchmarkDotNet 0B Alloc
+- 22 native test targets              - Moonshine.Protocol.Tests           - ASan (AddressSanitizer)
+  including MNBP v1 and               - Moonshine.Interop.Tests            - UBSan (UndefinedBehavior)
+  legacy compatibility                - Moonshine.Core.Tests               - TSan (ThreadSanitizer)
+  layers                                                                   - BenchmarkDotNet 0B Alloc
 ```
 
 ---
@@ -46,19 +49,20 @@ Moonshine enforces a cautious, multi-tier testing discipline. Every module, help
 - Null pointer resilience and error return codes.
 
 ### E. Managed Protocol Engine (`Moonshine.Protocol.Tests`)
-- `RtpHeader`: RTP packet header parsing, 12-byte minimum size enforcement, flag extraction, payload slicing.
-- `RtpAudioHeader`: Opus audio RTP parsing and metadata extraction.
+- **MNBP v1 Protocol Tests**: Full test suite for Moonshine's native MNBP v1 protocol framing and control operations.
+- `RtpHeader`: RTP packet header parsing, 12-byte minimum size enforcement, flag extraction, payload slicing (tests legacy compatibility layer).
+- `RtpAudioHeader`: Opus audio RTP parsing and metadata extraction (legacy compatibility).
 - `RtpSequenceUnwrapper`: 64-bit monotonic sequence unwrapping across 16-bit boundaries ($65535 \rightarrow 0$) and late-arriving packet handling.
 - `FecHeader`: Binary header parsing and shard count validation.
-- `RtspMessage`: Request and response serialization, method parsing, header extraction, and body size handling.
+- `RtspMessage`: Request and response serialisation, method parsing, header extraction, and body size handling (legacy compatibility).
 - `AesGcmHelper`: PIN/salt key derivation, AES-GCM encryption/decryption roundtrips, tampered ciphertext rejection.
-- `ControlPacket`: Ping/Pong serialization, IDR frame requests, and loss report payload formatting.
-- `InputPacket`: 1000Hz controller state bitmasks, stick coordinate normalization, and high-DPI mouse event packing.
+- `ControlPacket`: Ping/Pong serialisation, IDR frame requests, and loss report payload formatting.
+- `InputPacket`: 1000Hz controller state bitmasks, stick coordinate normalisation, and high-DPI mouse event packing.
 
 ### F. Managed Interop & Core (`Moonshine.Interop.Tests`, `Moonshine.Core.Tests`)
 - `StructLayoutTests`: Exact byte sizing and alignment for `MoonshinePacketDesc`, `MoonshineFrameDesc`, and `MoonshineDecoderCaps`.
 - `NativeMemoryOwnerTests`: Unmanaged memory allocation, zero-copy span access, and double-dispose safety.
-- `DiscoveryTests`: Sunshine XML serverinfo response parsing.
+- `DiscoveryTests`: Sunshine XML serverinfo response parsing (legacy compatibility).
 - `PairingTests`: Self-signed RSA-2048/X.509 client certificate and private key generation.
 - `UdpSocketPipelineTests`: Socket pipeline lifecycle and resource cleanup.
-- `MoonshineStreamSessionTests`: Session initialization and default state validation.
+- `MoonshineStreamSessionTests`: Session initialisation and default state validation.

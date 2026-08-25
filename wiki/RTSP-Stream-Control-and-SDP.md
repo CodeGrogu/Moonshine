@@ -1,8 +1,10 @@
 # Stateful RTSP Stream Control and Dynamic SDP Negotiation
 
-Moonshine provides an asynchronous, stateful RTSP (Real Time Streaming Protocol) client and SDP (Session Description Protocol) negotiator tailored for NVIDIA GameStream and Sunshine streaming servers over TCP port 48010.
+> [!WARNING]
+> **LEGACY COMPATIBILITY REFERENCE**
+> This document describes legacy RTSP/SDP compatibility code which belongs to the **Incompatible** layer and is unreachable from the production composition root. Moonshine is its own platform with its own protocol (MNBP v1), defined in `docs/PROTOCOL_SPEC_V1.md`.
 
----
+Moonshine provides an asynchronous, stateful RTSP (Real Time Streaming Protocol) client and SDP (Session Description Protocol) negotiator tailored for NVIDIA GameStream and Sunshine streaming hosts over TCP port 48010.
 
 ## 1. RTSP Stream Control Architecture
 
@@ -33,8 +35,6 @@ The stream lifecycle transitions through an explicit state machine:
 [Teardown] -> [Disconnected]
 ```
 
----
-
 ## 2. Dynamic SDP Negotiation Specifications
 
 The Session Description Protocol (RFC 4566) payload contains configuration parameters for video, audio, QoS, FEC matrices, and HDR10 mastering metadata.
@@ -64,8 +64,6 @@ When HDR10 is enabled (`dynamicRangeMode: 1`), mastering display colour primarie
 ### Audio Media Descriptor (`m=audio`)
 - **Payload Type**: `97` (Opus)
 - **Parameters**: 48,000 Hz sample rate, 2-channel stereo or 6-channel 5.1 surround sound, bitrate up to 512 kbps.
-
----
 
 ## 3. Dynamic Telemetry & QoS Announcements (`ANNOUNCE`)
 

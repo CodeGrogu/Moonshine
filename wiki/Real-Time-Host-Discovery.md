@@ -1,8 +1,10 @@
 # Real-Time LAN Host Discovery Engine
 
-The Moonshine Host Discovery subsystem provides instantaneous, zero-configuration local network discovery of active Sunshine and NVIDIA GameStream servers. It operates without external dependencies by combining custom, zero-allocation Multicast DNS (mDNS) parsers, Simple Service Discovery Protocol (SSDP / UPnP) broadcast scanners, and asynchronous HTTP/HTTPS `/serverinfo` XML probes.
+> [!WARNING]
+> **LEGACY COMPATIBILITY REFERENCE**
+> This document describes legacy compatibility code. The discovery module discovers Sunshine/GameStream hosts, but this code is classified as **Incompatible** and is not used by production Moonshine roles. Moonshine is its own platform with its own protocol (MNBP v1), defined in `docs/PROTOCOL_SPEC_V1.md`.
 
----
+The Moonshine Host Discovery subsystem provides instantaneous, zero-configuration local network discovery of active Sunshine and NVIDIA GameStream hosts. It operates without external dependencies by combining custom, zero-allocation Multicast DNS (mDNS) parsers, Simple Service Discovery Protocol (SSDP / UPnP) broadcast scanners, and asynchronous HTTP/HTTPS `/serverinfo` XML probes.
 
 ## 1. Network Discovery Architecture
 
@@ -44,8 +46,6 @@ The discovery engine runs concurrent socket listeners across all network interfa
 +-----------------------------------------------------------------------------------------+
 ```
 
----
-
 ## 2. Multicast DNS Protocol Specification (RFC 6762)
 
 Sunshine broadcasts its presence on the local network using the service name `_nvstream._tcp.local`.
@@ -69,8 +69,6 @@ mDNS response packets contain PTR, SRV, A, and TXT resource records. DNS domain 
 | **A** | `1` (`0x0001`) | IPv4 Address (`192.168.x.x`) |
 | **TXT** | `16` (`0x0010`) | Key-Value Attributes (`model=Sunshine`, `version=0.23.1`) |
 
----
-
 ## 3. Simple Service Discovery Protocol (SSDP / UPnP)
 
 In addition to mDNS, Moonshine emits SSDP `M-SEARCH` broadcast packets over UDP to `239.255.255.250:48010` (custom GameStream port) and `239.255.255.250:1900` (standard UPnP port).
@@ -93,8 +91,6 @@ Incoming `HTTP/1.1 200 OK` and `NOTIFY` datagrams are parsed using zero-copy ASC
 - **`SERVER`**: Host software banner (`Sunshine/0.23.1`).
 - **`CACHE-CONTROL`**: Maximum advertisement lifespan (`max-age=1800`).
 
----
-
 ## 4. ServerInfo XML Extraction (`/serverinfo`)
 
 Once an IP address is detected via mDNS or SSDP, the engine triggers an asynchronous HTTP GET request to `http://<host>:47989/serverinfo` (falling back to HTTPS port `47984` if HTTP is disabled on host).
@@ -108,24 +104,20 @@ The custom `ServerInfoCodec` extracts all metadata fields:
 | **`LocalIP` / `ExternalIP`** | String | Host internal and public IP addresses |
 | **`HttpPort` / `HttpsPort`** | Integer | HTTP and HTTPS communication ports |
 | **`PairStatus`** | Boolean | Pairing state (`1` = Paired, `0` = Unpaired) |
-| **`appversion`** | String | Sunshine / GeForce Experience server version |
+| **`appversion`** | String | Sunshine / GeForce Experience host version |
 | **`gputype`** | String | Active GPU device name (e.g. NVIDIA RTX 4090) |
 | **`currentgame`** | String | Currently running active game title (if any) |
-| **`uniqueid`** | String | Persistent server unique identifier (UUID) |
+| **`uniqueid`** | String | Persistent host unique identifier (UUID) |
 | **`ServerCodecModeSupport`** | Bitmask | Bit 0: H.264, Bit 1: HEVC, Bit 2: AV1, Bit 3: HEVC Main10 |
 | **`SupportedDisplayModes`** | List | Supported resolutions and refresh rates (e.g. 4K 144Hz) |
-
----
 
 ## 5. Live Continuous Registry & Event Lifecycle
 
 The `LiveHostDiscoveryEngine` maintains thread-safe state and fires events as hosts enter, update, or leave the network:
 
-1. **`HostDiscovered`**: Fired when a previously unseen server responds to discovery probes.
+1. **`HostDiscovered`**: Fired when a previously unseen host responds to discovery probes.
 2. **`HostUpdated`**: Fired when an existing host changes state (e.g. game launched, pairing status changed).
 3. **`HostOffline`**: Fired when a host fails to respond within the configurable TTL timeout window (default 10s).
-
----
 
 ## 6. Zero-Allocation Discipline
 

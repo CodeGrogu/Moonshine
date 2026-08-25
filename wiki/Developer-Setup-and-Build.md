@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Status Disclaimer:** Moonshine is in active development (v0.5.6-alpha). It is its own platform with its own protocol (MNBP v1), not a GameStream client or Moonlight replacement. No end-to-end streaming works yet. The application is fail-closed.
+
 # Developer Setup and Build Guide
 
 ## 1. Prerequisites
@@ -17,13 +20,13 @@
 The repository includes automated PowerShell scripts that detect all installed build tools and run complete compilation and test passes:
 
 ```powershell
-# 1. Run full verification (Native C++23 build, CTest suite, .NET build, and xUnit suite)
+# 1. Run full verification (22 CTests and 493 xUnit tests)
 ./scripts/verify_codebase.ps1
 
 # 2. Build Release binaries without executing test suites
 ./scripts/build.ps1 -Configuration Release -SkipTests
 
-# 3. Execute micro-benchmarks
+# 3. Execute microbenchmarks
 ./scripts/run_benchmarks.ps1
 ```
 

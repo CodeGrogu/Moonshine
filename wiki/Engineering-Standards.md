@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Status Disclaimer:** Moonshine is in active development (v0.5.6-alpha). It is its own platform with its own protocol (MNBP v1), not a GameStream client or Moonlight replacement. No end-to-end streaming works yet. The application is fail-closed.
+
 # Moonshine Engineering Standards: Solo + AI Edition
 
 This document summarises the operational principles, verification gates, and mechanical code standards governing the Moonshine repository. The authoritative canonical specification is located in [`STANDARDS.md`](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/STANDARDS.md).
@@ -34,8 +37,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\verify_codebase.ps1
 3. **Physical Artifact Verification**:
    - Tests physical presence of Windows binaries (`build\release-avx2\bin\Moonshine.Native.dll` and the Windows-targeted `Moonshine.Host.dll`).
 4. **Native & Managed Test Suites**:
-   - Runs 16 native C++23 CTest test suites.
-   - Runs 238 managed .NET 9 xUnit tests across all four test projects.
+   - Runs 22 native C++23 CTest test suites.
+   - Runs 493 managed .NET 9 xUnit tests across all four test projects.
 
 ---
 
@@ -44,5 +47,5 @@ powershell -ExecutionPolicy Bypass -File .\scripts\verify_codebase.ps1
 Features in Moonshine transition through four distinct maturity phases:
 1. **Prototype**: Scaffolding or early implementation. Compiles cleanly, but lacks end-to-end hardware testing.
 2. **Verified**: Passed local proof-of-work validation (Rule 1) and value-based regression tests (Rule 3).
-3. **Interop-verified**: Validated against external software (Sunshine, Moonlight, `ffprobe`).
-4. **Trusted**: Interop-verified and proven stable under sustained real-world streaming workloads.
+3. **Interop-verified**: Validated against external software counterparts (e.g., Sunshine, Moonlight, `ffprobe`).
+4. **Trusted**: Interop-verified and proven stable under sustained real-world streaming workloads using Moonshine's native protocol (MNBP v1).

@@ -1,4 +1,8 @@
-# GameStream and Sunshine Protocol Specification
+# GameStream and Sunshine Protocol Specification (Legacy Compatibility Reference)
+
+> [!WARNING]
+> **LEGACY COMPATIBILITY REFERENCE**
+> This document describes legacy compatibility code that is classified as **Incompatible** and unreachable from the production composition root. Moonshine is its own platform with its own protocol (MNBP v1), defined in `docs/PROTOCOL_SPEC_V1.md`. This is NOT a GameStream client or Moonlight replacement.
 
 ## 1. Network Topology and Port Matrix
 
@@ -14,8 +18,6 @@ Moonshine communicates with Sunshine / GameStream hosts over a combination of TC
 | **48000** | Audio RTP (UDP) | Low-latency multi-channel Opus audio stream | Inbound |
 | **47999** | Control (UDP) | Stream loss reports, IDR request, ping/pong | Bidirectional |
 | **48010** | Input (UDP) | 1000Hz Gamepad, Keyboard, Mouse, and Touch events | Outbound |
-
----
 
 ## 2. Discovery and Cryptographic Pairing Handshake
 
@@ -42,8 +44,6 @@ sequenceDiagram
     Note over Client,Host: Pairing Established and Trusted Certificate Stored
 ```
 
----
-
 ## 3. RTSP Stream Negotiation State Machine
 
 Once paired, Moonshine negotiates video resolution, frame rate, bitrate, and codec parameters over RTSP (Port 48010):
@@ -53,8 +53,6 @@ Once paired, Moonshine negotiates video resolution, frame rate, bitrate, and cod
 3. `SETUP`: Configures UDP transport channels for video (port 47998), audio (port 48000), and control (port 47999).
 4. `PLAY`: Initiates real-time UDP stream transmission.
 5. `TEARDOWN`: Gracefully terminates the session and resets the host capture pipeline.
-
----
 
 ## 4. Binary Packet Layouts
 

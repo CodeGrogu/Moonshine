@@ -1,6 +1,10 @@
+> [!WARNING]
+> **Status: Incomplete / Fail-Closed**
+> Moonshine is in early development (v0.5.6-alpha). End-to-end streaming is not yet operational and the pipeline is fail-closed. Claims of sub-millisecond 4K 120 FPS decode are design targets.
+
 # Hardware Video Decoding Pipeline (Direct3D 11 & Direct3D 12)
 
-Moonshine implements an ultra-low-latency, zero-copy hardware video decoding pipeline built natively in C++23 utilizing Direct3D 11 Video Acceleration (D3D11VA) and Direct3D 12 Video Decode APIs.
+Moonshine implements an ultra-low-latency, zero-copy hardware video decoding pipeline built natively in C++23 utilising Direct3D 11 Video Acceleration (D3D11VA) and Direct3D 12 Video Decode APIs.
 
 ---
 
@@ -47,7 +51,7 @@ Moonshine negotiates hardware decoder profiles dynamically based on GPU capabili
 
 ## 3. Direct Surface Decoding and Zero-Copy Discipline
 
-To achieve sub-millisecond decode latency at 4K 120 FPS:
+To achieve a design target of sub-millisecond decode latency at 4K 120 FPS:
 
 1. **Host-to-Device Bypass**:
    - Bitstream buffers reconstructed by the predictive jitter buffer reside in pinned native memory slabs.
@@ -67,9 +71,9 @@ Moonshine integrates a custom DXGI Flip Model swapchain presentation engine for 
 - **`DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING` & `DXGI_PRESENT_ALLOW_TEARING`**: Enables seamless Variable Refresh Rate (VRR / NVIDIA G-Sync / AMD FreeSync) presentation without tearing or micro-stuttering.
 - **`DXGI_MWA_NO_ALT_ENTER`**: Prevents legacy DXGI window hooks from interfering with high-frame-rate streaming.
 
-### B. True 10-bit HDR10 Rec.2020 Color Spaces
+### B. True 10-bit HDR10 Rec.2020 Colour Spaces
 - **SDR Standard**: `DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709` over `DXGI_FORMAT_B8G8R8A8_UNORM`.
-- **HDR10 Wide Color Gamut**: `DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020` over `DXGI_FORMAT_R10G10B10A2_UNORM` configured via `IDXGISwapChain3::SetColorSpace1`.
+- **HDR10 Wide Colour Gamut**: `DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020` over `DXGI_FORMAT_R10G10B10A2_UNORM` configured via `IDXGISwapChain3::SetColorSpace1`.
 
 ---
 
@@ -79,5 +83,5 @@ The native bridge queries the active GPU adapter capabilities:
 - **`MaxWidth` / `MaxHeight`**: Maximum hardware resolution (up to 7680x4320 8K).
 - **`MaxFps`**: Maximum hardware refresh capability (up to 240 FPS).
 - **`SupportsAv1` / `SupportsHevc` / `SupportsH264`**: Codec decoder presence.
-- **`SupportsHdr10` / `Supports10Bit`**: 10-bit Rec.2020 wide color gamut capability.
+- **`SupportsHdr10` / `Supports10Bit`**: 10-bit Rec.2020 wide colour gamut capability.
 - **`SupportsD3D12` / `SupportsVulkan`**: Modern low-overhead graphics API decode availability.

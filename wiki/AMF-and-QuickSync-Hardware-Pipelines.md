@@ -1,3 +1,7 @@
+> [!WARNING]
+> **Status: Incomplete / Fail-Closed**
+> Moonshine is in early development (v0.5.6-alpha). End-to-end streaming is not yet operational and the pipeline is fail-closed. Hardware encoders are not operational just because vendor APIs exist. The certification test suites mentioned are design targets, not yet fully passing.
+
 # AMD AMF & Intel QuickSync Hardware Video Encoder Pipelines
 
 The **Moonshine Host AMF and QuickSync Video Encoding Pipelines** provide direct hardware-accelerated video encoding for AMD Radeon (VCN 1.0 to 5.0+) and Intel Arc / Iris Xe / Core Ultra (QuickSync / oneVPL) GPUs. They process Direct3D 11 texture surfaces directly with ultra-low-latency CBR tuning for H.264, HEVC Main10 (HDR10), and AV1 Profile 0. <!-- PROVENANCE: STANDARDS.md Rule 9 verified via test_amf_pipeline, test_amf_conformance, test_qsv_pipeline, and test_qsv_conformance -->
@@ -41,7 +45,7 @@ The **Moonshine Host AMF and QuickSync Video Encoding Pipelines** provide direct
                               │
                               ▼
 ┌────────────────────────────────────────────────────────────┐
-│         Annex B / OBU Bitstream -> RTP/FEC Streamer        │
+│         Annex B / OBU Bitstream -> MNBP/FEC Streamer       │
 └────────────────────────────────────────────────────────────┘
 ```
 
@@ -86,7 +90,7 @@ The **Moonshine Host AMF and QuickSync Video Encoding Pipelines** provide direct
                               │
                               ▼
 ┌────────────────────────────────────────────────────────────┐
-│         Annex B / OBU Bitstream -> RTP/FEC Streamer        │
+│         Annex B / OBU Bitstream -> MNBP/FEC Streamer       │
 └────────────────────────────────────────────────────────────┘
 ```
 
@@ -171,7 +175,7 @@ qsvPipeline.ConfigureIntraRefresh(enable: true, cycleSize: 30, qpDelta: -2);
 
 ---
 
-## 5. 9-Tier Matrix Conformance and Certification
+## 5. 9-Tier Matrix Conformance and Certification (Design Targets)
 
 Both the AMD AMF and Intel QuickSync pipelines include complete 9-tier matrix conformance test suites (`test_amf_conformance.cpp` and `test_qsv_conformance.cpp`):
 1. **Defensive Error Handling**: Zero capacity buffers, null pointers, and double destruction protection.

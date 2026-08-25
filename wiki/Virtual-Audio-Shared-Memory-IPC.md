@@ -1,6 +1,9 @@
+> [!NOTE]
+> **Development Status (v0.5.6-alpha)**: The shared memory IPC bridge is at **Prototype** maturity. It has been verified in software test suites but is not yet wired to an end-to-end streaming pipeline. The RTP packetisation reference below describes legacy framing; Moonshine's native protocol is MNBP v1.
+
 # Real-Time Shared Memory IPC Bridge for Virtual Audio Driver & Host Server
 
-The **Real-Time Shared Memory IPC Bridge** connects the user-mode Moonshine host audio engine directly to the dedicated Windows virtual audio driver endpoints (`Moonshine Audio` / Speaker and `Moonshine Microphone` / Mic) on Windows 11.
+The **Real-Time Shared Memory IPC Bridge** is designed to connect the user-mode Moonshine host audio engine directly to the dedicated Windows virtual audio driver endpoints (`Moonshine Audio` / Speaker and `Moonshine Microphone` / Mic) on Windows 11.
 
 ---
 
@@ -55,13 +58,13 @@ To eliminate thread contention and CPU spinning across processes:
 * **Acquire/Release Ordering**:
   - Producers issue `std::atomic_thread_fence(std::memory_order_release)` prior to committing write positions.
   - Consumers issue `std::atomic_thread_fence(std::memory_order_acquire)` prior to reading payload buffers.
-* **SIMD Alignment**: The ring data buffer starts at byte offset 192 (a multiple of 64 bytes), guaranteeing 32-byte alignment for AVX2/AVX-512 SIMD vectorization during copy and format transformation.
+* **SIMD Alignment**: The ring data buffer starts at byte offset 192 (a multiple of 64 bytes), guaranteeing 32-byte alignment for AVX2/AVX-512 SIMD vectorisation during copy and format transformation.
 
 ---
 
-## 3. MMCSS Event-Driven Signaling & Zero CPU Spinning
+## 3. MMCSS Event-Driven Signalling & Zero CPU Spinning
 
-* **Named Win32 Synchronization**: Each channel pairs memory-mapped buffers with named Win32 Events (`Global\Moonshine_Audio_Event_Render` and `Global\Moonshine_Audio_Event_Capture`).
+* **Named Win32 Synchronisation**: Each channel pairs memory-mapped buffers with named Win32 Events (`Global\Moonshine_Audio_Event_Render` and `Global\Moonshine_Audio_Event_Capture`).
 * **Microsecond Wake Latency**: Producers signal events on fixed chunk intervals (5-10ms, 240-480 samples @ 48kHz).
 * **MMCSS Pro Audio Scheduling**: Background streaming worker threads register with the Multimedia Class Scheduler Service via `AvSetMmThreadCharacteristicsW(L"Pro Audio", ...)` to ensure guaranteed real-time execution priority without audio dropouts.
 

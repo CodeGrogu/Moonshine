@@ -1,6 +1,10 @@
+> [!WARNING]
+> **Status: Incomplete / Fail-Closed**
+> Moonshine is in early development (v0.5.6-alpha) and is fail-closed by design. End-to-end streaming is not yet operational. Hardware encoders are not operational just because vendor APIs exist. Operational status requires successful submission of real captured GPU content.
+
 # NVIDIA NVENC Hardware Video Encoder Pipeline
 
-The **NVIDIA NVENC Hardware Video Encoder Pipeline** provides direct hardware-accelerated video encoding for NVIDIA GeForce GTX/RTX, RTX Professional, and Tesla/Data Center GPUs. It takes Direct3D 11 / Direct3D 12 texture surfaces directly with sub-2ms encode latency for H.264, HEVC Main10 (HDR10), and AV1 Profile 0.
+The **NVIDIA NVENC Hardware Video Encoder Pipeline** provides direct hardware-accelerated video encoding for NVIDIA GeForce GTX/RTX, RTX Professional, and Tesla/Data Center GPUs. It takes Direct3D 11 / Direct3D 12 texture surfaces directly with a design target of sub-2ms encode latency for H.264, HEVC Main10 (HDR10), and AV1 Profile 0.
 
 ---
 
@@ -42,7 +46,7 @@ The **NVIDIA NVENC Hardware Video Encoder Pipeline** provides direct hardware-ac
                               │
                               ▼
 ┌────────────────────────────────────────────────────────────┐
-│         Annex B / OBU Bitstream -> RTP/FEC Streamer        │
+│         Annex B / OBU Bitstream -> MNBP/FEC Streamer       │
 └────────────────────────────────────────────────────────────┘
 ```
 
@@ -52,7 +56,7 @@ The **NVIDIA NVENC Hardware Video Encoder Pipeline** provides direct hardware-ac
 
 | Preset | Target Latency | Visual Quality | Best Use Case |
 |---|---|---|---|
-| **P1_UltraFast** | `< 1.2 ms` | Good | 4K 120/240 FPS Ultra-Low Latency Competitive Gaming |
+| **P1_UltraFast** | `< 1.2 ms` | Good | 4K 120/240 FPS Ultra-Low Latency Competitive Gaming (Design Target) |
 | **P2_Fast** | `< 1.8 ms` | Very Good | 1440p 120 FPS / 4K 60 FPS Balance |
 | **P3_Medium** | `~ 2.5 ms` | High | 1080p 60/120 FPS High Quality Streaming |
 | **P4_Default** | `~ 3.2 ms` | High | General Video Streaming |
@@ -107,6 +111,6 @@ nvencPipeline.ConfigureIntraRefresh(enable: true, period: 60, count: 4);
 Span<byte> outBuffer = stackalloc byte[1024 * 512];
 if (nvencPipeline.TryEncodeFrame(d3dTexturePtr, forceIdr: false, out var desc, outBuffer, out int written))
 {
-    _packetizer.SendFrame(desc, outBuffer.Slice(0, written));
+    _packetiser.SendFrame(desc, outBuffer.Slice(0, written));
 }
 ```

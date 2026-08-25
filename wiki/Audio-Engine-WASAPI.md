@@ -1,13 +1,16 @@
+> [!NOTE]
+> **Development Status (v0.5.6-alpha)**: The WASAPI audio rendering subsystem is at **Prototype** maturity. It has been tested in isolation but is not yet wired to an end-to-end streaming pipeline. The latency figures below are design targets. Moonshine uses its own protocol (MNBP v1), not RTP.
+
 # WASAPI Low-Latency Audio Rendering Engine
 
-Moonshine features an ultra-low-latency audio playback pipeline built with the Windows Audio Session API (WASAPI) operating in Exclusive Mode to achieve sub-5ms render latencies without audio glitching or buffer underruns.
+Moonshine features a low-latency audio playback pipeline built with the Windows Audio Session API (WASAPI) operating in Exclusive Mode, targeting sub-5ms render latencies without audio glitching or buffer underruns.
 
 ---
 
 ## 1. Architectural Overview
 
 ```
-RTP Audio Packets (Opus 48kHz)
+RTP Audio Packets (Opus 48kHz) [Legacy framing, to be replaced by MNBP v1]
                 │
                 │ Real-time Opus decoding
                 ▼
@@ -42,7 +45,7 @@ Moonshine supports high-fidelity audio streams across three spatial topologies:
 
 ---
 
-## 3. Latency Optimization & MMCSS Scheduling
+## 3. Latency Optimisation & MMCSS Scheduling
 
 1. **Exclusive Mode Hardware Bypass**:
    - `AUDCLNT_SHAREMODE_EXCLUSIVE` opens direct access to the audio hardware ring buffer, eliminating Windows Audio Engine (audiodg.exe) sample rate conversion, limiter DSP, and mixer buffering overhead.

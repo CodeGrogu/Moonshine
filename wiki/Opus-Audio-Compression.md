@@ -1,6 +1,10 @@
+> [!WARNING]
+> **Status: Incomplete / Fail-Closed**
+> Moonshine is in early development (v0.5.6-alpha). End-to-end streaming is not yet operational. Performance figures are design targets. Moonshine uses the custom MNBP v1 protocol, not RTP.
+
 # Low-Latency Opus Audio Compression & Multi-Channel Stream Encoder
 
-The **Moonshine Opus Audio Compression Engine** delivers sub-1ms audio compression for 48kHz audio streams across Stereo 2.0, Surround 5.1 (Vorbis Layout Family 1), and Surround 7.1 channel configurations. Designed for ultra-low latency interactive streaming, the encoder operates with zero GC allocations in streaming hot paths and supports dynamic runtime bitrate and complexity adjustment.
+The **Moonshine Opus Audio Compression Engine** delivers a design target of sub-1ms audio compression for 48kHz audio streams across Stereo 2.0, Surround 5.1 (Vorbis Layout Family 1), and Surround 7.1 channel configurations. Designed for ultra-low latency interactive streaming, the encoder operates with zero GC allocations in streaming hot paths and supports dynamic runtime bitrate and complexity adjustment.
 
 ---
 
@@ -45,7 +49,7 @@ The **Moonshine Opus Audio Compression Engine** delivers sub-1ms audio compressi
                               │
                               ▼
 ┌────────────────────────────────────────────────────────────┐
-│             RFC 3550 RTP Audio Packetiser Output           │
+│             MNBP Audio Packetiser Output                   │
 │   - Monotonic 48kHz Monotonic Timestamps                   │
 │   - Sub-1ms End-to-End Compression Latency                 │
 └────────────────────────────────────────────────────────────┘
@@ -124,7 +128,7 @@ MOONSHINE_API void MOONSHINE_CONV moonshine_opus_encoder_get_metrics(
 ```csharp
 using Moonshine.Host.Audio;
 
-// Initialize 5ms Opus Audio Encoder at 48kHz Surround 5.1 (256 kbps)
+// Initialise 5ms Opus Audio Encoder at 48kHz Surround 5.1 (256 kbps)
 using var encoder = new OpusAudioEncoderPipeline(
     sampleRate: 48000,
     topology: AudioChannelTopology.Surround51,
@@ -134,16 +138,16 @@ using var encoder = new OpusAudioEncoderPipeline(
     useVbr: true
 );
 
-var packetiser = new RtpAudioPacketiser(payloadType: 97, ssrc: 0x55667788);
+var packetiser = new MnbpAudioPacketiser(payloadType: 97, streamId: 0x55667788);
 
 Span<float> pcmBuffer = stackalloc float[240 * 6]; // 240 samples * 6 channels
 Span<byte> opusPayload = stackalloc byte[1024];
-Span<byte> rtpDatagram = stackalloc byte[1500];
+Span<byte> mnbpDatagram = stackalloc byte[1500];
 
 if (encoder.TryEncode(pcmBuffer, frameSamples: 240, opusPayload, out int bytesEncoded))
 {
     ReadOnlySpan<byte> payloadSlice = opusPayload.Slice(0, bytesEncoded);
-    if (packetiser.TryPacketise(payloadSlice, timestamp: 48000, marker: false, rtpDatagram, out int rtpWritten))
+    if (packetiser.TryPacketise(payloadSlice, timestamp: 48000, marker: false, mnbpDatagram, out int mnbpWritten))
     {
         // Transmit UDP datagram
     }

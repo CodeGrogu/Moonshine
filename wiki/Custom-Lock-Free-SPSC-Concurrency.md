@@ -1,12 +1,15 @@
+> [!WARNING]
+> **Status Disclaimer:** Moonshine is in active development (v0.5.6-alpha). It is its own platform with its own protocol (MNBP v1), not a GameStream client or Moonlight replacement. No end-to-end streaming works yet. The application is fail-closed.
+
 # Custom Lock-Free SPSC Concurrency Engine
 
-## 1. Problem Statement: The Cost of Mutex Synchronization
+## 1. Problem Statement: The Cost of Mutex Synchronisation
 
 In low-latency streaming applications, packets arrive asynchronously from the network thread and must be handed off immediately to the video decoding and presentation threads.
 
 Standard approaches using mutexes (`std::mutex`, `Monitor.Enter`, or `Channel<T>` with lock primitives) introduce significant performance penalties:
 1. Thread Context Switches: Contention triggers kernel-level thread preemption, costing between $1.5\,\mu\text{s}$ and $15.0\,\mu\text{s}$ per switch.
-2. Cache Invalidation and False Sharing: When multiple CPU cores access shared synchronization variables located on the same 64-byte cache line, the CPU cache coherence protocol (MESI/MOESI) invalidates cache lines across cores repeatedly.
+2. Cache Invalidation and False Sharing: When multiple CPU cores access shared synchronisation variables located on the same 64-byte cache line, the CPU cache coherence protocol (MESI/MOESI) invalidates cache lines across cores repeatedly.
 3. Latency Jitter: Mutex contention causes non-deterministic presentation delays, leading to dropped frames and perceived stutter.
 
 ---
@@ -31,7 +34,7 @@ Producer Thread (Core 0)                         Consumer Thread (Core 1)
                               Power-of-Two Bitmask
 ```
 
-### Key Architectural Optimizations:
+### Key Architectural Optimisations:
 
 ### A. Strict Cacheline Isolation (`alignas(64)`)
 The queue separates the producer variables (`tail_`, `cached_head_`) and the consumer variables (`head_`, `cached_tail_`) onto separate 64-byte memory boundaries. This guarantees that writes by the network thread to `tail_` never invalidate the decoder thread's L1 cache line containing `head_`.
@@ -107,6 +110,9 @@ public:
 ---
 
 ## 4. Benchmark Comparison
+
+> [!NOTE]
+> Benchmark claims require Rule 9 provenance tags to verify the testing methodology and environment.
 
 Stress test pushing and popping 10,000,000 items across two dedicated CPU cores:
 
