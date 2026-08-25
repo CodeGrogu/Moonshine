@@ -281,7 +281,21 @@ int D3D11VideoDecoder::SubmitFrame(const MoonshineFrameDesc& frame) {
         vctx->DecoderEndFrame(dec);
     }
 
-    if (d3d11_context_ && output_texture_ && staging_texture_ && width_ > 0 && height_ > 0) {
+    decoded_frames_++;
+    pixels_dirty_ = true;
+    return 0;
+#else
+    return -1;
+#endif
+}
+
+void* D3D11VideoDecoder::GetTextureHandle() const noexcept {
+    return output_texture_;
+}
+
+const uint8_t* D3D11VideoDecoder::GetDecodedPixels(uint32_t& out_size) const noexcept {
+#if defined(_WIN32)
+    if (pixels_dirty_ && d3d11_context_ && output_texture_ && staging_texture_ && width_ > 0 && height_ > 0) {
         auto* dctx = static_cast<ID3D11DeviceContext*>(d3d11_context_);
         auto* out_tex = static_cast<ID3D11Texture2D*>(output_texture_);
         auto* staging_tex = static_cast<ID3D11Texture2D*>(staging_texture_);
@@ -325,21 +339,11 @@ int D3D11VideoDecoder::SubmitFrame(const MoonshineFrameDesc& frame) {
                 }
             }
             dctx->Unmap(staging_tex, 0);
+            pixels_dirty_ = false;
         }
     }
-
-    decoded_frames_++;
-    return 0;
-#else
-    return -1;
 #endif
-}
 
-void* D3D11VideoDecoder::GetTextureHandle() const noexcept {
-    return output_texture_;
-}
-
-const uint8_t* D3D11VideoDecoder::GetDecodedPixels(uint32_t& out_size) const noexcept {
     if (decoded_pixels_.empty()) {
         out_size = 0;
         return nullptr;
@@ -367,8 +371,15 @@ void D3D11VideoDecoder::Shutdown() {
     initialized_ = false;
     hwnd_ = nullptr;
     decoded_frames_ = 0;
+    pixels_dirty_ = false;
+    decoded_pixels_.clear();
 
 #if defined(_WIN32)
+    if (d3d11_context_) {
+        auto* ctx = static_cast<ID3D11DeviceContext*>(d3d11_context_);
+        ctx->ClearState();
+        ctx->Flush();
+    }
     if (output_view_) {
         static_cast<ID3D11VideoDecoderOutputView*>(output_view_)->Release();
         output_view_ = nullptr;

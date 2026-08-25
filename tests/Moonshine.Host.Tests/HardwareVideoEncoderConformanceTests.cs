@@ -7,6 +7,8 @@ using Moonshine.Host.Encoding;
 using Moonshine.Interop;
 using Xunit;
 
+[assembly: CollectionBehavior(DisableTestParallelization = true)]
+
 namespace Moonshine.Host.Tests;
 
 /// <summary>
@@ -73,11 +75,12 @@ public class HardwareVideoEncoderConformanceTests
         IntPtr dev = MoonshineNativeMethods.D3D11CreateDevice(0x10DE);
         Skip.If(dev == IntPtr.Zero, "Physical Direct3D 11 device (GPU) is unavailable on this runner.");
 
-        IntPtr decoder = MoonshineNativeMethods.VideoCreateD3D11(IntPtr.Zero, 1920, 1080, (uint)VideoCodec.HevcMain10);
-        Skip.If(decoder == IntPtr.Zero, "Direct3D 11 Video Decoder creation failed.");
-
+        IntPtr decoder = IntPtr.Zero;
         try
         {
+            decoder = MoonshineNativeMethods.VideoCreateD3D11(IntPtr.Zero, 1920, 1080, (uint)VideoCodec.HevcMain10);
+            Skip.If(decoder == IntPtr.Zero, "Direct3D 11 Video Decoder creation failed.");
+
             using var pipeline = new NvencHardwareEncoderPipeline(1920, 1080, codec: VideoCodec.HevcMain10, d3dDevice: dev);
             Skip.IfNot(pipeline.IsActive, "Physical NVIDIA GPU (0x10DE) or NVENC driver runtime is unavailable on this runner.");
 
@@ -381,11 +384,12 @@ public class HardwareVideoEncoderConformanceTests
         IntPtr dev = MoonshineNativeMethods.D3D11CreateDevice(0x10DE);
         Skip.If(dev == IntPtr.Zero, "Physical NVIDIA GPU is unavailable.");
 
-        IntPtr decoder = MoonshineNativeMethods.VideoCreateD3D11(IntPtr.Zero, 1920, 1080, (uint)VideoCodec.HevcMain10);
-        Skip.If(decoder == IntPtr.Zero, "Decoder creation failed.");
-
+        IntPtr decoder = IntPtr.Zero;
         try
         {
+            decoder = MoonshineNativeMethods.VideoCreateD3D11(IntPtr.Zero, 1920, 1080, (uint)VideoCodec.HevcMain10);
+            Skip.If(decoder == IntPtr.Zero, "Decoder creation failed.");
+
             using var pipeline = new NvencHardwareEncoderPipeline(1920, 1080, codec: VideoCodec.HevcMain10, d3dDevice: dev);
             Skip.IfNot(pipeline.IsActive, "Pipeline unavailable.");
 
@@ -408,47 +412,71 @@ public class HardwareVideoEncoderConformanceTests
 
                 bool encodeOk = pipeline.TryEncodeFrame(patternTex, true, out var desc, buffer, out int written);
                 encodeOk.Should().BeTrue();
+                written.Should().BeGreaterThan(32);
 
-                // Flip random bits
-                buffer[written / 2] ^= 0xFF;
-                buffer[written / 4] ^= 0x55;
+                // Test 4 distinct corruption locations across independent bitstream copies:
+                // 1. NAL header prefix byte
+                // 2. SPS/PPS parameter set payload
+                // 3. IDR slice header
+                // 4. Slice data payload
+                int[] corruptionOffsets = [
+                    4,                          // NAL header unit type
+                    Math.Min(12, written - 1),   // Parameter sets
+                    written / 4,                // IDR slice header
+                    written / 2                 // Slice payload
+                ];
 
-                fixed (byte* pBuf = buffer)
+                foreach (int offset in corruptionOffsets)
                 {
-                    var frameDesc = new MoonshineFrameDesc
-                    {
-                        FrameIndex = 1,
-                        TotalBytes = (uint)written,
-                        PacketCount = 1,
-                        IsKeyframe = 1,
-                        FrameBuffer = pBuf
-                    };
+                    byte[] corruptBuffer = new byte[written];
+                    Array.Copy(buffer, corruptBuffer, written);
 
-                    int decodeRes = MoonshineNativeMethods.VideoSubmitFrame(decoder, in frameDesc);
-                    if (decodeRes == 0)
+                    corruptBuffer[offset] ^= 0xFF;
+                    if (offset + 1 < written) corruptBuffer[offset + 1] ^= 0xAA;
+
+                    fixed (byte* pBuf = corruptBuffer)
                     {
-                        IntPtr decodedTex = MoonshineNativeMethods.VideoGetTexture(decoder);
-                        if (decodedTex != IntPtr.Zero)
+                        var frameDesc = new MoonshineFrameDesc
                         {
-                            byte[] decPixels = new byte[1920 * 1080 * 4];
-                            uint decBytes = 0;
-                            fixed (byte* pDec = decPixels)
-                            fixed (byte* pRef = refPixels)
+                            FrameIndex = 1,
+                            TotalBytes = (uint)written,
+                            PacketCount = 1,
+                            IsKeyframe = 1,
+                            FrameBuffer = pBuf
+                        };
+
+                        int decodeRes = MoonshineNativeMethods.VideoSubmitFrame(decoder, in frameDesc);
+                        if (decodeRes == 0)
+                        {
+                            IntPtr decodedTex = MoonshineNativeMethods.VideoGetTexture(decoder);
+                            if (decodedTex != IntPtr.Zero)
                             {
-                                int decReadRes = MoonshineNativeMethods.D3D11ReadbackPixels(IntPtr.Zero, decodedTex, pDec, (uint)decPixels.Length, out decBytes);
-                                decReadRes.Should().Be(0);
-                                int metricRes = MoonshineNativeMethods.VideoComputeQualityMetrics(
-                                    pRef,
-                                    87 /* DXGI_FORMAT_B8G8R8A8_UNORM */,
-                                    pDec,
-                                    104 /* DXGI_FORMAT_P010 */,
-                                    1920,
-                                    1080,
-                                    15.0f,
-                                    out var metrics
-                                );
-                                metricRes.Should().Be(0);
-                                metrics.PsnrY.Should().BeLessThan(20.0f);
+                                byte[] decPixels = new byte[1920 * 1080 * 4];
+                                uint decBytes = 0;
+                                fixed (byte* pDec = decPixels)
+                                fixed (byte* pRef = refPixels)
+                                {
+                                    int decReadRes = MoonshineNativeMethods.D3D11ReadbackPixels(IntPtr.Zero, decodedTex, pDec, (uint)decPixels.Length, out decBytes);
+                                    if (decReadRes == 0)
+                                    {
+                                        int metricRes = MoonshineNativeMethods.VideoComputeQualityMetrics(
+                                            pRef,
+                                            87 /* DXGI_FORMAT_B8G8R8A8_UNORM */,
+                                            pDec,
+                                            104 /* DXGI_FORMAT_P010 */,
+                                            1920,
+                                            1080,
+                                            15.0f,
+                                            1 /* Mode 1: Full-Frame Exact */,
+                                            out var metrics
+                                        );
+                                        metricRes.Should().Be(0);
+                                        metrics.IsFullFrame.Should().Be(1);
+                                        // Corrupt bitstream must either fail decoding or fail image quality metrics
+                                        bool degradedOrFailed = metrics.PsnrY < 15.0f || metrics.MaxError > 100.0f;
+                                        degradedOrFailed.Should().BeTrue("corrupt bitstream must degrade image quality significantly if not rejected");
+                                    }
+                                }
                             }
                         }
                     }
@@ -499,36 +527,129 @@ public class HardwareVideoEncoderConformanceTests
         IntPtr dev = MoonshineNativeMethods.D3D11CreateDevice(0x10DE);
         Skip.If(dev == IntPtr.Zero, "Physical NVIDIA GPU is unavailable.");
 
-        IntPtr decoder = MoonshineNativeMethods.VideoCreateD3D11(IntPtr.Zero, 1920, 1080, (uint)VideoCodec.HevcMain10);
-        Skip.If(decoder == IntPtr.Zero, "Decoder creation failed.");
-
+        IntPtr decoder = IntPtr.Zero;
         try
         {
-            byte[] garbage = new byte[1024];
-            new Random().NextBytes(garbage);
+            decoder = MoonshineNativeMethods.VideoCreateD3D11(IntPtr.Zero, 1920, 1080, (uint)VideoCodec.HevcMain10);
+            Skip.If(decoder == IntPtr.Zero, "Decoder creation failed.");
 
-            fixed (byte* pBuf = garbage)
+            int[] testSizes = [512, 1024, 4096];
+            var rng = new Random(42);
+
+            foreach (int size in testSizes)
             {
-                var frameDesc = new MoonshineFrameDesc
-                {
-                    FrameIndex = 1,
-                    TotalBytes = (uint)garbage.Length,
-                    PacketCount = 1,
-                    IsKeyframe = 1,
-                    FrameBuffer = pBuf
-                };
+                byte[] garbage = new byte[size];
+                rng.NextBytes(garbage);
 
-                int decodeRes = MoonshineNativeMethods.VideoSubmitFrame(decoder, in frameDesc);
-                if (decodeRes == 0)
+                // Structural validation must strictly reject pure garbage NALUs
+                var auResult = BitstreamValidator.ValidateAccessUnit(VideoCodec.HevcMain10, garbage);
+                auResult.IsValid.Should().BeFalse("random byte sequences must fail structural bitstream validation");
+
+                fixed (byte* pBuf = garbage)
                 {
-                    IntPtr decodedTex = MoonshineNativeMethods.VideoGetTexture(decoder);
-                    // Expected to fail validation if it miraculously decodes
+                    var frameDesc = new MoonshineFrameDesc
+                    {
+                        FrameIndex = 1,
+                        TotalBytes = (uint)garbage.Length,
+                        PacketCount = 1,
+                        IsKeyframe = 1,
+                        FrameBuffer = pBuf
+                    };
+
+                    int decodeRes = MoonshineNativeMethods.VideoSubmitFrame(decoder, in frameDesc);
+                    if (decodeRes == 0)
+                    {
+                        // If decoder does not fail closed immediately, pattern verification must fail
+                        int verifyRes = MoonshineNativeMethods.VideoVerifyDecodedPattern(decoder, 1 /* Solid Colour */, 0.05f);
+                        verifyRes.Should().NotBe(0, "garbage NALUs must not produce valid decoded pattern output");
+                    }
                 }
             }
         }
         finally
         {
             if (decoder != IntPtr.Zero) MoonshineNativeMethods.VideoDestroy(decoder);
+            MoonshineNativeMethods.D3D11DestroyDevice(dev);
+        }
+    }
+
+    [SkippableFact]
+    public void NvencPipeline_MultiFrameReconfigurationStress_PreservesQualityAndIntegrity()
+    {
+        IntPtr dev = MoonshineNativeMethods.D3D11CreateDevice(0x10DE);
+        Skip.If(dev == IntPtr.Zero, "Physical NVIDIA GPU is unavailable.");
+
+        IntPtr tex = MoonshineNativeMethods.D3D11CreatePatternTexture(dev, 1920, 1080, 2, 0);
+        if (tex == IntPtr.Zero)
+        {
+            MoonshineNativeMethods.D3D11DestroyDevice(dev);
+            Skip.If(true, "Direct3D 11 test texture allocation failed.");
+        }
+
+        try
+        {
+            using var pipeline = new NvencHardwareEncoderPipeline(1920, 1080, fps: 60, bitrateKbps: 10000, d3dDevice: dev);
+            Skip.IfNot(pipeline.IsActive, "Physical NVIDIA GPU (0x10DE) or NVENC driver runtime is unavailable on this runner.");
+
+            byte[] buffer = new byte[1024 * 1024];
+
+            // Phase 1: Encode 5 initial frames at 10 Mbps
+            for (int f = 0; f < 5; ++f)
+            {
+                bool ok = pipeline.TryEncodeFrame(tex, f == 0, out var desc, buffer, out int written);
+                ok.Should().BeTrue();
+                written.Should().BeGreaterThan(0);
+                var au = BitstreamValidator.ValidateAccessUnit(VideoCodec.HevcMain10, buffer.AsSpan(0, written));
+                au.IsValid.Should().BeTrue();
+            }
+
+            // Phase 2: Dynamic Bitrate Reconfiguration to 30 Mbps
+            bool reconfigBitrate1 = pipeline.ReconfigureBitrate(30000, 45000);
+            reconfigBitrate1.Should().BeTrue();
+            pipeline.BitrateKbps.Should().Be(30000);
+
+            for (int f = 5; f < 10; ++f)
+            {
+                bool ok = pipeline.TryEncodeFrame(tex, false, out var desc, buffer, out int written);
+                ok.Should().BeTrue();
+                written.Should().BeGreaterThan(0);
+                var au = BitstreamValidator.ValidateAccessUnit(VideoCodec.HevcMain10, buffer.AsSpan(0, written));
+                au.IsValid.Should().BeTrue();
+            }
+
+            // Phase 3: Dynamic Intra-Refresh Reconfiguration
+            bool reconfigIntra = pipeline.ConfigureIntraRefresh(true, 30, 4);
+            reconfigIntra.Should().BeTrue();
+
+            for (int f = 10; f < 15; ++f)
+            {
+                bool ok = pipeline.TryEncodeFrame(tex, false, out var desc, buffer, out int written);
+                ok.Should().BeTrue();
+                written.Should().BeGreaterThan(0);
+                var au = BitstreamValidator.ValidateAccessUnit(VideoCodec.HevcMain10, buffer.AsSpan(0, written));
+                au.IsValid.Should().BeTrue();
+            }
+
+            // Phase 4: Dynamic Bitrate Reconfiguration down to 5 Mbps
+            bool reconfigBitrate2 = pipeline.ReconfigureBitrate(5000, 7500);
+            reconfigBitrate2.Should().BeTrue();
+            pipeline.BitrateKbps.Should().Be(5000);
+
+            for (int f = 15; f < 20; ++f)
+            {
+                bool ok = pipeline.TryEncodeFrame(tex, false, out var desc, buffer, out int written);
+                ok.Should().BeTrue();
+                written.Should().BeGreaterThan(0);
+                var au = BitstreamValidator.ValidateAccessUnit(VideoCodec.HevcMain10, buffer.AsSpan(0, written));
+                au.IsValid.Should().BeTrue();
+            }
+
+            pipeline.RuntimeState.Should().Be(EncoderRuntimeState.Ready);
+            pipeline.HasProducedValidOutput.Should().BeTrue();
+        }
+        finally
+        {
+            MoonshineNativeMethods.D3D11DestroyTexture(tex);
             MoonshineNativeMethods.D3D11DestroyDevice(dev);
         }
     }

@@ -351,6 +351,18 @@ struct mfxExtCodingOption2 {
 #pragma warning(pop)
 #endif
 
+typedef void* mfxHDL;
+typedef void* mfxMemId;
+
+#ifndef MFX_INFINITE
+#define MFX_INFINITE 0xFFFFFFFF
+#endif
+
+struct mfxHDLPair {
+    mfxHDL first;  // ID3D11Texture2D*
+    mfxHDL second; // Subresource index (e.g. 0 or (mfxHDL)(uintptr_t)MFX_INFINITE)
+};
+
 typedef struct _mfxSession* mfxSession;
 typedef void* mfxSyncPoint;
 typedef void* mfxLoader;
@@ -404,6 +416,7 @@ typedef void (WINAPI *MFXUnload_Fn)(mfxLoader loader);
 typedef mfxConfig (WINAPI *MFXCreateConfig_Fn)(mfxLoader loader);
 typedef mfxStatus (WINAPI *MFXSetConfigFilterProperty_Fn)(mfxConfig config, const uint8_t* name, mfxVariant value);
 typedef mfxStatus (WINAPI *MFXCreateSession_Fn)(mfxLoader loader, uint32_t index, mfxSession* session);
+typedef mfxStatus (WINAPI *MFXEnumImplementations_Fn)(mfxLoader loader, uint32_t index, uint32_t format, void** implDesc);
 typedef mfxStatus (WINAPI *MFXDispReleaseImplDescription_Fn)(mfxLoader loader, void* implDesc);
 
 // Legacy MFX Function Prototypes

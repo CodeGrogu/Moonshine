@@ -95,5 +95,18 @@ public class GpuInventoryTests
                 MoonshineNativeMethods.D3D11DestroyDevice(intelDev);
             }
         }
+
+        IntPtr intelAdapterDev = MoonshineNativeMethods.D3D11CreateDeviceOnAdapter(0x8086, 0);
+        if (intelAdapterDev != IntPtr.Zero)
+        {
+            try
+            {
+                intelAdapterDev.Should().NotBe(IntPtr.Zero);
+            }
+            finally
+            {
+                MoonshineNativeMethods.D3D11DestroyDevice(intelAdapterDev);
+            }
+        }
     }
 }

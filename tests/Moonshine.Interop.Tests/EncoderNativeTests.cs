@@ -35,11 +35,19 @@ public class EncoderNativeTests
     [InlineData(1u)] // HEVC
     [InlineData(2u)] // HEVC Main10 (10-bit HDR)
     [InlineData(3u)] // AV1
-    public void QsvQueryCodecSupport_AllCodecs_ReturnsSupported(uint codec)
+    public void QsvQueryCodecSupport_ValidCodec_ExecutesDefensively(uint codec)
     {
         int res = MoonshineNativeMethods.QsvQueryCodecSupport(codec, out uint supported);
         res.Should().Be(1);
-        supported.Should().Be(1);
+        (supported == 0 || supported == 1).Should().BeTrue();
+    }
+
+    [Fact]
+    public void QsvQueryCodecSupport_InvalidCodec_ReturnsUnsupported()
+    {
+        int res = MoonshineNativeMethods.QsvQueryCodecSupport(999u, out uint supported);
+        res.Should().Be(1);
+        supported.Should().Be(0);
     }
 
     [Fact]

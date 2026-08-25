@@ -534,10 +534,14 @@ bool QsvDiagnostic::encode_known_frame(
     bs.DataOffset = 0;
     bs.DataLength = 0;
 
+    mfxHDLPair hdl_pair{};
+    hdl_pair.first = texture;
+    hdl_pair.second = (mfxHDL)(uintptr_t)0;
+
     mfxFrameSurface1 surface{};
     surface.Info = params.mfx.FrameInfo;
     surface.Data.MemType = MFX_MEMTYPE_D3D11_MEMORY_BIND_RENDER_TARGET | MFX_MEMTYPE_FROM_ENCODE;
-    surface.Data.MemId = texture;
+    surface.Data.MemId = &hdl_pair;
     surface.Data.TimeStamp = 0;
 
     mfxSyncPoint sync_point = nullptr;

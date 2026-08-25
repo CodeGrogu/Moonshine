@@ -107,25 +107,31 @@ public class NvencEncoderLoopbackTests
         IntPtr dev = MoonshineNativeMethods.D3D11CreateDevice(0x10DE);
         Skip.If(dev == IntPtr.Zero, "NVIDIA GPU (0x10DE) unavailable (NOT PRESENT).");
 
-        int capsRes = MoonshineNativeMethods.EncoderQueryCaps((uint)EncoderVendor.NvidiaNvenc, dev, out var caps);
-        Skip.If(capsRes != 0 || (caps.SupportedCodecsMask & 0x08) == 0, "NVENC AV1 encoding is not supported on this GPU architecture (UNSUPPORTED CODEC).");
-
-        IntPtr tex = MoonshineNativeMethods.D3D11CreatePatternTexture(dev, 1920, 1080, 1, 0);
-        Skip.If(tex == IntPtr.Zero, "Direct3D 11 texture creation failed.");
-
         try
         {
-            using var pipeline = new NvencHardwareEncoderPipeline(1920, 1080, codec: VideoCodec.Av1, d3dDevice: dev);
-            Skip.IfNot(pipeline.IsActive, "NVENC AV1 pipeline initialisation failed (DRIVER ERROR).");
+            int capsRes = MoonshineNativeMethods.EncoderQueryCaps((uint)EncoderVendor.NvidiaNvenc, dev, out var caps);
+            Skip.If(capsRes != 0 || (caps.SupportedCodecsMask & 0x08) == 0, "NVENC AV1 encoding is not supported on this GPU architecture (UNSUPPORTED CODEC).");
 
-            byte[] buffer = new byte[1024 * 1024];
-            bool ok = pipeline.TryEncodeFrame(tex, true, out var desc, buffer, out int written);
-            ok.Should().BeTrue();
-            written.Should().BeGreaterThan(0);
+            IntPtr tex = MoonshineNativeMethods.D3D11CreatePatternTexture(dev, 1920, 1080, 1, 0);
+            Skip.If(tex == IntPtr.Zero, "Direct3D 11 texture creation failed.");
+
+            try
+            {
+                using var pipeline = new NvencHardwareEncoderPipeline(1920, 1080, codec: VideoCodec.Av1, d3dDevice: dev);
+                Skip.IfNot(pipeline.IsActive, "NVENC AV1 pipeline initialisation failed (DRIVER ERROR).");
+
+                byte[] buffer = new byte[1024 * 1024];
+                bool ok = pipeline.TryEncodeFrame(tex, true, out var desc, buffer, out int written);
+                ok.Should().BeTrue();
+                written.Should().BeGreaterThan(0);
+            }
+            finally
+            {
+                MoonshineNativeMethods.D3D11DestroyTexture(tex);
+            }
         }
         finally
         {
-            MoonshineNativeMethods.D3D11DestroyTexture(tex);
             MoonshineNativeMethods.D3D11DestroyDevice(dev);
         }
     }
@@ -136,14 +142,17 @@ public class NvencEncoderLoopbackTests
         IntPtr dev = MoonshineNativeMethods.D3D11CreateDevice(0x10DE);
         Skip.If(dev == IntPtr.Zero, "NVIDIA GPU (0x10DE) unavailable (NOT PRESENT).");
 
-        IntPtr tex = MoonshineNativeMethods.D3D11CreatePatternTexture(dev, 1920, 1080, 4, 0); // SMPTE bars
-        Skip.If(tex == IntPtr.Zero, "Direct3D 11 pattern texture creation failed.");
-
-        IntPtr decoder = MoonshineNativeMethods.VideoCreateD3D11(IntPtr.Zero, 1920, 1080, (uint)VideoCodec.HevcMain10); // HEVC Main10 decoder
-        Skip.If(decoder == IntPtr.Zero, "Direct3D 11 video decoder creation failed.");
+        IntPtr tex = IntPtr.Zero;
+        IntPtr decoder = IntPtr.Zero;
 
         try
         {
+            tex = MoonshineNativeMethods.D3D11CreatePatternTexture(dev, 1920, 1080, 4, 0); // SMPTE bars
+            Skip.If(tex == IntPtr.Zero, "Direct3D 11 pattern texture creation failed.");
+
+            decoder = MoonshineNativeMethods.VideoCreateD3D11(IntPtr.Zero, 1920, 1080, (uint)VideoCodec.HevcMain10); // HEVC Main10 decoder
+            Skip.If(decoder == IntPtr.Zero, "Direct3D 11 video decoder creation failed.");
+
             using var pipeline = new NvencHardwareEncoderPipeline(1920, 1080, codec: VideoCodec.HevcMain10, d3dDevice: dev);
             Skip.IfNot(pipeline.IsActive, "NVENC HEVC pipeline initialisation failed (DRIVER ERROR).");
 

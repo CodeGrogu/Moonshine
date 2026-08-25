@@ -73,6 +73,11 @@ int main() {
         REQUIRE(intel_dev != nullptr);
         std::cout << "  [+] Intel Direct3D 11 device created and vendor verified." << std::endl;
         moonshine_d3d11_destroy_device(intel_dev);
+
+        void* intel_adapter_dev = moonshine_d3d11_create_device_on_adapter(0x8086, 0);
+        REQUIRE(intel_adapter_dev != nullptr);
+        std::cout << "  [+] Intel Direct3D 11 device on specific adapter index (0x8086, 0) created successfully." << std::endl;
+        moonshine_d3d11_destroy_device(intel_adapter_dev);
     }
 
     // Verify QSV Diagnostic Export API

@@ -17,6 +17,7 @@ QsvApi::QsvApi(QsvApi&& other) noexcept
       MFXCreateConfig(other.MFXCreateConfig),
       MFXSetConfigFilterProperty(other.MFXSetConfigFilterProperty),
       MFXCreateSession(other.MFXCreateSession),
+      MFXEnumImplementations(other.MFXEnumImplementations),
       MFXDispReleaseImplDescription(other.MFXDispReleaseImplDescription),
       MFXInitEx(other.MFXInitEx),
       MFXClose(other.MFXClose),
@@ -42,6 +43,7 @@ QsvApi::QsvApi(QsvApi&& other) noexcept
     other.MFXCreateConfig = nullptr;
     other.MFXSetConfigFilterProperty = nullptr;
     other.MFXCreateSession = nullptr;
+    other.MFXEnumImplementations = nullptr;
     other.MFXDispReleaseImplDescription = nullptr;
     other.MFXInitEx = nullptr;
     other.MFXClose = nullptr;
@@ -69,6 +71,7 @@ QsvApi& QsvApi::operator=(QsvApi&& other) noexcept {
         MFXCreateConfig = other.MFXCreateConfig;
         MFXSetConfigFilterProperty = other.MFXSetConfigFilterProperty;
         MFXCreateSession = other.MFXCreateSession;
+        MFXEnumImplementations = other.MFXEnumImplementations;
         MFXDispReleaseImplDescription = other.MFXDispReleaseImplDescription;
         MFXInitEx = other.MFXInitEx;
         MFXClose = other.MFXClose;
@@ -91,6 +94,7 @@ QsvApi& QsvApi::operator=(QsvApi&& other) noexcept {
         other.MFXCreateConfig = nullptr;
         other.MFXSetConfigFilterProperty = nullptr;
         other.MFXCreateSession = nullptr;
+        other.MFXEnumImplementations = nullptr;
         other.MFXDispReleaseImplDescription = nullptr;
         other.MFXInitEx = nullptr;
         other.MFXClose = nullptr;
@@ -147,6 +151,7 @@ bool QsvApi::load() {
     MFXCreateConfig = reinterpret_cast<MFXCreateConfig_Fn>(GetProcAddress(_module, "MFXCreateConfig"));
     MFXSetConfigFilterProperty = reinterpret_cast<MFXSetConfigFilterProperty_Fn>(GetProcAddress(_module, "MFXSetConfigFilterProperty"));
     MFXCreateSession = reinterpret_cast<MFXCreateSession_Fn>(GetProcAddress(_module, "MFXCreateSession"));
+    MFXEnumImplementations = reinterpret_cast<MFXEnumImplementations_Fn>(GetProcAddress(_module, "MFXEnumImplementations"));
     MFXDispReleaseImplDescription = reinterpret_cast<MFXDispReleaseImplDescription_Fn>(GetProcAddress(_module, "MFXDispReleaseImplDescription"));
 
     // Legacy MSDK symbols
@@ -199,6 +204,7 @@ void QsvApi::unload() {
     MFXCreateConfig = nullptr;
     MFXSetConfigFilterProperty = nullptr;
     MFXCreateSession = nullptr;
+    MFXEnumImplementations = nullptr;
     MFXDispReleaseImplDescription = nullptr;
     MFXInitEx = nullptr;
     MFXClose = nullptr;

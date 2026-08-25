@@ -50,6 +50,14 @@ public:
     void set_target_usage(QsvTargetUsage usage, bool low_power_vdenc) noexcept;
     void set_intra_refresh(bool enabled, uint32_t cycle_size, int32_t qp_delta) noexcept;
 
+    struct TrackedSurface {
+        mfxFrameSurface1 surface{};
+        mfxHDLPair hdl_pair{};
+        void* d3d_texture{nullptr};
+        bool in_use{false};
+        uint64_t frame_id{0};
+    };
+
 private:
     QsvApi* _api{nullptr};
     void* _d3d_device{nullptr};
@@ -63,6 +71,8 @@ private:
     mfxExtCodingOption2 _ext_opt2{};
     mfxExtBuffer* _ext_buffers[2]{nullptr};
     std::vector<uint8_t> _bitstream_buffer;
+    std::vector<TrackedSurface> _surface_pool;
+    size_t _surface_index{0};
     EncoderConfig _config{};
     QsvTargetUsage _usage{QsvTargetUsage::BestSpeed};
     bool _low_power_vdenc{true};

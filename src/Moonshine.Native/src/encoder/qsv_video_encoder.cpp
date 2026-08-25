@@ -1,4 +1,5 @@
 #include "moonshine/encoder/qsv_video_encoder.hpp"
+#include "moonshine/export/moonshine_native_api.h"
 #include "encoder/qsv/qsv_types.hpp"
 #include "encoder/qsv/qsv_api.hpp"
 #include "encoder/qsv/qsv_session.hpp"
@@ -284,18 +285,82 @@ bool QsvVideoEncoder::query_capabilities(void* d3d_device, EncoderCaps& out_caps
         return false;
     }
 
-    // We cannot fully query oneVPL caps without a session here, so these are conservative estimates.
-    // TODO: use MFXEnumImplementations with mfxImplDescription to query supported codecs dynamically
-    out_caps.supported_codecs_mask = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3); // H264, HEVC, HEVC Main10, AV1
-    out_caps.max_width = 7680;
-    out_caps.max_height = 4320;
+    qsv::QsvSession probe_session;
+    if (!probe_session.open(api, d3d_device)) {
+        api.unload();
+        return false;
+    }
+
+    auto probe_codec = [&](uint32_t codec_id, uint32_t fourcc, uint16_t bit_depth, uint32_t width, uint32_t height) -> bool {
+        if (!api.MFXVideoENCODE_Query || !probe_session.session()) return false;
+        qsv::mfxVideoParam in_params{};
+        in_params.mfx.CodecId = codec_id;
+        in_params.mfx.TargetUsage = qsv::MFX_TARGETUSAGE_BALANCED;
+        in_params.mfx.TargetKbps = 10000;
+        in_params.mfx.RateControlMethod = qsv::MFX_RATECONTROL_CBR;
+        in_params.mfx.FrameInfo.FourCC = fourcc;
+        in_params.mfx.FrameInfo.Width = static_cast<uint16_t>((width + 15) & ~15);
+        in_params.mfx.FrameInfo.Height = static_cast<uint16_t>((height + 15) & ~15);
+        in_params.mfx.FrameInfo.CropW = static_cast<uint16_t>(width);
+        in_params.mfx.FrameInfo.CropH = static_cast<uint16_t>(height);
+        in_params.mfx.FrameInfo.FrameRateExtN = 60;
+        in_params.mfx.FrameInfo.FrameRateExtD = 1;
+        in_params.mfx.FrameInfo.PicStruct = 1;
+        in_params.mfx.FrameInfo.ChromaFormat = 1;
+        if (bit_depth == 10) {
+            in_params.mfx.FrameInfo.BitDepthLuma = 10;
+            in_params.mfx.FrameInfo.BitDepthChroma = 10;
+            in_params.mfx.FrameInfo.Shift = 0;
+        }
+        in_params.IOPattern = qsv::MFX_IOPATTERN_IN_VIDEO_MEMORY;
+
+        qsv::mfxVideoParam out_params{};
+        qsv::mfxStatus sts = api.MFXVideoENCODE_Query(probe_session.session(), &in_params, &out_params);
+        return sts == qsv::MFX_ERR_NONE || sts == qsv::MFX_WRN_INCOMPATIBLE_VIDEO_PARAM;
+    };
+
+    // Dynamically query supported codecs against active hardware session
+    uint32_t mask = 0;
+    if (probe_codec(qsv::MFX_CODEC_AVC, qsv::MFX_FOURCC_NV12, 8, 1920, 1080)) {
+        mask |= (1 << static_cast<uint32_t>(VideoCodec::H264));
+    }
+    if (probe_codec(qsv::MFX_CODEC_HEVC, qsv::MFX_FOURCC_NV12, 8, 1920, 1080)) {
+        mask |= (1 << static_cast<uint32_t>(VideoCodec::Hevc));
+    }
+    bool hevc_10bit = probe_codec(qsv::MFX_CODEC_HEVC, qsv::MFX_FOURCC_P010, 10, 1920, 1080);
+    if (hevc_10bit) {
+        mask |= (1 << static_cast<uint32_t>(VideoCodec::HevcMain10));
+    }
+    bool av1_8bit = probe_codec(qsv::MFX_CODEC_AV1, qsv::MFX_FOURCC_NV12, 8, 1920, 1080);
+    bool av1_10bit = probe_codec(qsv::MFX_CODEC_AV1, qsv::MFX_FOURCC_P010, 10, 1920, 1080);
+    if (av1_8bit || av1_10bit) {
+        mask |= (1 << static_cast<uint32_t>(VideoCodec::Av1));
+    }
+
+    out_caps.supported_codecs_mask = mask;
+    out_caps.supports_10bit = (hevc_10bit || av1_10bit) ? 1 : 0;
+
+    // Dynamically probe maximum supported resolution
+    if (probe_codec(qsv::MFX_CODEC_HEVC, qsv::MFX_FOURCC_NV12, 8, 7680, 4320) ||
+        probe_codec(qsv::MFX_CODEC_AVC, qsv::MFX_FOURCC_NV12, 8, 7680, 4320)) {
+        out_caps.max_width = 7680;
+        out_caps.max_height = 4320;
+    } else if (probe_codec(qsv::MFX_CODEC_HEVC, qsv::MFX_FOURCC_NV12, 8, 3840, 2160) ||
+               probe_codec(qsv::MFX_CODEC_AVC, qsv::MFX_FOURCC_NV12, 8, 3840, 2160)) {
+        out_caps.max_width = 3840;
+        out_caps.max_height = 2160;
+    } else {
+        out_caps.max_width = 1920;
+        out_caps.max_height = 1080;
+    }
+
     out_caps.max_fps = 240;
-    out_caps.supports_10bit = 1;
-    out_caps.supports_lossless = 0; // QSV does not universally support lossless
+    out_caps.supports_lossless = 0;
     out_caps.supports_smart_idr = 1;
     out_caps.min_bitrate_kbps = 500;
     out_caps.max_bitrate_kbps = 150000;
 
+    probe_session.close();
     api.unload();
     return true;
 #else
@@ -306,14 +371,25 @@ bool QsvVideoEncoder::query_capabilities(void* d3d_device, EncoderCaps& out_caps
 
 bool QsvVideoEncoder::query_codec_support(VideoCodec codec) {
 #if defined(_WIN32)
-    qsv::QsvApi api;
-    if (!api.load()) {
-        return false;
-    }
-    api.unload();
+    static std::atomic<int> s_cached_mask{-1};
+    int mask = s_cached_mask.load(std::memory_order_acquire);
+    if (mask == -1) {
+        void* dev = moonshine_d3d11_create_device(0x8086);
+        if (!dev) {
+            s_cached_mask.store(0, std::memory_order_release);
+            return false;
+        }
 
-    return codec == VideoCodec::H264 || codec == VideoCodec::Hevc ||
-           codec == VideoCodec::HevcMain10 || codec == VideoCodec::Av1;
+        EncoderCaps caps{};
+        bool ok = query_capabilities(dev, caps);
+        moonshine_d3d11_destroy_device(dev);
+
+        mask = ok ? static_cast<int>(caps.supported_codecs_mask) : 0;
+        s_cached_mask.store(mask, std::memory_order_release);
+    }
+
+    uint32_t codec_idx = static_cast<uint32_t>(codec);
+    return (mask & (1 << codec_idx)) != 0;
 #else
     (void)codec;
     return false;

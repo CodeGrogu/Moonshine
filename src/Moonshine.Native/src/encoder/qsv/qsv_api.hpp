@@ -29,6 +29,7 @@ public:
     MFXCreateConfig_Fn MFXCreateConfig{nullptr};
     MFXSetConfigFilterProperty_Fn MFXSetConfigFilterProperty{nullptr};
     MFXCreateSession_Fn MFXCreateSession{nullptr};
+    MFXEnumImplementations_Fn MFXEnumImplementations{nullptr};
     MFXDispReleaseImplDescription_Fn MFXDispReleaseImplDescription{nullptr};
 
     // Core & Encoder Function pointers

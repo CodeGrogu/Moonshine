@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using Moonshine.Interop;
 
@@ -83,4 +83,26 @@ public static class GpuAdapterInventory
 
         return results;
     }
+
+    /// <summary>
+    /// Gets all adapters matching a specific PCI Vendor ID (e.g. 0x8086 for Intel).
+    /// </summary>
+    public static IReadOnlyList<GpuAdapterInfo> GetAdaptersByVendor(uint vendorId)
+    {
+        var all = EnumerateAdapters();
+        var matches = new List<GpuAdapterInfo>();
+        foreach (var adapter in all)
+        {
+            if (adapter.VendorId == vendorId)
+            {
+                matches.Add(adapter);
+            }
+        }
+        return matches;
+    }
+
+    /// <summary>
+    /// Gets all Intel GPU adapters (e.g. Iris Xe, Arc) in the system.
+    /// </summary>
+    public static IReadOnlyList<GpuAdapterInfo> GetIntelAdapters() => GetAdaptersByVendor(0x8086);
 }

@@ -210,8 +210,20 @@ public static unsafe partial class MoonshineNativeMethods
         uint width,
         uint height,
         float tolerance,
+        uint evaluationMode,
         out MoonshineQualityMetrics outMetrics
     );
+
+    public static unsafe int VideoComputeQualityMetrics(
+        byte* referencePixels,
+        uint referenceFormat,
+        byte* decodedPixels,
+        uint decodedFormat,
+        uint width,
+        uint height,
+        float tolerance,
+        out MoonshineQualityMetrics outMetrics
+    ) => VideoComputeQualityMetrics(referencePixels, referenceFormat, decodedPixels, decodedFormat, width, height, tolerance, 0, out outMetrics);
 
     [LibraryImport(LibraryName, EntryPoint = "moonshine_video_reset")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
@@ -932,6 +944,10 @@ public static unsafe partial class MoonshineNativeMethods
     [LibraryImport(LibraryName, EntryPoint = "moonshine_d3d11_create_device")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial IntPtr D3D11CreateDevice(uint vendorId);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_d3d11_create_device_on_adapter")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial IntPtr D3D11CreateDeviceOnAdapter(uint vendorId, uint adapterIndex);
 
     [LibraryImport(LibraryName, EntryPoint = "moonshine_d3d11_destroy_device")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]

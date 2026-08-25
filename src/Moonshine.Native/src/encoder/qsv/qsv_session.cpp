@@ -31,6 +31,8 @@ QsvSession::QsvSession(QsvSession&& other) noexcept
       _ext_opt(other._ext_opt),
       _ext_opt2(other._ext_opt2),
       _bitstream_buffer(std::move(other._bitstream_buffer)),
+      _surface_pool(std::move(other._surface_pool)),
+      _surface_index(other._surface_index),
       _config(other._config),
       _usage(other._usage),
       _low_power_vdenc(other._low_power_vdenc),
@@ -43,9 +45,14 @@ QsvSession::QsvSession(QsvSession&& other) noexcept
     other._loader = nullptr;
     other._session = nullptr;
     other._is_configured = false;
+    other._surface_index = 0;
     _ext_buffers[0] = reinterpret_cast<mfxExtBuffer*>(&_ext_opt);
     _ext_buffers[1] = reinterpret_cast<mfxExtBuffer*>(&_ext_opt2);
     _params.ExtParam = _ext_buffers;
+
+    for (auto& slot : _surface_pool) {
+        slot.surface.Data.MemId = &slot.hdl_pair;
+    }
 }
 
 QsvSession& QsvSession::operator=(QsvSession&& other) noexcept {
@@ -62,6 +69,8 @@ QsvSession& QsvSession::operator=(QsvSession&& other) noexcept {
         _ext_opt = other._ext_opt;
         _ext_opt2 = other._ext_opt2;
         _bitstream_buffer = std::move(other._bitstream_buffer);
+        _surface_pool = std::move(other._surface_pool);
+        _surface_index = other._surface_index;
         _config = other._config;
         _usage = other._usage;
         _low_power_vdenc = other._low_power_vdenc;
@@ -75,9 +84,14 @@ QsvSession& QsvSession::operator=(QsvSession&& other) noexcept {
         other._loader = nullptr;
         other._session = nullptr;
         other._is_configured = false;
+        other._surface_index = 0;
         _ext_buffers[0] = reinterpret_cast<mfxExtBuffer*>(&_ext_opt);
         _ext_buffers[1] = reinterpret_cast<mfxExtBuffer*>(&_ext_opt2);
         _params.ExtParam = _ext_buffers;
+
+        for (auto& slot : _surface_pool) {
+            slot.surface.Data.MemId = &slot.hdl_pair;
+        }
     }
     return *this;
 }
@@ -172,33 +186,6 @@ bool QsvSession::open(QsvApi& api, void* d3d_device) {
         return false;
     }
 
-    // Enumerate candidate hardware sessions matching filtered configuration
-    mfxSession session = nullptr;
-    sts = MFX_ERR_NOT_FOUND;
-    for (uint32_t impl_idx = 0; impl_idx < 8; ++impl_idx) {
-        session = nullptr;
-        sts = api.MFXCreateSession(loader, impl_idx, &session);
-        _last_status = sts;
-        if (sts == MFX_ERR_NONE && session != nullptr) {
-            break;
-        }
-        if (sts == MFX_ERR_NOT_FOUND) {
-            break;
-        }
-    }
-
-    if (sts != MFX_ERR_NONE || session == nullptr) {
-        api.MFXUnload(loader);
-        _loader = nullptr;
-        _session = nullptr;
-        _api = nullptr;
-        _d3d_device = nullptr;
-        return false;
-    }
-
-    _loader = loader;
-    _session = session;
-
 #if defined(_WIN32)
     auto* dev = static_cast<ID3D11Device*>(d3d_device);
     Microsoft::WRL::ComPtr<ID3D11Multithread> multithread;
@@ -207,14 +194,36 @@ bool QsvSession::open(QsvApi& api, void* d3d_device) {
     }
 #endif
 
-    sts = api.MFXVideoCORE_SetHandle(_session, MFX_HANDLE_D3D11_DEVICE, d3d_device);
-    _last_status = sts;
-    if (sts != MFX_ERR_NONE) {
-        close();
-        return false;
+    // Enumerate candidate hardware sessions matching filtered configuration and bind D3D11 handle
+    mfxSession session = nullptr;
+    sts = MFX_ERR_NOT_FOUND;
+    for (uint32_t impl_idx = 0; impl_idx < 8; ++impl_idx) {
+        session = nullptr;
+        sts = api.MFXCreateSession(loader, impl_idx, &session);
+        _last_status = sts;
+        if (sts == MFX_ERR_NONE && session != nullptr) {
+            sts = api.MFXVideoCORE_SetHandle(session, MFX_HANDLE_D3D11_DEVICE, d3d_device);
+            if (sts == MFX_ERR_NONE) {
+                _session = session;
+                _loader = loader;
+                _last_status = MFX_ERR_NONE;
+                return true;
+            }
+            if (api.MFXClose) {
+                api.MFXClose(session);
+            }
+        }
+        if (sts == MFX_ERR_NOT_FOUND) {
+            break;
+        }
     }
 
-    return true;
+    api.MFXUnload(loader);
+    _loader = nullptr;
+    _session = nullptr;
+    _api = nullptr;
+    _d3d_device = nullptr;
+    return false;
 }
 
 mfxStatus QsvSession::last_status() const noexcept {
@@ -326,6 +335,21 @@ bool QsvSession::configure(const EncoderConfig& config) {
     uint32_t buf_sz = std::max(1024u * 1024u, config.width * config.height * 2);
     _bitstream_buffer.resize(buf_sz);
 
+    // Initialize TrackedSurface pool with proper oneVPL mfxHDLPair bindings
+    _surface_pool.resize(16);
+    _surface_index = 0;
+    for (auto& slot : _surface_pool) {
+        std::memset(&slot.surface, 0, sizeof(mfxFrameSurface1));
+        slot.surface.Info = _params.mfx.FrameInfo;
+        slot.surface.Data.MemType = MFX_MEMTYPE_D3D11_MEMORY_BIND_RENDER_TARGET | MFX_MEMTYPE_FROM_ENCODE;
+        slot.hdl_pair.first = nullptr;
+        slot.hdl_pair.second = (mfxHDL)(uintptr_t)0;
+        slot.surface.Data.MemId = &slot.hdl_pair;
+        slot.d3d_texture = nullptr;
+        slot.in_use = false;
+        slot.frame_id = 0;
+    }
+
     _is_configured = true;
     return true;
 }
@@ -349,12 +373,31 @@ bool QsvSession::encode(
 
     std::lock_guard<std::mutex> lock(_mutex);
 
-    // TODO(oneVPL): Migrate to MFXMemory_GetSurfaceForEncode or mfxFrameAllocator for proper D3D11 surface management
-    mfxFrameSurface1 surface{};
-    surface.Info = _params.mfx.FrameInfo;
-    surface.Data.MemId = d3d_texture;
-    surface.Data.MemType = MFX_MEMTYPE_D3D11_MEMORY_BIND_RENDER_TARGET | MFX_MEMTYPE_FROM_ENCODE;
-    surface.Data.TimeStamp = timestamp_us * 90; // 90 kHz clock
+    // Locate available surface from tracked surface pool
+    TrackedSurface* slot = nullptr;
+    for (size_t i = 0; i < _surface_pool.size(); ++i) {
+        size_t idx = (_surface_index + i) % _surface_pool.size();
+        if (!_surface_pool[idx].in_use) {
+            _surface_index = (idx + 1) % _surface_pool.size();
+            slot = &_surface_pool[idx];
+            break;
+        }
+    }
+    if (!slot) {
+        slot = &_surface_pool[_surface_index];
+        _surface_index = (_surface_index + 1) % _surface_pool.size();
+    }
+
+    // Configure proper oneVPL D3D11 texture surface binding via mfxHDLPair
+    slot->d3d_texture = d3d_texture;
+    slot->hdl_pair.first = d3d_texture;
+    slot->hdl_pair.second = (mfxHDL)(uintptr_t)0;
+    slot->surface.Info = _params.mfx.FrameInfo;
+    slot->surface.Data.MemType = MFX_MEMTYPE_D3D11_MEMORY_BIND_RENDER_TARGET | MFX_MEMTYPE_FROM_ENCODE;
+    slot->surface.Data.MemId = &slot->hdl_pair;
+    slot->surface.Data.TimeStamp = timestamp_us * 90; // 90 kHz clock
+    slot->in_use = true;
+    slot->frame_id = frame_id;
 
     mfxBitstream bs{};
     bs.Data = _bitstream_buffer.data();
@@ -363,16 +406,22 @@ bool QsvSession::encode(
     bs.DataLength = 0;
 
     mfxSyncPoint syncp = nullptr;
-    mfxStatus sts = _api->MFXVideoENCODE_EncodeFrameAsync(_session, nullptr, &surface, &bs, &syncp);
+    mfxStatus sts = _api->MFXVideoENCODE_EncodeFrameAsync(_session, nullptr, &slot->surface, &bs, &syncp);
 
     if (sts < MFX_ERR_NONE) {
         // Surface rejected by encoder
+        slot->in_use = false;
+        slot->d3d_texture = nullptr;
         return false;
     }
 
     if (sts == MFX_ERR_NONE && syncp) {
         sts = _api->MFXVideoCORE_SyncOperation(_session, syncp, 1000); // 1000ms timeout
     }
+
+    // Release surface slot after synchronization
+    slot->in_use = false;
+    slot->d3d_texture = nullptr;
 
     if (sts != MFX_ERR_NONE || bs.DataLength == 0) {
         return false;
@@ -450,9 +499,21 @@ bool QsvSession::reconfigure(const EncoderConfig& new_config) {
             _api->MFXVideoENCODE_Close(_session);
             sts = _api->MFXVideoENCODE_Init(_session, &_params);
             _last_status = sts;
-            return sts >= MFX_ERR_NONE;
+            if (sts < MFX_ERR_NONE) {
+                return false;
+            }
+        } else {
+            return false;
         }
-        return false;
+    }
+
+    // Refresh tracked surface pool frame parameters
+    for (auto& slot : _surface_pool) {
+        slot.surface.Info = _params.mfx.FrameInfo;
+        slot.surface.Data.MemType = MFX_MEMTYPE_D3D11_MEMORY_BIND_RENDER_TARGET | MFX_MEMTYPE_FROM_ENCODE;
+        slot.surface.Data.MemId = &slot.hdl_pair;
+        slot.in_use = false;
+        slot.d3d_texture = nullptr;
     }
 
     _last_status = sts;
@@ -485,12 +546,23 @@ bool QsvSession::drain() {
             break;
         }
     }
+
+    for (auto& slot : _surface_pool) {
+        slot.in_use = false;
+        slot.d3d_texture = nullptr;
+    }
+
     return true;
 }
 
 bool QsvSession::flush() {
     if (!_session || !_api) return false;
     std::lock_guard<std::mutex> lock(_mutex);
+
+    for (auto& slot : _surface_pool) {
+        slot.in_use = false;
+        slot.d3d_texture = nullptr;
+    }
 
     if (_api->MFXVideoENCODE_Reset) {
         mfxStatus sts = _api->MFXVideoENCODE_Reset(_session, &_params);
@@ -512,14 +584,20 @@ bool QsvSession::flush() {
 void QsvSession::close() {
     std::lock_guard<std::mutex> lock(_mutex);
     if (_session && _api) {
-        _api->MFXVideoENCODE_Close(_session);
-        _api->MFXClose(_session);
+        if (_api->MFXVideoENCODE_Close) {
+            _api->MFXVideoENCODE_Close(_session);
+        }
+        if (_api->MFXClose) {
+            _api->MFXClose(_session);
+        }
         _session = nullptr;
     }
     if (_loader && _api && _api->MFXUnload) {
         _api->MFXUnload(_loader);
         _loader = nullptr;
     }
+    _surface_pool.clear();
+    _surface_index = 0;
     _d3d_device = nullptr;
     _api = nullptr;
     _is_configured = false;

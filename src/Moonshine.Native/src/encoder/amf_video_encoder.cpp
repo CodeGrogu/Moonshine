@@ -1,10 +1,12 @@
 #include "moonshine/encoder/amf_video_encoder.hpp"
+#include "moonshine/export/moonshine_native_api.h"
 #include "encoder/amf/amf_types.hpp"
 #include "encoder/amf/amf_api.hpp"
 #include "encoder/amf/amf_session.hpp"
 #include <cstring>
 #include <chrono>
 #include <iostream>
+#include <atomic>
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -358,38 +360,28 @@ bool AmfVideoEncoder::query_capabilities(void* d3d_device, EncoderCaps& out_caps
 
 bool AmfVideoEncoder::query_codec_support(VideoCodec codec) {
 #if defined(_WIN32)
-    amf::AmfApi api;
-    if (!api.load() || !api.factory()) {
+    static std::atomic<int> s_cached_mask{-1};
+    int cached_mask = s_cached_mask.load(std::memory_order_acquire);
+    if (cached_mask != -1) {
+        uint32_t codec_idx = static_cast<uint32_t>(codec);
+        return (cached_mask & (1 << codec_idx)) != 0;
+    }
+
+    void* dev = moonshine_d3d11_create_device(0x1002);
+    if (!dev) {
+        s_cached_mask.store(0, std::memory_order_release);
         return false;
     }
 
-    if (codec != VideoCodec::H264 && codec != VideoCodec::Hevc &&
-        codec != VideoCodec::HevcMain10 && codec != VideoCodec::Av1) {
-        api.unload();
-        return false;
-    }
+    EncoderCaps caps{};
+    bool ok = query_capabilities(dev, caps);
+    moonshine_d3d11_destroy_device(dev);
 
-    amf::AMFContext* pContext = nullptr;
-    if (api.factory()->CreateContext(&pContext) == amf::AMF_OK && pContext) {
-        const wchar_t* compId = nullptr;
-        if (codec == VideoCodec::H264) compId = amf::AMFVideoEncoderVCE_AVC;
-        else if (codec == VideoCodec::Hevc || codec == VideoCodec::HevcMain10) compId = amf::AMFVideoEncoder_HEVC;
-        else if (codec == VideoCodec::Av1) compId = amf::AMFVideoEncoder_AV1;
+    int mask = ok ? static_cast<int>(caps.supported_codecs_mask) : 0;
+    s_cached_mask.store(mask, std::memory_order_release);
 
-        amf::AMFComponent* pComp = nullptr;
-        bool supported = false;
-        if (compId && api.factory()->CreateComponent(pContext, compId, &pComp) == amf::AMF_OK && pComp) {
-            supported = true;
-            pComp->Release();
-        }
-        pContext->Terminate();
-        pContext->Release();
-        api.unload();
-        return supported;
-    }
-
-    api.unload();
-    return true;
+    uint32_t codec_idx = static_cast<uint32_t>(codec);
+    return (mask & (1 << codec_idx)) != 0;
 #else
     (void)codec;
     return false;

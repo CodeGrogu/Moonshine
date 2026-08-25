@@ -63,7 +63,8 @@ private:
     void* output_texture_{nullptr};
     void* staging_texture_{nullptr};
     uint32_t output_format_{0};
-    std::vector<uint8_t> decoded_pixels_{};
+    mutable std::vector<uint8_t> decoded_pixels_{};
+    mutable bool pixels_dirty_{false};
 };
 
 class D3D12VideoDecoder final : public IVideoDecoder {

@@ -6,6 +6,7 @@
 #include "encoder/amf/amf_api.hpp"
 #include <mutex>
 #include <vector>
+#include <queue>
 
 namespace moonshine::encoder::amf {
 
@@ -57,7 +58,7 @@ private:
     bool _intra_refresh_enabled{false};
     uint32_t _intra_refresh_num_mbs_per_slot{0};
     bool _is_configured{false};
-    AMFData* _pending_output{nullptr};
+    std::queue<AMFData*> _output_queue;
     mutable std::mutex _mutex;
 };
 

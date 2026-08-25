@@ -29,6 +29,7 @@ AmfSession::AmfSession(AmfSession&& other) noexcept {
     _intra_refresh_enabled = other._intra_refresh_enabled;
     _intra_refresh_num_mbs_per_slot = other._intra_refresh_num_mbs_per_slot;
     _is_configured = other._is_configured;
+    _output_queue = std::move(other._output_queue);
 
     other._api = nullptr;
     other._context = nullptr;
@@ -51,6 +52,7 @@ AmfSession& AmfSession::operator=(AmfSession&& other) noexcept {
         _intra_refresh_enabled = other._intra_refresh_enabled;
         _intra_refresh_num_mbs_per_slot = other._intra_refresh_num_mbs_per_slot;
         _is_configured = other._is_configured;
+        _output_queue = std::move(other._output_queue);
 
         other._api = nullptr;
         other._context = nullptr;
@@ -201,11 +203,9 @@ bool AmfSession::encode(
         }
         if (submit_res == AMF_INPUT_FULL || submit_res == AMF_REPEAT) {
             AMFData* pPendingData = nullptr;
-            if (_encoder->QueryOutput(&pPendingData) == AMF_OK && pPendingData) {
-                if (_pending_output) {
-                    _pending_output->Release();
-                }
-                _pending_output = pPendingData;
+            while (_encoder->QueryOutput(&pPendingData) == AMF_OK && pPendingData) {
+                _output_queue.push(pPendingData);
+                pPendingData = nullptr;
             }
             std::this_thread::yield();
         } else {
@@ -222,9 +222,9 @@ bool AmfSession::encode(
     AMFData* pData = nullptr;
     AMF_RESULT query_res = AMF_REPEAT;
 
-    if (_pending_output) {
-        pData = _pending_output;
-        _pending_output = nullptr;
+    if (!_output_queue.empty()) {
+        pData = _output_queue.front();
+        _output_queue.pop();
         query_res = AMF_OK;
     } else {
         for (int poll_attempt = 0; poll_attempt < 30; ++poll_attempt) {
@@ -338,18 +338,27 @@ bool AmfSession::drain() {
     AMF_RESULT res = _encoder->Drain();
     if (res != AMF_OK) return false;
 
-    // Poll until AMF_EOF or completion
+    // Poll until AMF_EOF or completion, queuing retrieved output surfaces
     for (int i = 0; i < 50; ++i) {
         AMFData* pData = nullptr;
         AMF_RESULT qres = _encoder->QueryOutput(&pData);
         if (qres == AMF_OK && pData) {
-            pData->Release();
+            _output_queue.push(pData);
         } else if (qres == AMF_EOF) {
-            return true;
+            break;
         } else if (qres == AMF_REPEAT) {
             std::this_thread::yield();
         } else {
             break;
+        }
+    }
+
+    // Release all queued output surfaces cleanly
+    while (!_output_queue.empty()) {
+        AMFData* data = _output_queue.front();
+        _output_queue.pop();
+        if (data) {
+            data->Release();
         }
     }
     return true;
@@ -358,6 +367,13 @@ bool AmfSession::drain() {
 bool AmfSession::flush() {
     if (!_encoder) return false;
     std::lock_guard<std::mutex> lock(_mutex);
+    while (!_output_queue.empty()) {
+        AMFData* data = _output_queue.front();
+        _output_queue.pop();
+        if (data) {
+            data->Release();
+        }
+    }
     return _encoder->Flush() == AMF_OK;
 }
 
@@ -382,9 +398,12 @@ void AmfSession::close() {
         _encoder->Release();
         _encoder = nullptr;
     }
-    if (_pending_output) {
-        _pending_output->Release();
-        _pending_output = nullptr;
+    while (!_output_queue.empty()) {
+        AMFData* data = _output_queue.front();
+        _output_queue.pop();
+        if (data) {
+            data->Release();
+        }
     }
     if (_context) {
         _context->Terminate();

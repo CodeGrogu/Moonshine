@@ -104,6 +104,10 @@ typedef struct MoonshineQualityMetrics {
     uint32_t height;
     uint32_t reference_format;
     uint32_t decoded_format;
+    uint32_t evaluation_mode;           // 0: Fast / Sampled, 1: Full-Frame Exact
+    uint8_t  is_full_frame;             // 1 if 100% full frame coverage evaluated, 0 otherwise
+    uint8_t  color_range;               // 0: Full dynamic range [0..255], 1: Nominal video range [16..235]
+    uint8_t  reserved[2];               // Explicit padding for 4-byte boundary
 } MoonshineQualityMetrics;
 
 /**
@@ -405,6 +409,7 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_video_compute_quality_metrics(
     uint32_t width,
     uint32_t height,
     float tolerance,
+    uint32_t evaluation_mode,
     MoonshineQualityMetrics* out_metrics
 );
 

@@ -2959,9 +2959,9 @@ PixelSample get_pixel_sample(
 
 #if defined(_WIN32)
     const uint32_t fmt_val = format;
-    const bool is_nv12 = (fmt_val == static_cast<uint32_t>(DXGI_FORMAT_NV12) || fmt_val == 0 || fmt_val == 1 || fmt_val == 3);
-    const bool is_p010 = (fmt_val == static_cast<uint32_t>(DXGI_FORMAT_P010) || fmt_val == static_cast<uint32_t>(DXGI_FORMAT_P016) || fmt_val == 2);
-    const bool is_rgba = (fmt_val == static_cast<uint32_t>(DXGI_FORMAT_R8G8B8A8_UNORM) || fmt_val == static_cast<uint32_t>(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB));
+    const bool is_nv12 = (fmt_val == static_cast<uint32_t>(DXGI_FORMAT_NV12) || fmt_val == 0 || fmt_val == 1 || fmt_val == 3 || fmt_val == 103);
+    const bool is_p010 = (fmt_val == static_cast<uint32_t>(DXGI_FORMAT_P010) || fmt_val == static_cast<uint32_t>(DXGI_FORMAT_P016) || fmt_val == 2 || fmt_val == 104);
+    const bool is_rgba = (fmt_val == static_cast<uint32_t>(DXGI_FORMAT_R8G8B8A8_UNORM) || fmt_val == static_cast<uint32_t>(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB) || fmt_val == 28 || fmt_val == 29);
 
     if (is_nv12) {
         uint8_t y_raw = pixels[y * width + x];
@@ -2970,29 +2970,38 @@ PixelSample get_pixel_sample(
         uint8_t u_raw = uv_plane[uv_idx];
         uint8_t v_raw = uv_plane[uv_idx + 1];
 
-        float yf = static_cast<float>(y_raw);
-        float uf = static_cast<float>(u_raw) - 128.0f;
-        float vf = static_cast<float>(v_raw) - 128.0f;
+        float y_val = static_cast<float>(y_raw);
+        float u_val = static_cast<float>(u_raw);
+        float v_val = static_cast<float>(v_raw);
 
-        sample.r = std::clamp(yf + 1.402f * vf, 0.0f, 255.0f);
-        sample.g = std::clamp(yf - 0.344136f * uf - 0.714136f * vf, 0.0f, 255.0f);
-        sample.b = std::clamp(yf + 1.772f * uf, 0.0f, 255.0f);
-        sample.y = yf;
+        // Standard BT.709 / BT.601 nominal video range [16..235] conversion to full dynamic range [0..255]
+        float c = y_val - 16.0f;
+        float d = u_val - 128.0f;
+        float e = v_val - 128.0f;
+
+        sample.r = std::clamp((298.082f * c + 408.583f * e + 128.0f) / 256.0f, 0.0f, 255.0f);
+        sample.g = std::clamp((298.082f * c - 100.291f * d - 208.120f * e + 128.0f) / 256.0f, 0.0f, 255.0f);
+        sample.b = std::clamp((298.082f * c + 516.412f * d + 128.0f) / 256.0f, 0.0f, 255.0f);
+        sample.y = std::clamp(c * (255.0f / 219.0f), 0.0f, 255.0f);
         return sample;
     } else if (is_p010) {
         const auto* y_plane = reinterpret_cast<const uint16_t*>(pixels);
-        uint16_t y_raw = y_plane[y * width + x] >> 6;
-        float yf = (static_cast<float>(y_raw) / 1023.0f) * 255.0f;
+        uint16_t y_raw10 = y_plane[y * width + x] >> 6;
 
         const auto* uv_plane = reinterpret_cast<const uint16_t*>(pixels + (width * height * 2));
         uint32_t uv_idx = (y / 2) * width + (x / 2) * 2;
-        float uf = ((static_cast<float>(uv_plane[uv_idx] >> 6) / 1023.0f) * 255.0f) - 128.0f;
-        float vf = ((static_cast<float>(uv_plane[uv_idx + 1] >> 6) / 1023.0f) * 255.0f) - 128.0f;
+        uint16_t u_raw10 = uv_plane[uv_idx] >> 6;
+        uint16_t v_raw10 = uv_plane[uv_idx + 1] >> 6;
 
-        sample.r = std::clamp(yf + 1.402f * vf, 0.0f, 255.0f);
-        sample.g = std::clamp(yf - 0.344136f * uf - 0.714136f * vf, 0.0f, 255.0f);
-        sample.b = std::clamp(yf + 1.772f * uf, 0.0f, 255.0f);
-        sample.y = yf;
+        // 10-bit nominal video range [64..940] conversion to full dynamic range [0..255]
+        float c = static_cast<float>(y_raw10) - 64.0f;
+        float d = static_cast<float>(u_raw10) - 512.0f;
+        float e = static_cast<float>(v_raw10) - 512.0f;
+
+        sample.r = std::clamp((298.082f * c + 408.583f * e + 512.0f) / 256.0f * (255.0f / 1023.0f), 0.0f, 255.0f);
+        sample.g = std::clamp((298.082f * c - 100.291f * d - 208.120f * e + 512.0f) / 256.0f * (255.0f / 1023.0f), 0.0f, 255.0f);
+        sample.b = std::clamp((298.082f * c + 516.412f * d + 512.0f) / 256.0f * (255.0f / 1023.0f), 0.0f, 255.0f);
+        sample.y = std::clamp(c * (255.0f / 876.0f), 0.0f, 255.0f);
         return sample;
     } else if (is_rgba) {
         const uint8_t* p = pixels + (y * width + x) * 4;
@@ -3544,6 +3553,7 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_video_compute_quality_metrics(
     uint32_t width,
     uint32_t height,
     float tolerance,
+    uint32_t evaluation_mode,
     MoonshineQualityMetrics* out_metrics
 ) {
     if (!reference_pixels || !decoded_pixels || !out_metrics || width == 0 || height == 0) {
@@ -3557,9 +3567,18 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_video_compute_quality_metrics(
         float max_err = 0.0f;
         uint32_t pixels_within_tol = 0;
         uint32_t sample_count = 0;
-        
-        uint32_t step_x = (width > 1280) ? 8 : (width > 640) ? 4 : 2;
-        uint32_t step_y = (height > 720) ? 8 : (height > 360) ? 4 : 2;
+
+        uint32_t step_x = 1;
+        uint32_t step_y = 1;
+        if (evaluation_mode == 0) {
+            // Mode 0: Fast / Sampled (subsampled grid for real-time monitoring)
+            step_x = (width > 1280) ? 8 : (width > 640) ? 4 : 2;
+            step_y = (height > 720) ? 8 : (height > 360) ? 4 : 2;
+        } else {
+            // Mode 1: Full-Frame Exact (100% pixel coverage across every pixel and row)
+            step_x = 1;
+            step_y = 1;
+        }
 
         for (uint32_t y = 0; y < height; y += step_y) {
             for (uint32_t x = 0; x < width; x += step_x) {
@@ -3571,7 +3590,7 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_video_compute_quality_metrics(
                 float err_b = std::abs(ref.b - dec.b);
                 float err_y = std::abs(ref.y - dec.y);
 
-                float local_max = (std::max)({err_r, err_g, err_b});
+                float local_max = (std::max)({err_r, err_g, err_b, err_y});
                 if (local_max > max_err) max_err = local_max;
                 if (local_max <= tolerance) pixels_within_tol++;
 
@@ -3587,6 +3606,11 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_video_compute_quality_metrics(
         double mse_y = sum_sq_err_y / sample_count;
         double mse_rgb = sum_sq_err_rgb / sample_count;
 
+        const bool is_video_range = (reference_format == 0 || reference_format == 1 || reference_format == 2 || reference_format == 3 ||
+                                     reference_format == 103 || reference_format == 104 ||
+                                     decoded_format == 0 || decoded_format == 1 || decoded_format == 2 || decoded_format == 3 ||
+                                     decoded_format == 103 || decoded_format == 104);
+
         out_metrics->psnr_y = (mse_y > 0.0) ? static_cast<float>(10.0 * std::log10(255.0 * 255.0 / mse_y)) : 100.0f;
         out_metrics->psnr_rgb = (mse_rgb > 0.0) ? static_cast<float>(10.0 * std::log10(255.0 * 255.0 / mse_rgb)) : 100.0f;
         out_metrics->mae = static_cast<float>(sum_abs_err / sample_count);
@@ -3596,6 +3620,11 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_video_compute_quality_metrics(
         out_metrics->height = height;
         out_metrics->reference_format = reference_format;
         out_metrics->decoded_format = decoded_format;
+        out_metrics->evaluation_mode = (evaluation_mode != 0) ? 1 : 0;
+        out_metrics->is_full_frame = (evaluation_mode != 0) ? 1 : 0;
+        out_metrics->color_range = is_video_range ? 1 : 0;
+        out_metrics->reserved[0] = 0;
+        out_metrics->reserved[1] = 0;
 
         return MOONSHINE_SUCCESS;
     } catch (...) {

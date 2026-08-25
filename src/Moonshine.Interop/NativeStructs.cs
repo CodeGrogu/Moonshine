@@ -57,7 +57,7 @@ public unsafe struct MoonshineDecoderCaps
 }
 
 /// <summary>
-/// Exact binary match for MoonshineQualityMetrics (C-ABI, 36 bytes).
+/// Exact binary match for MoonshineQualityMetrics (C-ABI, 44 bytes).
 /// </summary>
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
 public struct MoonshineQualityMetrics
@@ -71,6 +71,11 @@ public struct MoonshineQualityMetrics
     public uint Height;
     public uint ReferenceFormat;
     public uint DecodedFormat;
+    public uint EvaluationMode;
+    public byte IsFullFrame;
+    public byte ColorRange;
+    public byte Reserved0;
+    public byte Reserved1;
 }
 
 /// <summary>
