@@ -1,6 +1,6 @@
 # Documentation and Custom Implementations Standards
 
-All documentation and custom components must adhere to the overarching engineering standards in [`STANDARDS.md`](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/STANDARDS.md).
+All documentation and custom components must adhere to the overarching engineering standards in [`STANDARDS.md`](../../STANDARDS.md).
 
 ## 1. Tone, Style, and Typography
 - Use British English exclusively across all documentation, code comments, commit messages, and agent outputs (for example: optimise, prioritise, behaviour, serialisation, synchronise, analyse).

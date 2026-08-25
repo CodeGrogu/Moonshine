@@ -1,6 +1,6 @@
 # Interop Safety & Zero-Marshal Rules
 
-All native interop bindings and memory structures must conform to [`STANDARDS.md`](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/STANDARDS.md).
+All native interop bindings and memory structures must conform to [`STANDARDS.md`](../../STANDARDS.md).
 
 These rules govern the C# / C++ boundary in `Moonshine.Interop`.
 

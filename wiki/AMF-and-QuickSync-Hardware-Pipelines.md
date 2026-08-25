@@ -98,7 +98,7 @@ The **Moonshine Host AMF and QuickSync Video Encoding Pipelines** provide direct
 
 ## 3. Normative C ABI Export Methods
 
-> **Normative ABI Specification**: Defined canonically in [`src/Moonshine.Native/include/moonshine/export/moonshine_native_api.h`](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/src/Moonshine.Native/include/moonshine/export/moonshine_native_api.h#L905-L935). Export signatures and calling conventions are strictly normative.
+> **Normative ABI Specification**: Defined canonically in [`src/Moonshine.Native/include/moonshine/export/moonshine_native_api.h`](https://github.com/CodeGrogu/Moonshine/blob/main/src/Moonshine.Native/include/moonshine/export/moonshine_native_api.h#L905-L935). Export signatures and calling conventions are strictly normative.
 
 ### A. AMD AMF Exports
 ```c
@@ -179,7 +179,7 @@ qsvPipeline.ConfigureIntraRefresh(enable: true, cycleSize: 30, qpDelta: -2);
 
 ## 5. 9-Tier Matrix Conformance and Certification
 
-Both the AMD AMF and Intel QuickSync pipelines include complete 9-tier matrix conformance test suites (`test_amf_conformance.cpp` and `test_qsv_conformance.cpp`) verified in local test runs with compatible GPU hardware present (and skipped safely when running on alternative vendor hardware):
+Each vendor backend includes a complete 9-tier matrix conformance test suite (`test_amf_conformance.cpp` and `test_qsv_conformance.cpp`). Physical execution of these suites is capability-gated: when compatible hardware is present, full encode/decode loopbacks execute; when absent on the test runner, tests are skipped cleanly without false failures:
 1. **Defensive Error Handling**: Zero capacity buffers, null pointers, and double destruction protection.
 2. **Resolution Matrix**: 720p HD, 1080p FHD, 1440p QHD, and 4K UHD.
 3. **Codec Matrix**: H.264 / AVC, HEVC / H.265 Main10, and AV1 Profile 0.

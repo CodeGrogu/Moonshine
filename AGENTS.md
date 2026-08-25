@@ -1,7 +1,7 @@
 # Moonshine Agent Instructions
 
 ## Operational Standard
-All development, code modifications, testing, and agent interactions in this repository MUST strictly follow the **Moonshine Engineering Standards: Solo + AI Edition** in [`STANDARDS.md`](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/STANDARDS.md).
+All development, code modifications, testing, and agent interactions in this repository MUST strictly follow the **Moonshine Engineering Standards: Solo + AI Edition** in [`STANDARDS.md`](./STANDARDS.md).
 
 ## Core Directives
 - **British English**: Use British English exclusively across all documentation, code comments, commit messages, and agent communication (`optimise`, `prioritise`, `behaviour`, `synchronisation`, etc.).

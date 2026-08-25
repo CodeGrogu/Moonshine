@@ -48,10 +48,10 @@ The driver is implemented as a Windows Driver Kit (WDK) PortCls WaveRT miniport 
 The virtual audio subsystem is structured across three distinct operational layers:
 
 ### 2.1. Kernel-Mode Driver Layer (`drivers/audio/`)
-The kernel driver produces [MoonshineAudio.sys](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/drivers/audio/MoonshineAudio.vcxproj) and executes in Ring 0 under the Windows Port Class (`PortCls.sys`) framework. It comprises three primary miniport components:
-* **Adapter Common** ([adapter.hpp](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/drivers/audio/adapter.hpp), [adapter.cpp](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/drivers/audio/adapter.cpp)): Coordinates adapter initialisation, Plug and Play (PnP) resource management, and power state transitions.
-* **WaveRT Miniport** ([minwave.hpp](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/drivers/audio/minwave.hpp), [minwave.cpp](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/drivers/audio/minwave.cpp)): Implements `IMiniportWaveRT` and `IMiniportWaveRTStream` interfaces. It allocates 4KB page-aligned cyclic shared memory buffers from non-paged pool (`ExAllocatePool2` / `IoAllocateMdl`), manages emulated stream position registers (`GetPosition`), and handles streaming state transitions without physical DMA hardware.
-* **Topology Miniport** ([mintopo.hpp](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/drivers/audio/mintopo.hpp), [mintopo.cpp](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/drivers/audio/mintopo.cpp)): Implements `IMiniportTopology` to expose device topology pins (`KSNODETYPE_SPEAKER` and `KSNODETYPE_MICROPHONE`), volume controls, and mute states to the audio engine.
+The kernel driver produces [MoonshineAudio.sys](../drivers/audio/MoonshineAudio.vcxproj) and executes in Ring 0 under the Windows Port Class (`PortCls.sys`) framework. It comprises three primary miniport components:
+* **Adapter Common** ([adapter.hpp](../drivers/audio/adapter.hpp), [adapter.cpp](../drivers/audio/adapter.cpp)): Coordinates adapter initialisation, Plug and Play (PnP) resource management, and power state transitions.
+* **WaveRT Miniport** ([minwave.hpp](../drivers/audio/minwave.hpp), [minwave.cpp](../drivers/audio/minwave.cpp)): Implements `IMiniportWaveRT` and `IMiniportWaveRTStream` interfaces. It allocates 4KB page-aligned cyclic shared memory buffers from non-paged pool (`ExAllocatePool2` / `IoAllocateMdl`), manages emulated stream position registers (`GetPosition`), and handles streaming state transitions without physical DMA hardware.
+* **Topology Miniport** ([mintopo.hpp](../drivers/audio/mintopo.hpp), [mintopo.cpp](../drivers/audio/mintopo.cpp)): Implements `IMiniportTopology` to expose device topology pins (`KSNODETYPE_SPEAKER` and `KSNODETYPE_MICROPHONE`), volume controls, and mute states to the audio engine.
 
 ### 2.2. User-Mode IPC Bridge Layer (`src/Moonshine.Native/src/audio/virtual_audio_ipc.cpp`)
 The native IPC bridge provides a zero-copy, lock-free Single-Producer Single-Consumer (SPSC) communication channel between the driver endpoints and user-mode processes:
@@ -70,7 +70,7 @@ The managed service operates within the Moonshine host server process:
 
 ## 3. Shared Buffer Contract
 
-The shared memory structure is defined in [drivers/audio/shared_audio_buffer.h](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/drivers/audio/shared_audio_buffer.h) as `MoonshineSharedAudioRing`. The header structure spans three consecutive 64-byte cachelines (192 bytes total) to eliminate false sharing between concurrent producer and consumer threads:
+The shared memory structure is defined in [drivers/audio/shared_audio_buffer.h](../drivers/audio/shared_audio_buffer.h) as `MoonshineSharedAudioRing`. The header structure spans three consecutive 64-byte cachelines (192 bytes total) to eliminate false sharing between concurrent producer and consumer threads:
 
 ```c
 typedef struct MoonshineSharedAudioRing {
@@ -137,14 +137,14 @@ Building the kernel-mode driver binary requires the Microsoft Windows Driver Kit
 * **Libraries**: Spectre-mitigated MSVC runtime libraries (`MSVC v143 - VS 2022 C++ x64/x86 Spectre-mitigated libs`) and C++ ATL for Spectre.
 
 ### 4.2. Compilation Process
-The driver project is defined in [drivers/audio/MoonshineAudio.vcxproj](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/drivers/audio/MoonshineAudio.vcxproj). It targets the Universal Driver Platform (`DriverTargetPlatform=Universal`, `DriverType=KMDF`) and links against `portcls.lib` and `ks.lib`.
+The driver project is defined in [drivers/audio/MoonshineAudio.vcxproj](../drivers/audio/MoonshineAudio.vcxproj). It targets the Universal Driver Platform (`DriverTargetPlatform=Universal`, `DriverType=KMDF`) and links against `portcls.lib` and `ks.lib`.
 
 ```cmd
 msbuild.exe drivers\audio\MoonshineAudio.vcxproj /p:Configuration=Release /p:Platform=x64 /p:TargetVersion=Windows10
 ```
 
 ### 4.3. Dual-Mode User/Kernel Compilation
-The driver headers and implementation files ([adapter.hpp](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/drivers/audio/adapter.hpp), [minwave.hpp](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/drivers/audio/minwave.hpp), [mintopo.hpp](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/drivers/audio/mintopo.hpp)) utilise `#ifdef _KERNEL_MODE` preprocessor guards. When compiled in user mode (without `_KERNEL_MODE` defined), the classes map portcls types to standard C++ primitives, enabling comprehensive unit testing under CTest without requiring a kernel debugger or virtual test harness.
+The driver headers and implementation files ([adapter.hpp](../drivers/audio/adapter.hpp), [minwave.hpp](../drivers/audio/minwave.hpp), [mintopo.hpp](../drivers/audio/mintopo.hpp)) utilise `#ifdef _KERNEL_MODE` preprocessor guards. When compiled in user mode (without `_KERNEL_MODE` defined), the classes map portcls types to standard C++ primitives, enabling comprehensive unit testing under CTest without requiring a kernel debugger or virtual test harness.
 
 ---
 
@@ -185,7 +185,7 @@ For general release distribution without requiring users to alter Secure Boot or
 
 ## 6. Installation and Removal
 
-The driver package is defined by [drivers/audio/MoonshineAudio.inf](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/drivers/audio/MoonshineAudio.inf). Automated installation and uninstallation are handled via PowerShell scripts or administrative CLI tools.
+The driver package is defined by [drivers/audio/MoonshineAudio.inf](../drivers/audio/MoonshineAudio.inf). Automated installation and uninstallation are handled via PowerShell scripts or administrative CLI tools.
 
 ### 6.1. Device Installation
 ```powershell
@@ -255,9 +255,9 @@ The driver strictly conforms to Windows Driver Model (WDM) power and PnP state m
 
 The Moonshine Virtual Audio Driver component is classified as **Prototype** under Rule 8 of the Moonshine architectural governance standards:
 
-* **User-Mode IPC Layer**: Fully verified. Passes native test suites ([test_virtual_audio_ipc.cpp](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/tests/Moonshine.Native.Tests/test_virtual_audio_ipc.cpp)) with concrete value assertions covering SPSC ring buffer reads/writes, underrun silence padding, overrun frame advancement, bidirectional bridge pumping, MMCSS registration, and DACL security verification via `GetSecurityInfo`.
+* **User-Mode IPC Layer**: Fully verified. Passes native test suites ([test_virtual_audio_ipc.cpp](../tests/Moonshine.Native.Tests/test_virtual_audio_ipc.cpp)) with concrete value assertions covering SPSC ring buffer reads/writes, underrun silence padding, overrun frame advancement, bidirectional bridge pumping, MMCSS registration, and DACL security verification via `GetSecurityInfo`.
 * **Shared Buffer Contract**: Fully verified. Cacheline alignment (64-byte boundaries), struct memory packing, and atomic synchronisation barriers match the cross-process layout across native and managed layers.
-* **Kernel-Mode Driver Source**: Prototype. The C++ miniport implementation files ([adapter.cpp](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/drivers/audio/adapter.cpp), [minwave.cpp](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/drivers/audio/minwave.cpp), [mintopo.cpp](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/drivers/audio/mintopo.cpp)) provide an architecturally valid PortCls WaveRT implementation that compiles in user mode for test execution, but requires a dedicated Windows Driver Kit (WDK) build environment to generate `MoonshineAudio.sys`.
+* **Kernel-Mode Driver Source**: Prototype. The C++ miniport implementation files ([adapter.cpp](../drivers/audio/adapter.cpp), [minwave.cpp](../drivers/audio/minwave.cpp), [mintopo.cpp](../drivers/audio/mintopo.cpp)) provide an architecturally valid PortCls WaveRT implementation that compiles in user mode for test execution, but requires a dedicated Windows Driver Kit (WDK) build environment to generate `MoonshineAudio.sys`.
 * **Real Device PnP Deployment**: Not yet tested on live hardware. Full end-to-end kernel installation and device manager enumeration will be validated following the establishment of the automated WDK continuous integration pipeline and test-signing certificate provisioning.
 
 ### 10.1. Subsystem Capability and Validation Matrix

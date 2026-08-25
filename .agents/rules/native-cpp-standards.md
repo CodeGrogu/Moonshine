@@ -1,6 +1,6 @@
 # Native C++ Standards (Moonshine.Native)
 
-All C++23 native development must adhere to the engineering standards in [`STANDARDS.md`](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/STANDARDS.md).
+All C++23 native development must adhere to the engineering standards in [`STANDARDS.md`](../../STANDARDS.md).
 
 These rules apply to all native C++ code in `src/Moonshine.Native`.
 

@@ -3,7 +3,7 @@
 
 # Moonshine Engineering Standards: Solo + AI Edition
 
-This document summarises the operational principles, verification gates, and mechanical code standards governing the Moonshine repository. The authoritative canonical specification is located in [`STANDARDS.md`](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/STANDARDS.md).
+This document summarises the operational principles, verification gates, and mechanical code standards governing the Moonshine repository. The authoritative canonical specification is located in [`STANDARDS.md`](https://github.com/CodeGrogu/Moonshine/blob/main/STANDARDS.md).
 
 ---
 

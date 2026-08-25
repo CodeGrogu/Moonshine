@@ -145,6 +145,17 @@ These are **isolated microbenchmark** results, not end-to-end streaming measurem
 | Jitter assembly/pop | 53.35 ns | 0 B |
 | SIMD Reed-Solomon FEC recovery | 287.54 ns | 0 B |
 
+### Hardware Verification Matrix (2026-08-25 Local Test Run)
+
+> **Verification Provenance**: Verified locally on Windows 11 Pro build 26200 via `scripts/verify_codebase.ps1` on 2026-08-25. Total: **25 CTests** passed (100%), **706 managed xUnit tests** passed (712 total, 6 skipped). GitHub Actions CI workflows execute independently.
+
+| Hardware Backend | Test Runner Hardware | Software / Mock Tests | Physical Bitstream & Loopback Tests | Disposition |
+| :--- | :---: | :---: | :---: | :--- |
+| **NVIDIA NVENC** | Present (NVIDIA GPU) | Passed | Passed | Physically exercised and verified |
+| **AMD AMF** | Absent | Passed | Skipped (3 tests) | Capability-gated, skipped cleanly |
+| **Intel QuickSync (QSV)** | Absent | Passed | Skipped (3 tests) | Capability-gated, skipped cleanly |
+| **Direct3D 11 Hardware** | Present | Passed | Passed | Physically exercised and verified |
+
 ---
 
 ## Runtime Role Model

@@ -11,8 +11,8 @@ This document tracks known runtime edge cases, concurrency hazards, and diagnost
 - **Affected OS**: Windows 11 Pro x64 (Build 22000+)
 
 ### Triggering Test Cases
-- `MoonshineHostCoordinator_LifecycleAsync_TransitionsAndCleansUp` in [`tests/Moonshine.Host.Tests/HostCoordinatorTests.cs`](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/tests/Moonshine.Host.Tests/HostCoordinatorTests.cs)
-- `HostAudioPipeline_ConcurrentProcessAndDispose_IsThreadSafeAndClean` and `HostAudioPipeline_StartAndStop_BackgroundWorkerLifecycle` in [`tests/Moonshine.Host.Tests/HostAudioPipelineTests.cs`](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/tests/Moonshine.Host.Tests/HostAudioPipelineTests.cs)
+- `MoonshineHostCoordinator_LifecycleAsync_TransitionsAndCleansUp` in [`tests/Moonshine.Host.Tests/HostCoordinatorTests.cs`](../tests/Moonshine.Host.Tests/HostCoordinatorTests.cs)
+- `HostAudioPipeline_ConcurrentProcessAndDispose_IsThreadSafeAndClean` and `HostAudioPipeline_StartAndStop_BackgroundWorkerLifecycle` in [`tests/Moonshine.Host.Tests/HostAudioPipelineTests.cs`](../tests/Moonshine.Host.Tests/HostAudioPipelineTests.cs)
 - **Execution Condition**: Previously occurred non-deterministically during full assembly test sweeps when tests ran in batch sequence without inter-process isolation. No longer reproducible after fix.
 
 ### Symptoms and Stack Trace

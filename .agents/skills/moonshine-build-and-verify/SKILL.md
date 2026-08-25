@@ -8,7 +8,7 @@ description: >-
 
 # Moonshine Build & Verification Skill
 
-This runbook guides building and testing the Moonshine stack in compliance with [`STANDARDS.md`](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/STANDARDS.md).
+This runbook guides building and testing the Moonshine stack in compliance with [`STANDARDS.md`](../../../STANDARDS.md).
 
 ## Canonical Verification Pipeline
 

@@ -55,7 +55,7 @@ While `IDXGIOutputDuplication` delivers excellent performance for single-GPU des
 
 ## 3. Normative C ABI Export Interface
 
-> **Normative ABI Specification**: Defined canonically in [`src/Moonshine.Native/include/moonshine/export/moonshine_native_api.h`](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/src/Moonshine.Native/include/moonshine/export/moonshine_native_api.h#L775-L835). Field layouts and calling conventions are strictly normative.
+> **Normative ABI Specification**: Defined canonically in [`src/Moonshine.Native/include/moonshine/export/moonshine_native_api.h`](https://github.com/CodeGrogu/Moonshine/blob/main/src/Moonshine.Native/include/moonshine/export/moonshine_native_api.h#L775-L835). Field layouts and calling conventions are strictly normative.
 
 ```c
 typedef struct MoonshineCaptureFrameDesc {

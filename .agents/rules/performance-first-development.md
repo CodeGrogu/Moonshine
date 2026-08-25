@@ -1,6 +1,6 @@
 # Performance-First Development Rules
 
-All performance optimizations and streaming hot paths must conform to [`STANDARDS.md`](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/STANDARDS.md).
+All performance optimizations and streaming hot paths must conform to [`STANDARDS.md`](../../STANDARDS.md).
 
 These rules govern all code modifications and additions in Moonshine.
 

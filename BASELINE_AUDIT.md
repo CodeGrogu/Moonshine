@@ -93,15 +93,26 @@ These are microbenchmark baselines for isolated algorithms, not streaming throug
 
 <!-- VERIFIED: 2026-08-25, via `scripts/verify_codebase.ps1` on Windows 11 Pro build 26200 -->
 
+> **Verification Provenance**: Verified locally on Windows 11 Pro build 26200 via `scripts/verify_codebase.ps1` on 2026-08-25. Total: **25 CTests** passed (100%), **706 managed xUnit tests** passed (712 total, 6 skipped). GitHub Actions CI status executes independently.
+
 ### Progression from 2026-08-21 Baseline to 2026-08-25
 
 | Metric / Area | 2026-08-21 Baseline | 2026-08-25 Current Verification | Progression Detail |
 | :--- | :--- | :--- | :--- |
 | **Native CTests** | 16 passed (100%) | **25 passed (100%)** | Added 9 test suites: NVENC pipeline & conformance, AMF pipeline & conformance, QSV pipeline & conformance, WGC capture, HDR colorimetry, WASAPI capture & renderer, Opus codec, and Swapchain presenter. |
 | **Managed xUnit Tests** | 254 passed | **706 passed (712 total, 6 skipped)** | Expanded across Protocol (102), Core (214), Host (308), Interop (88). 6 tests skipped on test machines lacking physical AMD or Intel GPUs. |
-| **Hardware Video Encoding** | Incomplete (Blocked) | **Implemented (Capability-Gated & Conformance-Tested)** | Real dynamic vendor probing (NVENC, AMF, QSV, D3D11), physical bitstream generation, and D3D11 decoder loopback test suites. Composition root remains fail-closed. |
+| **Hardware Video Encoding** | Incomplete (Blocked) | **Subsystem Implemented & Tested** | Implemented and hardware-conformance-tested for capability-supported configurations (e.g. NVENC on test host; AMF/QSV capability-gated); not yet integrated into the end-to-end product streaming path. |
 | **Protocol Specification** | Legacy RTP/RTSP | **MNBP v1 Specified & Tested** | First-party Moonshine Native Binary Protocol (`docs/PROTOCOL_SPEC_V1.md`) with zero-allocation packet codecs. |
 | **Application Boundary** | Fail-Closed | **Fail-Closed (Preserved Invariant)** | `MoonshineApplication` starts no background listeners or workers; roles return unsupported until native transport wiring is complete. |
+
+### Hardware Verification Matrix (2026-08-25 Local Test Run)
+
+| Hardware Backend | Test Runner Hardware | Software / Mock Tests | Physical Bitstream & Loopback Tests | Disposition |
+| :--- | :---: | :---: | :---: | :--- |
+| **NVIDIA NVENC** | Present (NVIDIA GPU) | Passed | Passed | Physically exercised and verified |
+| **AMD AMF** | Absent | Passed | Skipped (3 tests) | Capability-gated, skipped cleanly |
+| **Intel QuickSync (QSV)** | Absent | Passed | Skipped (3 tests) | Capability-gated, skipped cleanly |
+| **Direct3D 11 Hardware** | Present | Passed | Passed | Physically exercised and verified |
 
 ## Direct Follow-up Work
 

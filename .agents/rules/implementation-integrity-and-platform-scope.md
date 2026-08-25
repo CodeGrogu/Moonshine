@@ -1,6 +1,6 @@
 # Implementation Integrity and Platform Scope Rules
 
-All implementation decisions and platform assumptions must strictly follow the engineering standards in [`STANDARDS.md`](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/STANDARDS.md).
+All implementation decisions and platform assumptions must strictly follow the engineering standards in [`STANDARDS.md`](../../STANDARDS.md).
 
 These rules govern all architectural, coding, and reporting decisions in Moonshine.
 

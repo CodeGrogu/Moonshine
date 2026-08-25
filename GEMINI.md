@@ -1,7 +1,7 @@
 # Moonshine Project Rules and Guidelines
 
 ## Operational Standard
-All architectural decisions, native SIMD pipelines, managed protocols, and engineering practices MUST adhere to the **Moonshine Engineering Standards: Solo + AI Edition** in [`STANDARDS.md`](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/STANDARDS.md).
+All architectural decisions, native SIMD pipelines, managed protocols, and engineering practices MUST adhere to the **Moonshine Engineering Standards: Solo + AI Edition** in [`STANDARDS.md`](./STANDARDS.md).
 
 ## Architectural Foundations
 - **Zero-Allocation Discipline**: Zero GC allocations in C# streaming hot paths (`Span<T>`, `ValueTask`, `NativeMemoryOwner`).

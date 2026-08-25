@@ -87,7 +87,7 @@ $$\text{Keyframe Target Size} \approx 1.5 \cdot \text{Average Frame Size}$$
 
 ## 3. Normative C ABI Contract
 
-> **Normative ABI Specification**: The following data structures define the strict, blittable binary contract across the native (`Moonshine.Native.dll`) and managed (`Moonshine.Interop`) boundary. Defined canonically in [`src/Moonshine.Native/include/moonshine/export/moonshine_native_api.h`](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/src/Moonshine.Native/include/moonshine/export/moonshine_native_api.h#L850-L885). Field order, byte widths, padding, and alignments are normative and strictly verified by compile-time `static_assert` statements in C++ and layout assertions in .NET.
+> **Normative ABI Specification**: The following data structures define the strict, blittable binary contract across the native (`Moonshine.Native.dll`) and managed (`Moonshine.Interop`) boundary. Defined canonically in [`src/Moonshine.Native/include/moonshine/export/moonshine_native_api.h`](https://github.com/CodeGrogu/Moonshine/blob/main/src/Moonshine.Native/include/moonshine/export/moonshine_native_api.h#L850-L885). Field order, byte widths, padding, and alignments are normative and strictly verified by compile-time `static_assert` statements in C++ and layout assertions in .NET.
 
 ```c
 typedef struct MoonshineEncoderCaps {
