@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Verifies the structural integrity, dependency graph, and readiness of the Moonshine TODO backlog (TODO.md).
 .DESCRIPTION
@@ -26,7 +26,7 @@ if (-not (Test-Path $TodoPath)) {
 $content = Get-Content -Path $TodoPath -Raw
 $lines = $content -split "\r?\n"
 
-$taskPattern = '(?m)^###\s*\[(TODO-\d+)\]\s*(.+)$'
+$taskPattern = '(?m)^###\s*\[(TODO-[A-Za-z0-9_\-]+)\]\s*(.+)$'
 $taskMatches = [regex]::Matches($content, $taskPattern)
 
 if ($taskMatches.Count -eq 0) {
@@ -85,7 +85,7 @@ for ($i = 0; $i -lt $taskOrder.Count; $i++) {
     if ($block -match '\*\s*\*\*Prerequisites\*\*:\s*(.+)') {
         $prereqStr = $matches[1].Trim()
         if ($prereqStr -ne "None" -and $prereqStr -ne "none") {
-            $prereqs = [regex]::Matches($prereqStr, 'TODO-\d+') | ForEach-Object { $_.Value }
+            $prereqs = [regex]::Matches($prereqStr, 'TODO-[A-Za-z0-9_\-]+') | ForEach-Object { $_.Value }
             $taskObj.Prerequisites = $prereqs
         }
     }
