@@ -1,5 +1,9 @@
 # Moonshine Backend Baseline Audit
 
+> **Historical Baseline Snapshot (Recorded: 2026-08-21)**: This document records the original structural audit of the Moonshine repository prior to the implementation of multi-vendor hardware encoder pipelines (NVENC/AMF/QSV), physical Direct3D 11 decoder loopback suites, and the MNBP v1 protocol specification.
+>
+> **Current Verification Status (2026-08-25)**: Since this baseline was recorded, the repository has expanded from 16 to 25 native CTests and from 254 to 706 passing managed xUnit tests (712 total, 6 skipped for absent hardware). The application composition root (`MoonshineApplication`) remains deliberately fail-closed pending native transport wiring. See [Current Verification Status](#current-verification-status-2026-08-25) below.
+
 <!-- VERIFIED: 2026-08-21, via `scripts/verify_environment.ps1`, `scripts/preflight.ps1`, `ctest --test-dir build/release-avx2 --build-config Release --output-on-failure --no-tests=error`, and `tools/dotnet_sdk/dotnet.exe test Moonshine.sln -c Release --no-build --no-restore --arch x64` on Windows 11 Pro build 26200 -->
 
 ## Product Boundary
@@ -28,7 +32,7 @@ Compatibility-only code, not reached by MoonshineApplication:
 
 The `MoonshineClientEngine` compatibility entry point is excluded from compilation by the executable project. The following compatibility modules remain in the repository for audit and migration reference only. They must not be composed by a Host, Client, or Host + Client role: `MoonshineDiscoveryService`, `LiveHostDiscoveryEngine`, `MoonshinePairingManager`, `MoonshineRtspClient`, `MoonshineStreamSession`, `UdpSocketPipeline`, and RTP, RTCP, RTSP, mDNS, SSDP, and GameStream packet codecs. They require extraction to a non-product compatibility assembly before any new transport is added.
 
-## Runtime Inventory and Classification
+## Runtime Inventory and Classification (2026-08-21 Snapshot)
 
 | Area | Resources and boundaries | State | Product disposition |
 | --- | --- | --- | --- |
@@ -52,7 +56,7 @@ The `MoonshineClientEngine` compatibility entry point is excluded from compilati
 
 There are no active product listeners or streaming workers in `MoonshineApplication`. Legacy-only resources are: discovery mDNS and SSDP socket receive tasks, HTTP probe tasks, RTSP TCP client, UDP receiver thread, client microphone audio capture, WASAPI loopback capture, DXGI/WGC capture handles, encoder handles, decoder handles, swapchain handles, virtual audio IPC mappings, and the WaveRT driver. These resources remain disabled by the role selector.
 
-## Baseline Evidence
+## Baseline Evidence (2026-08-21 Snapshot)
 
 <!-- VERIFIED: 2026-08-21, via `scripts/verify_environment.ps1` on Windows 11 Pro build 26200 -->
 
@@ -82,6 +86,22 @@ There are no active product listeners or streaming workers in `MoonshineApplicat
 | SIMD Reed-Solomon FEC recovery | 287.54 ns | 0 B |
 
 These are microbenchmark baselines for isolated algorithms, not streaming throughput or end-to-end latency claims. No real frame, hardware encode, decode, presentation, or host-to-client latency measurement exists.
+
+---
+
+## Current Verification Status (2026-08-25)
+
+<!-- VERIFIED: 2026-08-25, via `scripts/verify_codebase.ps1` on Windows 11 Pro build 26200 -->
+
+### Progression from 2026-08-21 Baseline to 2026-08-25
+
+| Metric / Area | 2026-08-21 Baseline | 2026-08-25 Current Verification | Progression Detail |
+| :--- | :--- | :--- | :--- |
+| **Native CTests** | 16 passed (100%) | **25 passed (100%)** | Added 9 test suites: NVENC pipeline & conformance, AMF pipeline & conformance, QSV pipeline & conformance, WGC capture, HDR colorimetry, WASAPI capture & renderer, Opus codec, and Swapchain presenter. |
+| **Managed xUnit Tests** | 254 passed | **706 passed (712 total, 6 skipped)** | Expanded across Protocol (102), Core (214), Host (308), Interop (88). 6 tests skipped on test machines lacking physical AMD or Intel GPUs. |
+| **Hardware Video Encoding** | Incomplete (Blocked) | **Implemented (Capability-Gated & Conformance-Tested)** | Real dynamic vendor probing (NVENC, AMF, QSV, D3D11), physical bitstream generation, and D3D11 decoder loopback test suites. Composition root remains fail-closed. |
+| **Protocol Specification** | Legacy RTP/RTSP | **MNBP v1 Specified & Tested** | First-party Moonshine Native Binary Protocol (`docs/PROTOCOL_SPEC_V1.md`) with zero-allocation packet codecs. |
+| **Application Boundary** | Fail-Closed | **Fail-Closed (Preserved Invariant)** | `MoonshineApplication` starts no background listeners or workers; roles return unsupported until native transport wiring is complete. |
 
 ## Direct Follow-up Work
 

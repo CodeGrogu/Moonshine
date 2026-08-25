@@ -4,7 +4,7 @@
 
 # NVIDIA NVENC Hardware Video Encoder Pipeline
 
-The **NVIDIA NVENC Hardware Video Encoder Pipeline** provides direct hardware-accelerated video encoding for NVIDIA GeForce GTX/RTX, RTX Professional, and Tesla/Data Center GPUs. It takes Direct3D 11 / Direct3D 12 texture surfaces directly with a design target of sub-2ms encode latency for H.264, HEVC Main10 (HDR10), and AV1 Profile 0.
+The **NVIDIA NVENC Hardware Video Encoder Pipeline** provides direct hardware-accelerated video encoding for NVIDIA GeForce GTX/RTX, RTX Professional, and Tesla/Data Center GPUs. It takes Direct3D 11 / Direct3D 12 texture surfaces directly with a design target of sub-2ms encode latency for H.264, HEVC Main10 (HDR10), and AV1 Profile 0 (these latency figures are design targets and not yet demonstrated in an end-to-end streaming deployment).
 
 ---
 
@@ -64,7 +64,9 @@ The **NVIDIA NVENC Hardware Video Encoder Pipeline** provides direct hardware-ac
 
 ---
 
-## 3. Dedicated C-ABI Export Methods
+## 3. Normative C ABI Export Methods
+
+> **Normative ABI Specification**: Defined canonically in [`src/Moonshine.Native/include/moonshine/export/moonshine_native_api.h`](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/src/Moonshine.Native/include/moonshine/export/moonshine_native_api.h#L889-L935). C-ABI export signatures and calling conventions are strictly normative.
 
 ```c
 // Queries whether the given codec (H264, HEVC, HEVC Main10, AV1) is supported

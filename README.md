@@ -42,8 +42,8 @@ One application. Host, Client, or both. Built from the ground up with C# and C++
 | :--- | :---: | :--- |
 | Application shell and role selector | Implemented | Fail-closed by design until native streaming is complete |
 | Moonshine Native Binary Protocol (MNBP v1) | Specified | Wire contract defined and codec-tested, not yet wired to transport |
-| Native C++23 engine (FEC, SPSC, jitter buffer) | Verified | 22 CTests passed, microbenchmarks validated |
-| Managed .NET 9 test suite | Verified | 493 xUnit tests passed |
+| Native C++23 engine (FEC, SPSC, jitter buffer) | Verified | 25 CTests passed (verified 2026-08-25) |
+| Managed .NET 9 test suite | Verified | 706 xUnit tests passed (712 total, 6 skipped for absent hardware, verified 2026-08-25) |
 | Hardware encoder discovery (NVENC, AMF, QuickSync) | Implemented | Live capability probing, fail-closed on missing hardware |
 | Hardware encoder bitstream output | In Progress | Fail-closed pending downstream pipeline |
 | Desktop capture (DXGI/WGC) | Prototype | Can expose real device failures, no end-to-end path |
@@ -122,7 +122,7 @@ Moonshine has three major backend planes:
 
 ### Core Capabilities (Implemented or In Progress)
 
-- **Moonshine Native Binary Protocol (MNBP v1)**: First-party wire protocol with zero-allocation serialisation. Replaces RTP, RTSP, RTCP, and GameStream framing.
+- **Moonshine Native Binary Protocol (MNBP v1)**: First-party control and media wire protocol with zero-allocation serialisation. Legacy RTP, RTSP, RTCP, and GameStream code remains in the repository only for compatibility reference and is deliberately excluded from the production composition root.
 - **SIMD Reed-Solomon FEC**: Vectorised Galois Field GF(2^8) arithmetic via AVX2 and AVX-512 GFNI.
 - **Lock-free SPSC ring buffers**: Cacheline-padded (64-byte aligned) atomic queues for cross-thread media flow.
 - **Predictive jitter buffer**: Sub-millisecond frame reassembly without dynamic allocations.

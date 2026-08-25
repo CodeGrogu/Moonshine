@@ -37,8 +37,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\verify_codebase.ps1
 3. **Physical Artifact Verification**:
    - Tests physical presence of Windows binaries (`build\release-avx2\bin\Moonshine.Native.dll` and the Windows-targeted `Moonshine.Host.dll`).
 4. **Native & Managed Test Suites**:
-   - Runs 22 native C++23 CTest test suites.
-   - Runs 493 managed .NET 9 xUnit tests across all four test projects.
+   - Runs 25 native C++23 CTest test suites.
+   - Runs 706 passed managed .NET 9 xUnit tests (712 total) across all four test projects.
 
 ---
 

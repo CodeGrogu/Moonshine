@@ -272,7 +272,7 @@ The Moonshine Virtual Audio Driver component is classified as **Prototype** unde
 | IPC ring buffer architecture | Verified | Lock-free SPSC 64-byte cacheline isolated ring buffer |
 | IPC security model | Verified | Strict DACL (SYSTEM, Administrators, User SID only) |
 | Managed lifecycle service | Verified | `VirtualAudioDriverService` with exception & disposal safety |
-| Software test suites | Verified | 22 CTests + 490 xUnit tests passing (100%) |
+| Software test suites | Verified | 25 CTests + 706 xUnit tests passing (100% of applicable tests) |
 | Driver binary compilation | Prototype | Requires WDK toolchain |
 | Test-signed installation | Prototype | Requires `bcdedit /set TESTSIGNING ON` |
 | Actual PnP enumeration | Prototype | Requires signed `.sys` load |

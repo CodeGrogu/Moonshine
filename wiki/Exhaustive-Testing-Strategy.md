@@ -15,54 +15,49 @@ Moonshine enforces a cautious, multi-tier testing discipline. Every module, help
             ┌────────────────────────────────────┼────────────────────────────────────┐
             ▼                                    ▼                                    ▼
 [ Native C++23 CTest Suites ]         [ Managed .NET 9 xUnit Suites ]      [ Memory & Concurrency Sanitizers ]
-- 22 native test targets              - Moonshine.Protocol.Tests           - ASan (AddressSanitizer)
-  including MNBP v1 and               - Moonshine.Interop.Tests            - UBSan (UndefinedBehavior)
-  legacy compatibility                - Moonshine.Core.Tests               - TSan (ThreadSanitizer)
-  layers                                                                   - BenchmarkDotNet 0B Alloc
+- 25 native test targets              - Moonshine.Protocol.Tests (102)     - ASan (AddressSanitizer)
+  including MNBP v1, capture,         - Moonshine.Core.Tests (214)         - UBSan (UndefinedBehavior)
+  hardware encoders, and drivers      - Moonshine.Host.Tests (308)         - TSan (ThreadSanitizer)
+                                      - Moonshine.Interop.Tests (88)       - BenchmarkDotNet 0B Alloc
 ```
 
 ---
 
 ## 2. Exhaustive Test Matrix by Module
 
-### A. Forward Error Correction (`test_fec_simd.cpp`)
-- Vector XOR alignment: 0 bytes, 1 byte, 15 bytes, 31 bytes, 32 bytes, 33 bytes, 63 bytes, 1400 bytes.
-- Self-inverse properties: $x \oplus x = 0$ and $x \oplus 0 = x$.
-- Galois Field $GF(2^8)$ multiplication identities: $0 \otimes x = 0$ and $1 \otimes x = x$.
-- Single parity shard recovery under MTU data loss.
-- Boundary error handling: Null pointer rejection, zero shard count rejection.
+### A. Forward Error Correction & Concurrency (`test_fec_simd.cpp`, `test_spsc_ring_buffer.cpp`, `test_jitter_buffer.cpp`)
+- **FEC SIMD**: Vector XOR alignment (0B, 1B, 15B, 31B, 32B, 33B, 63B, 1400B), Galois Field $GF(2^8)$ multiplication identities, single-parity shard recovery under MTU data loss, null-pointer and zero-shard defensive handling.
+- **SPSC Ring Buffer**: Push/pop correctness, full-capacity rejection, empty queue rejection, multi-threaded stress test (1,000,000 items pushed/popped across cores with zero drops), index wraparound.
+- **Predictive Jitter Buffer**: Single-slice frame completion, multi-slice frame reassembly with reverse-order packet arrival, circular slot rollover across 1,000 consecutive frames without leaks.
 
-### B. Lock-Free SPSC Ring Buffer (`test_spsc_ring_buffer.cpp`)
-- Single element push and pop correctness.
-- Full capacity rejection: Pushing to a full queue returns false without corruption.
-- Empty queue rejection: Popping from an empty queue returns false.
-- Multi-threaded stress test: 1,000,000 items concurrently pushed and popped across independent CPU cores with zero drops.
-- Ring index wraparound across thousands of continuous cycles.
+### B. C-ABI Native Export Boundary (`test_c_abi_export.cpp`)
+- Verification of P/Invoke entry points: `Moonshine_VectorXor`, `Moonshine_Spsc*`, `Moonshine_Jitter*`, `Moonshine_VideoQueryCaps`, encoder/decoder lifecycle exports.
+- Null pointer resilience, zero-buffer defenses, structured exception handling, and error return codes.
 
-### C. Predictive Jitter Buffer (`test_jitter_buffer.cpp`)
-- Single-slice frame completion.
-- Multi-slice frame reassembly with reverse-order packet arrival.
-- Circular slot rollover across 1,000 consecutive frames without memory leaks.
+### C. Desktop Capture & Colour Pipelines (`test_desktop_capture.cpp`, `test_wgc_capture.cpp`, `test_hdr_colorimetry.cpp`)
+- IDXGIOutputDuplication and Windows.Graphics.Capture session initialisation and error recovery.
+- HDR10 metadata extraction, colour space gamut validation, SMPTE ST 2084 PQ conversion, and surface sharing.
 
-### D. C-ABI Native Export Boundary (`test_c_abi_export.cpp`)
-- Verification of P/Invoke entry points: `Moonshine_VectorXor`, `Moonshine_Spsc*`, `Moonshine_Jitter*`, `Moonshine_VideoQueryCaps`.
-- Null pointer resilience and error return codes.
+### D. Multi-Vendor Hardware Encoders & Conformance (`test_hardware_encoders.cpp`, `test_nvenc_*.cpp`, `test_amf_*.cpp`, `test_qsv_*.cpp`)
+- Dynamic adapter vendor detection (NVIDIA `0x10DE`, AMD `0x1002`, Intel `0x8086`, D3D11 hardware).
+- 9-tier matrix conformance: defensive error handling, resolution matrix (720p to 4K), codec matrix (H.264, HEVC Main10, AV1), NALU start codes, Direct3D 11 decoder hardware loopbacks, dynamic IDR keyframe injection, buffer overrun protection with canary bytes, rapid start/stop cycles, and multi-instance concurrency.
 
-### E. Managed Protocol Engine (`Moonshine.Protocol.Tests`)
-- **MNBP v1 Protocol Tests**: Full test suite for Moonshine's native MNBP v1 protocol framing and control operations.
-- `RtpHeader`: RTP packet header parsing, 12-byte minimum size enforcement, flag extraction, payload slicing (tests legacy compatibility layer).
-- `RtpAudioHeader`: Opus audio RTP parsing and metadata extraction (legacy compatibility).
-- `RtpSequenceUnwrapper`: 64-bit monotonic sequence unwrapping across 16-bit boundaries ($65535 \rightarrow 0$) and late-arriving packet handling.
-- `FecHeader`: Binary header parsing and shard count validation.
-- `RtspMessage`: Request and response serialisation, method parsing, header extraction, and body size handling (legacy compatibility).
+### E. Audio Subsystem & Virtual Driver (`test_wasapi_*.cpp`, `test_opus_*.cpp`, `test_mic_sink.cpp`, `test_virtual_audio_*.cpp`)
+- WASAPI loopback master audio capture and Exclusive mode rendering.
+- Low-latency Opus float encoding and decoding.
+- Virtual audio driver WaveRT miniport interface validation and shared memory IPC ring buffer coherency.
+
+### F. Protocol, Video Decode & Presentation (`test_moonshine_protocol.cpp`, `test_video_decoder.cpp`, `test_input_injector.cpp`, `test_swapchain_presenter.cpp`)
+- MNBP v1 native packet parsing, Direct3D 11/12 video decode profile discovery, Win32 input injection coordinate normalisation, and DXGI Flip Model swapchain presentation.
+
+### G. Managed Protocol Engine (`Moonshine.Protocol.Tests` - 102 tests)
+- **MNBP v1 Protocol Tests**: Full test suite for Moonshine's native MNBP v1 protocol framing, control operations, and feedback envelopes.
+- `RtpHeader`, `RtpAudioHeader`, `RtpSequenceUnwrapper`, `RtspMessage`: Legacy compatibility codecs tested in isolation.
 - `AesGcmHelper`: PIN/salt key derivation, AES-GCM encryption/decryption roundtrips, tampered ciphertext rejection.
-- `ControlPacket`: Ping/Pong serialisation, IDR frame requests, and loss report payload formatting.
-- `InputPacket`: 1000Hz controller state bitmasks, stick coordinate normalisation, and high-DPI mouse event packing.
+- `ControlPacket` & `InputPacket`: 1000Hz controller state bitmasks, stick coordinate normalisation, and high-DPI mouse event packing.
 
-### F. Managed Interop & Core (`Moonshine.Interop.Tests`, `Moonshine.Core.Tests`)
-- `StructLayoutTests`: Exact byte sizing and alignment for `MoonshinePacketDesc`, `MoonshineFrameDesc`, and `MoonshineDecoderCaps`.
-- `NativeMemoryOwnerTests`: Unmanaged memory allocation, zero-copy span access, and double-dispose safety.
-- `DiscoveryTests`: Sunshine XML serverinfo response parsing (legacy compatibility).
-- `PairingTests`: Self-signed RSA-2048/X.509 client certificate and private key generation.
-- `UdpSocketPipelineTests`: Socket pipeline lifecycle and resource cleanup.
-- `MoonshineStreamSessionTests`: Session initialisation and default state validation.
+### H. Managed Host, Core & Interop (`Moonshine.Host.Tests` - 308 tests, `Moonshine.Core.Tests` - 214 tests, `Moonshine.Interop.Tests` - 88 tests)
+- `HardwareVideoEncoderConformanceTests`: Full lifecycle, dynamic bitrate adjustment, IDR injection, buffer size safety, and D3D11 decoder loopbacks across NVENC, AMF, and QSV.
+- `HostAudioPipelineTests` & `HostCoordinatorTests`: Audio processing loops, MMCSS thread registration, and lifecycle state machines.
+- `StructLayoutTests` & `NativeMemoryOwnerTests`: Exact byte sizing and alignment assertions across C# and C++ blittable structures.
+- `DiscoveryTests` & `PairingTests`: Sunshine XML serverinfo response parsing and RSA-2048/X.509 certificate exchange (legacy compatibility).

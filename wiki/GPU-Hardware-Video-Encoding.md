@@ -1,14 +1,14 @@
 > [!WARNING]
 > **Status: Incomplete / Fail-Closed**
-> Moonshine is in early development (v0.5.6-alpha) and is fail-closed by design. End-to-end streaming is not yet operational. Hardware encoders are not fully operational; the pipeline described here is a design target. Moonshine uses the custom MNBP v1 protocol, not RTP/RTCP.
+> Moonshine is in early development (v0.5.6-alpha) and is fail-closed by design. End-to-end streaming is not yet operational. Hardware encoders are implemented as capability-gated subsystems verified in unit and conformance test suites; the full host-to-client pipeline described here is a design target. Moonshine uses the first-party MNBP v1 protocol, not RTP/RTCP.
 
 # GPU Hardware Video Encoding Subsystem
 
-The **Moonshine Host GPU Video Encoding Subsystem** provides a zero-copy, multi-vendor hardware video encoding engine engineered for a design target of sub-2ms encode latency at up to 4K 240 FPS across NVIDIA NVENC, AMD AMF (Advanced Media Framework), Intel QuickSync / oneVPL, and Direct3D 11/12 hardware surfaces.
+The **Moonshine Host GPU Video Encoding Subsystem** provides a multi-vendor hardware video encoding engine designed with a target of sub-2ms encode latency and up to 4K 240 FPS operation across NVIDIA NVENC, AMD AMF (Advanced Media Framework), Intel QuickSync / oneVPL, and Direct3D 11 hardware surfaces. These latency and throughput targets are architectural design goals and are not yet demonstrated in an end-to-end streaming deployment.
 
 ---
 
-## 1. Architectural Overview
+## 1. Architectural Overview & Vendor Selection
 
 ```
 ┌──────────────────────────────────────────────────────────┐
@@ -19,18 +19,18 @@ The **Moonshine Host GPU Video Encoding Subsystem** provides a zero-copy, multi-
                              ▼
 ┌──────────────────────────────────────────────────────────┐
 │              UnifiedHardwareEncoderEngine                │
-│         - Auto-probes GPU vendor (NV / AMD / Intel)      │
-│         - Fallback hierarchy: NVENC -> AMF -> QSV -> D3D11│
+│         - Auto-detects adapter PCI VendorId              │
+│         - Fallback sequence: NVENC -> AMF -> QSV -> D3D11│
 └────────────────────────────┬─────────────────────────────┘
                              │
        ┌─────────────────────┼─────────────────────┐
        ▼                     ▼                     ▼
 ┌──────────────┐      ┌──────────────┐      ┌──────────────┐
 │ NVIDIA NVENC │      │   AMD AMF    │      │Intel QuickSync│
-│ - P1/P2 Ultra│      │ - VCN Context│      │ - oneVPL Low │
-│ - CBR Zero-B │      │ - D3D Direct │      │ - Lookahead  │
-│ - HEVC 10-bit│      │ - HEVC 10-bit│      │ - AV1 & HEVC │
-│ - AV1 OBU    │      │ - Dynamic IDR│      │ - Dynamic IDR│
+│ - Vendor 10DE│      │ - Vendor 1002│      │ - Vendor 8086│
+│ - P1/P2 Fast │      │ - VCN Context│      │ - oneVPL Low │
+│ - CBR Zero-B │      │ - D3D Direct │      │ - Best Speed │
+│ - HEVC/AV1   │      │ - HEVC/AV1   │      │ - HEVC/AV1   │
 └──────┬───────┘      └──────┬───────┘      └──────┬───────┘
        │                     │                     │
        └─────────────────────┼─────────────────────┘
@@ -39,7 +39,7 @@ The **Moonshine Host GPU Video Encoding Subsystem** provides a zero-copy, multi-
 ┌──────────────────────────────────────────────────────────┐
 │              Annex B / OBU Bitstream Emission            │
 │         - Monotonically increasing QPC timestamps        │
-│         - Instant IDR Keyframe on MNBP Packet Loss       │
+│         - Instant IDR Keyframe on MNBP Loss Signals      │
 │         - Zero GC Allocations in Streaming Hot Path      │
 └────────────────────────────┬─────────────────────────────┘
                              │
@@ -48,6 +48,22 @@ The **Moonshine Host GPU Video Encoding Subsystem** provides a zero-copy, multi-
 │               MNBP / FEC Packet Streaming Layer          │
 └──────────────────────────────────────────────────────────┘
 ```
+
+### Auto-Detection vs. Fallback Hierarchy
+
+The native engine distinguishes between adapter-aware auto-detection and generic fallback ordering:
+
+1. **Adapter-Aware Auto-Detection (`UnifiedVideoEncoder::query_capabilities`)**:
+   When a Direct3D 11 device handle (`ID3D11Device*`) is supplied, the native code queries the underlying `IDXGIDevice` $\rightarrow$ `IDXGIAdapter` and inspects `DXGI_ADAPTER_DESC::VendorId`:
+   - **NVIDIA (`0x10DE`)**: Directly routes to `NvencVideoEncoder`.
+   - **AMD (`0x1002`)**: Directly routes to `AmfVideoEncoder`.
+   - **Intel (`0x8086`)**: Directly routes to `QsvVideoEncoder`.
+   - **Generic / Other**: Rejects software rasterisers (`DXGI_ADAPTER_FLAG_SOFTWARE`) and routes to `D3D11HardwareEncoder`.
+
+2. **Deterministic Fallback Order (`UnifiedVideoEncoder::initialize`)**:
+   When `EncoderVendor::Auto` is specified without an explicit vendor binding, the engine iterates through a deterministic fallback cascade:
+   $$\text{NVIDIA NVENC} \longrightarrow \text{AMD AMF} \longrightarrow \text{Intel QuickSync} \longrightarrow \text{Direct3D 11 Hardware}$$
+   Each candidate is instantiated and initialised against the device; the first encoder that successfully acquires hardware context and confirms capability support is retained as the active encoder.
 
 ---
 
@@ -69,7 +85,9 @@ $$\text{Keyframe Target Size} \approx 1.5 \cdot \text{Average Frame Size}$$
 
 ---
 
-## 3. C-ABI Interface
+## 3. Normative C ABI Contract
+
+> **Normative ABI Specification**: The following data structures define the strict, blittable binary contract across the native (`Moonshine.Native.dll`) and managed (`Moonshine.Interop`) boundary. Defined canonically in [`src/Moonshine.Native/include/moonshine/export/moonshine_native_api.h`](file:///c:/Users/Jaden/Documents/antigravity/Moonshine%20Pro/src/Moonshine.Native/include/moonshine/export/moonshine_native_api.h#L850-L885). Field order, byte widths, padding, and alignments are normative and strictly verified by compile-time `static_assert` statements in C++ and layout assertions in .NET.
 
 ```c
 typedef struct MoonshineEncoderCaps {
@@ -147,7 +165,9 @@ MOONSHINE_API void moonshine_encoder_destroy(
 
 ---
 
-## 4. Managed Host Orchestration
+## 4. Managed Host Orchestration (Subsystem API Pattern)
+
+The managed layer wraps native encoder handles in safe disposal patterns with zero GC allocation in hot paths:
 
 ### A. Initialisation & Auto Vendor Selection
 ```csharp
@@ -162,7 +182,7 @@ using var engine = new UnifiedHardwareEncoderEngine(
 );
 ```
 
-### B. Streaming Hot Path & Frame Ingestion
+### B. Frame Ingestion & Bitstream Emission
 ```csharp
 Span<byte> bitstreamBuffer = stackalloc byte[1024 * 512];
 if (engine.TryEncodeFrame(d3dTextureHandle, forceIdr: false, out var desc, bitstreamBuffer, out int written))

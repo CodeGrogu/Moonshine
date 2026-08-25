@@ -15,7 +15,7 @@ _No unreleased changes yet._
 
 ### Added
 - **Moonshine Architecture**: Initial repository initialisation and multi-tiered high-performance architecture with selectable Host, Client, and Host + Client runtime roles.
-- **Moonshine Native Binary Protocol (MNBP v1)**: First-party wire protocol specification replacing all legacy RTSP, RTP, RTCP, and GameStream framing formats. Defined in `docs/PROTOCOL_SPEC_V1.md`.
+- **Moonshine Native Binary Protocol (MNBP v1)**: First-party control and media wire protocol specification. Defined in `docs/PROTOCOL_SPEC_V1.md`. Legacy RTSP, RTP, RTCP, and GameStream protocol code remains in the repository only for compatibility reference and is excluded from the production composition root.
 - **Moonshine.Native Engine (C++23)**:
   - SIMD-accelerated Reed-Solomon Galois Field GF(2^8) FEC matrix multiplier supporting AVX2 and AVX-512 GFNI.
   - Lock-free, cache-aligned SPSC (Single-Producer Single-Consumer) ring buffer with sub-microsecond latency.

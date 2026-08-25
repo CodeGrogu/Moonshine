@@ -20,7 +20,7 @@
 The repository includes automated PowerShell scripts that detect all installed build tools and run complete compilation and test passes:
 
 ```powershell
-# 1. Run full verification (22 CTests and 493 xUnit tests)
+# 1. Run full verification (25 CTests and 706+ xUnit tests)
 ./scripts/verify_codebase.ps1
 
 # 2. Build Release binaries without executing test suites
