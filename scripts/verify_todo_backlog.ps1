@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Verifies the structural integrity, dependency DAG, and readiness of the Moonshine TODO backlog (TODO.md).
 .DESCRIPTION
@@ -35,6 +35,12 @@ if (-not (Test-Path $TodoPath)) {
 }
 
 $content = Get-Content -Path $TodoPath -Raw
+
+# Detect Git merge conflict markers in backlog
+if ($content -match '(?m)^<{7}\s|^={7}$|^>{7}\s') {
+    Write-Host "[!] Unresolved Git merge conflict markers (<<<<<<<, =======, >>>>>>>) detected in $TodoPath" -ForegroundColor Red
+    exit 1
+}
 
 # 1. Multi-Stage Masking: Code Fences, HTML Comments, and Inline Code
 # Replace with equal-length whitespace to preserve exact character indices and line offsets
@@ -82,6 +88,8 @@ foreach ($match in $taskMatches) {
         CheckedCriteriaCount = 0
         HasValidRule9Provenance = $false
         ProvenanceRecord = ""
+        ProvenanceTimestamp = ""
+        ProvenanceCommit = ""
         RawBlock = ""
     }
     $taskOrder += $taskId
@@ -111,6 +119,17 @@ for ($i = 0; $i -lt $taskOrder.Count; $i++) {
     $block = $content.Substring($startIndex, $endIndex - $startIndex)
     $taskObj = $tasks[$id]
     $taskObj.RawBlock = $block
+
+    # Check for ambiguous duplicate metadata fields in the same task block
+    $statusCount = [regex]::Matches($block, '(?m)^\*\s*\*\*Status\*\*:\s*').Count
+    if ($statusCount -gt 1) {
+        $duplicateErrors += "Task $id contains multiple ($statusCount) **Status** declarations."
+    }
+
+    $priorityCount = [regex]::Matches($block, '(?m)^\*\s*\*\*Priority\*\*:\s*').Count
+    if ($priorityCount -gt 1) {
+        $duplicateErrors += "Task $id contains multiple ($priorityCount) **Priority** declarations."
+    }
 
     # Extract Status
     if ($block -match '\*\s*\*\*Status\*\*:\s*`?([a-zA-Z\s]+)`?') {
@@ -161,7 +180,17 @@ for ($i = 0; $i -lt $taskOrder.Count; $i++) {
     if ($block -match $provPattern) {
         $taskObj.HasValidRule9Provenance = $true
         $taskObj.ProvenanceRecord = $matches[0]
+        $taskObj.ProvenanceTimestamp = $matches[1]
+        $taskObj.ProvenanceCommit = $matches[2]
     }
+}
+
+if ($duplicateErrors.Count -gt 0) {
+    Write-Host "[!] Backlog Structural Ambiguity Errors Detected:" -ForegroundColor Red
+    foreach ($err in $duplicateErrors) {
+        Write-Host "  - $err" -ForegroundColor Red
+    }
+    exit 1
 }
 
 if (-not $Next -or -not $AsJson) {
@@ -181,9 +210,11 @@ foreach ($id in $taskOrder) {
         $errors += "Task $id has invalid Status: '$($t.Status)' (Allowed: $($validStatuses -join ', '))"
     }
 
-    # Prerequisites existence
+    # Prerequisites existence and self-reference checks
     foreach ($p in $t.Prerequisites) {
-        if (-not $tasks.ContainsKey($p)) {
+        if ($p -eq $id) {
+            $errors += "Task $id lists itself as a prerequisite (self-referential loop)."
+        } elseif (-not $tasks.ContainsKey($p)) {
             $errors += "Task $id references non-existent prerequisite: $p"
         }
     }
@@ -200,6 +231,16 @@ foreach ($id in $taskOrder) {
         }
         if (-not $t.HasValidRule9Provenance) {
             $errors += "Task $id is marked 'Completed' but lacks a valid Rule 9 provenance tag (Format: <!-- VERIFIED: YYYY-MM-DDTHH:MM:SSZ | Commit: <SHA> | Proof: <desc> -->)."
+        } else {
+            # Timestamp sanity check: must parse as valid ISO 8601 and not be in future
+            try {
+                $parsedDate = [DateTime]::Parse($t.ProvenanceTimestamp, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal)
+                if ($parsedDate -gt [DateTime]::UtcNow.AddHours(2)) {
+                    $errors += "Task $id has Rule 9 provenance timestamp in the future: $($t.ProvenanceTimestamp)"
+                }
+            } catch {
+                $errors += "Task $id has unparseable Rule 9 provenance timestamp: $($t.ProvenanceTimestamp)"
+            }
         }
     } else {
         # If not completed, cannot have all checkboxes checked without status transition
