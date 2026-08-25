@@ -249,7 +249,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Decode multichannel Opus frames with zero GC allocations in hot paths.
   - [x] 100% pass rate in `ClientAudioPipelineTests` and audio CTests.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T01:52:10Z | Commit: a3bcdf0 | Proof: 100% pass in ClientAudioPipelineTests with zero GC allocations and accurate jitter reordering -->
+  - <!-- VERIFIED: 2026-08-26T01:52:10Z | Commit: 711c6c9 | Proof: 100% pass in ClientAudioPipelineTests with zero GC allocations and accurate jitter reordering -->
 
 ---
 
@@ -264,7 +264,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Reject unauthenticated input packets fail-closed before Windows SendInput injection.
   - [x] 100% pass rate in input protocol and host integration tests.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T01:52:30Z | Commit: a3bcdf0 | Proof: 8/8 tests passed in Moonshine.Protocol.Tests verifying defensive bounds and roundtrip encoding -->
+  - <!-- VERIFIED: 2026-08-26T01:52:30Z | Commit: 711c6c9 | Proof: 8/8 tests passed in Moonshine.Protocol.Tests verifying defensive bounds and roundtrip encoding -->
 
 ---
 
@@ -279,7 +279,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Assert querying secondary adapter does not mutate or invalidate primary adapter capabilities.
   - [x] 100% pass rate in `HostCapabilityProbeEngineTests` and `HardwareEncoder_MultiAdapterDiscovery` tests.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T01:52:57Z | Commit: a3bcdf0 | Proof: 9/9 tests passed in HostCapabilityProbeEngineTests verifying multi-adapter isolation and sub-5ms probe execution -->
+  - <!-- VERIFIED: 2026-08-26T01:52:57Z | Commit: 711c6c9 | Proof: 9/9 tests passed in HostCapabilityProbeEngineTests verifying multi-adapter isolation and sub-5ms probe execution -->
 
 ---
 
