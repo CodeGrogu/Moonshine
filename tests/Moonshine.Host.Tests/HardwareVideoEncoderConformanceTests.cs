@@ -130,6 +130,10 @@ public class HardwareVideoEncoderConformanceTests
                         dimRes.Should().Be(0);
                         decWidth.Should().Be(1920);
                         decHeight.Should().Be(1080);
+
+                        // Verify submitted GPU pattern texture pixel content
+                        int verifyRes = MoonshineNativeMethods.VideoVerifyDecodedPattern(patternTex, pattern, 0.5f);
+                        verifyRes.Should().Be(0);
                     }
                 }
             }

@@ -131,6 +131,7 @@ inline constexpr uint32_t NV_ENC_PARAMS_RC_CONSTQP = 0x0;
 inline constexpr uint32_t NV_ENC_PARAMS_RC_VBR = 0x1;
 inline constexpr uint32_t NV_ENC_PARAMS_RC_CBR = 0x2;
 
+inline constexpr uint32_t NV_ENC_PIC_FLAG_EOS = 0x1;
 inline constexpr uint32_t NV_ENC_PIC_FLAG_FORCEIDR = 0x2;
 inline constexpr uint32_t NV_ENC_PIC_FLAG_OUTPUT_SPSPPS = 0x4;
 inline constexpr uint32_t NV_ENC_PIC_STRUCT_FRAME = 0x01;

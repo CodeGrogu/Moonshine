@@ -18,6 +18,7 @@ public:
     virtual int Initialize(void* hwnd, uint32_t width, uint32_t height, VideoCodec codec) = 0;
     virtual int SubmitFrame(const MoonshineFrameDesc& frame) = 0;
     virtual void* GetTextureHandle() const noexcept = 0;
+    virtual void* GetDeviceHandle() const noexcept { return nullptr; }
     virtual int GetDimensions(uint32_t& out_width, uint32_t& out_height) const noexcept = 0;
     virtual int Reset(uint32_t width, uint32_t height) = 0;
     virtual void Shutdown() = 0;
@@ -31,6 +32,7 @@ public:
     int Initialize(void* hwnd, uint32_t width, uint32_t height, VideoCodec codec) override;
     int SubmitFrame(const MoonshineFrameDesc& frame) override;
     void* GetTextureHandle() const noexcept override;
+    void* GetDeviceHandle() const noexcept override { return d3d11_device_; }
     int GetDimensions(uint32_t& out_width, uint32_t& out_height) const noexcept override;
     int Reset(uint32_t width, uint32_t height) override;
     void Shutdown() override;

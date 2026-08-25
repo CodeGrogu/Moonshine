@@ -21,6 +21,8 @@ public:
     ) override;
     bool reconfigure(const EncoderConfig& new_config) override;
     void request_keyframe() override;
+    bool drain() override;
+    bool flush() override;
     void cleanup() override;
 
     [[nodiscard]] EncoderVendor vendor() const noexcept override;

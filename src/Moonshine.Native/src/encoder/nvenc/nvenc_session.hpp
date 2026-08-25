@@ -72,6 +72,7 @@ public:
     );
 
     bool reconfigure(const EncoderConfig& new_config);
+    bool drain();
     void close();
 
     [[nodiscard]] bool is_open() const noexcept;

@@ -132,6 +132,20 @@ void UnifiedVideoEncoder::request_keyframe() {
     }
 }
 
+bool UnifiedVideoEncoder::drain() {
+    if (_active_encoder) {
+        return _active_encoder->drain();
+    }
+    return false;
+}
+
+bool UnifiedVideoEncoder::flush() {
+    if (_active_encoder) {
+        return _active_encoder->flush();
+    }
+    return false;
+}
+
 void UnifiedVideoEncoder::cleanup() {
     if (_active_encoder) {
         _active_encoder->cleanup();

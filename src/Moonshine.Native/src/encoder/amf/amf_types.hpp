@@ -262,6 +262,17 @@ inline constexpr const wchar_t* AMF_VIDEO_ENCODER_INTRA_REFRESH_NUM_MBS_PER_SLOT
 inline constexpr const wchar_t* AMF_VIDEO_ENCODER_FORCE_PICTURE_TYPE = L"ForcePictureType";
 inline constexpr const wchar_t* AMF_VIDEO_ENCODER_FILLER_DATA_ENABLE = L"FillerDataEnable";
 inline constexpr const wchar_t* AMF_VIDEO_ENCODER_EXTRADATA = L"ExtraData";
+inline constexpr const wchar_t* AMF_VIDEO_ENCODER_END_OF_SEQUENCE = L"EndOfSequence";
+inline constexpr const wchar_t* AMF_VIDEO_ENCODER_DRAIN = L"Drain";
+
+// Capability Categorisation Status
+enum class AmfCapabilityStatus : uint32_t {
+    SupportedPass = 0,
+    SupportedFail = 1,
+    NotPresent = 2,
+    DriverError = 3,
+    UnsupportedCodec = 4
+};
 
 // Helper for AMFVariant initialization
 inline AMFVariantStruct make_int64_variant(int64_t val) {

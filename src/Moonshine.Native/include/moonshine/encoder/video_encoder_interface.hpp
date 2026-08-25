@@ -80,6 +80,8 @@ public:
     ) = 0;
     virtual bool reconfigure(const EncoderConfig& new_config) = 0;
     virtual void request_keyframe() = 0;
+    virtual bool drain() { return true; }
+    virtual bool flush() { return true; }
     virtual void cleanup() = 0;
     [[nodiscard]] virtual EncoderVendor vendor() const noexcept = 0;
     [[nodiscard]] virtual bool is_initialized() const noexcept = 0;

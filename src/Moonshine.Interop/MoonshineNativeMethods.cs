@@ -192,6 +192,10 @@ public static unsafe partial class MoonshineNativeMethods
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int VideoGetDimensions(IntPtr handle, out uint outWidth, out uint outHeight);
 
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_video_verify_decoded_pattern")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int VideoVerifyDecodedPattern(IntPtr decoder, uint patternType, float tolerance);
+
     [LibraryImport(LibraryName, EntryPoint = "moonshine_video_reset")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int VideoReset(IntPtr handle, uint width, uint height);
@@ -924,6 +928,16 @@ public static unsafe partial class MoonshineNativeMethods
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int D3D11RenderPattern(IntPtr d3dDevice, IntPtr texture, uint width, uint height, uint patternType, uint frameIndex);
 
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_d3d11_readback_pixels")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int D3D11ReadbackPixels(
+        IntPtr d3dDevice,
+        IntPtr d3dTexture,
+        byte* outPixels,
+        uint maxBytes,
+        out uint outBytes
+    );
+
     // ========================================================================
     // AMD AMF Dedicated Custom APIs
     // ========================================================================
@@ -949,6 +963,18 @@ public static unsafe partial class MoonshineNativeMethods
         IntPtr handle,
         int enable,
         uint mbsPerSlot
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_amf_drain")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int AmfDrain(
+        IntPtr handle
+    );
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_amf_flush")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int AmfFlush(
+        IntPtr handle
     );
 
     // ========================================================================

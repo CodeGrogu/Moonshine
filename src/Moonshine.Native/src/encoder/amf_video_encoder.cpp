@@ -201,6 +201,26 @@ void AmfVideoEncoder::request_keyframe() {
     _force_keyframe = true;
 }
 
+bool AmfVideoEncoder::drain() {
+    if (!_initialized || !_impl || _state == AmfLifecycleState::Faulted || _state == AmfLifecycleState::Disposed) {
+        return false;
+    }
+    _state = AmfLifecycleState::Flushing;
+    bool res = _impl->session.drain();
+    _state = AmfLifecycleState::Ready;
+    return res;
+}
+
+bool AmfVideoEncoder::flush() {
+    if (!_initialized || !_impl || _state == AmfLifecycleState::Faulted || _state == AmfLifecycleState::Disposed) {
+        return false;
+    }
+    _state = AmfLifecycleState::Flushing;
+    bool res = _impl->session.flush();
+    _state = AmfLifecycleState::Ready;
+    return res;
+}
+
 void AmfVideoEncoder::cleanup() {
     _initialized = false;
 
@@ -275,17 +295,60 @@ bool AmfVideoEncoder::query_capabilities(void* d3d_device, EncoderCaps& out_caps
         return false;
     }
 
-    out_caps.supported_codecs_mask = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3); // H264, HEVC, HEVC Main10, AV1
+    amf::AMFContext* pContext = nullptr;
+    if (api.factory()->CreateContext(&pContext) != amf::AMF_OK || !pContext) {
+        api.unload();
+        return false;
+    }
+
+    if (pContext->InitDX11(d3d_device) != amf::AMF_OK) {
+        pContext->Release();
+        api.unload();
+        return false;
+    }
+
+    uint32_t codecs_mask = 0;
+
+    // Probe H.264
+    amf::AMFComponent* pAVC = nullptr;
+    if (api.factory()->CreateComponent(pContext, amf::AMFVideoEncoderVCE_AVC, &pAVC) == amf::AMF_OK && pAVC) {
+        codecs_mask |= (1 << static_cast<uint32_t>(VideoCodec::H264));
+        pAVC->Release();
+    }
+
+    // Probe HEVC / HEVC Main10
+    amf::AMFComponent* pHEVC = nullptr;
+    if (api.factory()->CreateComponent(pContext, amf::AMFVideoEncoder_HEVC, &pHEVC) == amf::AMF_OK && pHEVC) {
+        codecs_mask |= (1 << static_cast<uint32_t>(VideoCodec::Hevc));
+        codecs_mask |= (1 << static_cast<uint32_t>(VideoCodec::HevcMain10));
+        pHEVC->Release();
+    }
+
+    // Probe AV1
+    amf::AMFComponent* pAV1 = nullptr;
+    if (api.factory()->CreateComponent(pContext, amf::AMFVideoEncoder_AV1, &pAV1) == amf::AMF_OK && pAV1) {
+        codecs_mask |= (1 << static_cast<uint32_t>(VideoCodec::Av1));
+        pAV1->Release();
+    }
+
+    pContext->Terminate();
+    pContext->Release();
+    api.unload();
+
+    if (codecs_mask == 0) {
+        return false;
+    }
+
+    out_caps.supported_codecs_mask = codecs_mask;
     out_caps.max_width = 7680;
     out_caps.max_height = 4320;
     out_caps.max_fps = 240;
-    out_caps.supports_10bit = 1;
+    out_caps.supports_10bit = (codecs_mask & (1 << static_cast<uint32_t>(VideoCodec::HevcMain10))) ? 1 : 0;
     out_caps.supports_lossless = 1;
     out_caps.supports_smart_idr = 1;
     out_caps.min_bitrate_kbps = 500;
     out_caps.max_bitrate_kbps = 150000;
 
-    api.unload();
     return true;
 #else
     (void)d3d_device;
@@ -296,13 +359,37 @@ bool AmfVideoEncoder::query_capabilities(void* d3d_device, EncoderCaps& out_caps
 bool AmfVideoEncoder::query_codec_support(VideoCodec codec) {
 #if defined(_WIN32)
     amf::AmfApi api;
-    if (!api.load()) {
+    if (!api.load() || !api.factory()) {
         return false;
     }
-    api.unload();
 
-    return codec == VideoCodec::H264 || codec == VideoCodec::Hevc ||
-           codec == VideoCodec::HevcMain10 || codec == VideoCodec::Av1;
+    if (codec != VideoCodec::H264 && codec != VideoCodec::Hevc &&
+        codec != VideoCodec::HevcMain10 && codec != VideoCodec::Av1) {
+        api.unload();
+        return false;
+    }
+
+    amf::AMFContext* pContext = nullptr;
+    if (api.factory()->CreateContext(&pContext) == amf::AMF_OK && pContext) {
+        const wchar_t* compId = nullptr;
+        if (codec == VideoCodec::H264) compId = amf::AMFVideoEncoderVCE_AVC;
+        else if (codec == VideoCodec::Hevc || codec == VideoCodec::HevcMain10) compId = amf::AMFVideoEncoder_HEVC;
+        else if (codec == VideoCodec::Av1) compId = amf::AMFVideoEncoder_AV1;
+
+        amf::AMFComponent* pComp = nullptr;
+        bool supported = false;
+        if (compId && api.factory()->CreateComponent(pContext, compId, &pComp) == amf::AMF_OK && pComp) {
+            supported = true;
+            pComp->Release();
+        }
+        pContext->Terminate();
+        pContext->Release();
+        api.unload();
+        return supported;
+    }
+
+    api.unload();
+    return true;
 #else
     (void)codec;
     return false;

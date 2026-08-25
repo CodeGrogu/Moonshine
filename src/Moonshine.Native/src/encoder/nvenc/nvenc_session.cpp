@@ -237,8 +237,8 @@ bool NvencSession::configure(const EncoderConfig& config) {
     init_params.enablePTD = 1;
     init_params.enableEncodeAsync = 0;
     init_params.encodeConfig = &enc_config;
-    init_params.maxEncodeWidth = config.width;
-    init_params.maxEncodeHeight = config.height;
+    init_params.maxEncodeWidth = (std::max)(config.width, 4096u);
+    init_params.maxEncodeHeight = (std::max)(config.height, 4096u);
     init_params.tuningInfo = tuning_info;
 
     auto pfn_init_encoder = reinterpret_cast<PNVENCINITIALIZEENCODER>(fn.nvEncInitializeEncoder);
@@ -528,37 +528,92 @@ bool NvencSession::reconfigure(const EncoderConfig& new_config) {
         return false;
     }
 
-    _config = new_config;
+    if (new_config.codec != _config.codec) {
+        if (_api && _d3d_device) {
+            void* d3d = _d3d_device;
+            NvencApi* api = _api;
+            open(*api, d3d);
+            return configure(new_config);
+        }
+        return false;
+    }
 
 #if defined(_WIN32)
     if (_api && _api->functions().nvEncReconfigureEncoder) {
         NV_ENC_RECONFIGURE_PARAMS reconfig_params{};
         reconfig_params.version = NV_ENC_RECONFIGURE_PARAMS_VER;
-        reconfig_params.resetEncoder = 0;
+        reconfig_params.resetEncoder = (new_config.width != _config.width || new_config.height != _config.height) ? 1 : 0;
         reconfig_params.forceIDR = 1;
 
         reconfig_params.reInitEncodeParams.version = NV_ENC_INITIALIZE_PARAMS_VER;
+        reconfig_params.reInitEncodeParams.encodeGUID = (static_cast<VideoCodec>(new_config.codec) == VideoCodec::Hevc || static_cast<VideoCodec>(new_config.codec) == VideoCodec::HevcMain10)
+            ? NV_ENC_CODEC_HEVC_GUID_LOCAL
+            : ((static_cast<VideoCodec>(new_config.codec) == VideoCodec::Av1) ? NV_ENC_CODEC_AV1_GUID_LOCAL : NV_ENC_CODEC_H264_GUID_LOCAL);
+        reconfig_params.reInitEncodeParams.presetGUID = NV_ENC_PRESET_P1_GUID_LOCAL;
         reconfig_params.reInitEncodeParams.encodeWidth = new_config.width;
         reconfig_params.reInitEncodeParams.encodeHeight = new_config.height;
+        reconfig_params.reInitEncodeParams.darWidth = new_config.width;
+        reconfig_params.reInitEncodeParams.darHeight = new_config.height;
         reconfig_params.reInitEncodeParams.frameRateNum = new_config.fps;
         reconfig_params.reInitEncodeParams.frameRateDen = 1;
+        reconfig_params.reInitEncodeParams.enablePTD = 1;
+        reconfig_params.reInitEncodeParams.maxEncodeWidth = (std::max)(new_config.width, 4096u);
+        reconfig_params.reInitEncodeParams.maxEncodeHeight = (std::max)(new_config.height, 4096u);
 
         NV_ENC_CONFIG enc_config{};
         enc_config.version = NV_ENC_CONFIG_VER;
+        enc_config.gopLength = (new_config.gop_length == 0) ? NVENC_INFINITE_GOPLENGTH : new_config.gop_length;
+        enc_config.frameIntervalP = 1;
+        enc_config.frameFieldMode = NV_ENC_PARAMS_FRAME_FIELD_MODE_FRAME;
         enc_config.rcParams.rateControlMode = (new_config.rc_mode == 0) ? NV_ENC_PARAMS_RC_CBR : NV_ENC_PARAMS_RC_VBR;
         enc_config.rcParams.averageBitRate = new_config.bitrate_kbps * 1000;
         enc_config.rcParams.maxBitRate = (new_config.peak_bitrate_kbps > 0 ? new_config.peak_bitrate_kbps : new_config.bitrate_kbps * 3 / 2) * 1000;
         enc_config.rcParams.vbvBufferSize = (new_config.fps > 0) ? (enc_config.rcParams.averageBitRate / new_config.fps) : enc_config.rcParams.averageBitRate;
         enc_config.rcParams.vbvInitialDelay = enc_config.rcParams.vbvBufferSize;
+        enc_config.rcParams.zeroReorderDelay = 1;
         reconfig_params.reInitEncodeParams.encodeConfig = &enc_config;
 
         auto pfn_reconfig = reinterpret_cast<PNVENCRECONFIGUREENCODER>(_api->functions().nvEncReconfigureEncoder);
-        if (pfn_reconfig) {
-            pfn_reconfig(_session, &reconfig_params);
+        if (!pfn_reconfig || pfn_reconfig(_session, &reconfig_params) != NV_ENC_SUCCESS) {
+            if (_d3d_device) {
+                void* d3d = _d3d_device;
+                NvencApi* api = _api;
+                open(*api, d3d);
+                if (!configure(new_config)) {
+                    return false;
+                }
+            } else {
+                return false;
+            }
         }
     }
 #endif
+    _config = new_config;
     return true;
+}
+
+bool NvencSession::drain() {
+#if defined(_WIN32)
+    if (!_session || !_api) {
+        return false;
+    }
+    const auto& fn = _api->functions();
+    if (!fn.nvEncEncodePicture) {
+        return false;
+    }
+
+    NV_ENC_PIC_PARAMS eos_params{};
+    eos_params.version = NV_ENC_PIC_PARAMS_VER;
+    eos_params.encodePicFlags = NV_ENC_PIC_FLAG_EOS;
+
+    auto pfn_encode = reinterpret_cast<PNVENCENCODEPICTURE>(fn.nvEncEncodePicture);
+    if (pfn_encode) {
+        pfn_encode(_session, &eos_params);
+    }
+    return true;
+#else
+    return false;
+#endif
 }
 
 void NvencSession::close() {

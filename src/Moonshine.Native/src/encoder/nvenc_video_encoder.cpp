@@ -298,6 +298,11 @@ bool NvencVideoEncoder::set_intra_refresh(bool enabled, uint32_t period, uint32_
     return true;
 }
 
+bool NvencVideoEncoder::drain() {
+    if (!_initialized || !_impl) return false;
+    return _impl->session.drain();
+}
+
 bool NvencVideoEncoder::query_capabilities(void* d3d_device, EncoderCaps& out_caps) {
     std::memset(&out_caps, 0, sizeof(EncoderCaps));
     out_caps.vendor_id = static_cast<uint8_t>(EncoderVendor::NvidiaNvenc);

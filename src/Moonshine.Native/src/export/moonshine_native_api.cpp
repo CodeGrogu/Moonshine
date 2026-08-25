@@ -2,6 +2,8 @@
 #include "moonshine/export/moonshine_native_api.h"
 #include <cstring>
 #include <vector>
+#include <algorithm>
+#include <cmath>
 #if defined(_WIN32)
 #include <dxgi1_6.h>
 #endif
@@ -2877,24 +2879,310 @@ void generate_test_pattern_bgra(
             }
             break;
         }
-        case 4: // SMPTE Colour Bars
+        case 4: // SMPTE Colour Bars (Descending luminance: White, Yellow, Cyan, Green, Magenta, Red, Blue)
         default: {
             const uint32_t smpte_colors[7] = {
-                0xFFBFBFBF, // 75% White
-                0xFF00BFBF, // Yellow
-                0xFFBFBF00, // Cyan
-                0xFF00BF00, // Green
-                0xFFBF00BF, // Magenta
-                0xFF0000BF, // Red
-                0xFFBF0000  // Blue
+                0xFFBFBFBF, // 75% White (Y ~ 191)
+                0xFFBFBF00, // 75% Yellow (Y ~ 169)
+                0xFF00BFBF, // 75% Cyan (Y ~ 133)
+                0xFF00BF00, // 75% Green (Y ~ 112)
+                0xFFBF00BF, // 75% Magenta (Y ~ 78)
+                0xFFBF0000, // 75% Red (Y ~ 57)
+                0xFF0000BF  // 75% Blue (Y ~ 21)
             };
             for (uint32_t y = 0; y < height; ++y) {
                 for (uint32_t x = 0; x < width; ++x) {
-                    uint32_t bar_index = std::min<uint32_t>(6, (x * 7) / width);
+                    uint32_t calc_idx = (x * 7) / width;
+                    uint32_t bar_index = (calc_idx < 6) ? calc_idx : 6;
                     out_pixels[y * width + x] = smpte_colors[bar_index];
                 }
             }
             break;
+        }
+    }
+}
+
+struct PixelSample {
+    float r;
+    float g;
+    float b;
+    float y;
+};
+
+PixelSample get_pixel_sample(
+    const uint8_t* pixels,
+    uint32_t width,
+    uint32_t height,
+    uint32_t format,
+    uint32_t x,
+    uint32_t y
+) {
+    PixelSample sample{0.0f, 0.0f, 0.0f, 0.0f};
+    if (!pixels || x >= width || y >= height) return sample;
+
+#if defined(_WIN32)
+    const auto dxgi_fmt = static_cast<DXGI_FORMAT>(format);
+    if (dxgi_fmt == DXGI_FORMAT_NV12) {
+        uint8_t y_raw = pixels[y * width + x];
+        const uint8_t* uv_plane = pixels + (width * height);
+        uint32_t uv_idx = (y / 2) * width + (x / 2) * 2;
+        uint8_t u_raw = uv_plane[uv_idx];
+        uint8_t v_raw = uv_plane[uv_idx + 1];
+
+        float yf = static_cast<float>(y_raw);
+        float uf = static_cast<float>(u_raw) - 128.0f;
+        float vf = static_cast<float>(v_raw) - 128.0f;
+
+        sample.r = std::clamp(yf + 1.402f * vf, 0.0f, 255.0f);
+        sample.g = std::clamp(yf - 0.344136f * uf - 0.714136f * vf, 0.0f, 255.0f);
+        sample.b = std::clamp(yf + 1.772f * uf, 0.0f, 255.0f);
+        sample.y = yf;
+        return sample;
+    } else if (dxgi_fmt == DXGI_FORMAT_P010 || dxgi_fmt == DXGI_FORMAT_P016) {
+        const auto* y_plane = reinterpret_cast<const uint16_t*>(pixels);
+        uint16_t y_raw = y_plane[y * width + x] >> 6;
+        float yf = (static_cast<float>(y_raw) / 1023.0f) * 255.0f;
+
+        const auto* uv_plane = reinterpret_cast<const uint16_t*>(pixels + (width * height * 2));
+        uint32_t uv_idx = (y / 2) * width + (x / 2) * 2;
+        float uf = ((static_cast<float>(uv_plane[uv_idx] >> 6) / 1023.0f) * 255.0f) - 128.0f;
+        float vf = ((static_cast<float>(uv_plane[uv_idx + 1] >> 6) / 1023.0f) * 255.0f) - 128.0f;
+
+        sample.r = std::clamp(yf + 1.402f * vf, 0.0f, 255.0f);
+        sample.g = std::clamp(yf - 0.344136f * uf - 0.714136f * vf, 0.0f, 255.0f);
+        sample.b = std::clamp(yf + 1.772f * uf, 0.0f, 255.0f);
+        sample.y = yf;
+        return sample;
+    } else if (dxgi_fmt == DXGI_FORMAT_R8G8B8A8_UNORM || dxgi_fmt == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB) {
+        const uint8_t* p = pixels + (y * width + x) * 4;
+        sample.r = static_cast<float>(p[0]);
+        sample.g = static_cast<float>(p[1]);
+        sample.b = static_cast<float>(p[2]);
+        sample.y = 0.299f * sample.r + 0.587f * sample.g + 0.114f * sample.b;
+        return sample;
+    } else {
+        // Default: DXGI_FORMAT_B8G8R8A8_UNORM (BGRA)
+        const uint8_t* p = pixels + (y * width + x) * 4;
+        sample.b = static_cast<float>(p[0]);
+        sample.g = static_cast<float>(p[1]);
+        sample.r = static_cast<float>(p[2]);
+        sample.y = 0.299f * sample.r + 0.587f * sample.g + 0.114f * sample.b;
+        return sample;
+    }
+#else
+    const uint8_t* p = pixels + (y * width + x) * 4;
+    sample.b = static_cast<float>(p[0]);
+    sample.g = static_cast<float>(p[1]);
+    sample.r = static_cast<float>(p[2]);
+    sample.y = 0.299f * sample.r + 0.587f * sample.g + 0.114f * sample.b;
+    return sample;
+#endif
+}
+
+int verify_pattern_pixel_data(
+    const uint8_t* pixels,
+    uint32_t width,
+    uint32_t height,
+    uint32_t format,
+    uint32_t pattern_type,
+    float tolerance
+) {
+    if (!pixels || width == 0 || height == 0) {
+        return MOONSHINE_ERR_INVALID_ARGUMENT;
+    }
+
+    const float tol = (tolerance > 0.0f) ? tolerance : 0.0f;
+
+    switch (pattern_type) {
+        case 0: { // Pattern 0 (Black): asserts average luminance < 10.0 (near black)
+            double total_luma = 0.0;
+            uint64_t count = 0;
+            const uint32_t min_dim = (width < height) ? width : height;
+            const uint32_t step = (min_dim / 128 > 1) ? (min_dim / 128) : 1;
+            for (uint32_t y = 0; y < height; y += step) {
+                for (uint32_t x = 0; x < width; x += step) {
+                    PixelSample s = get_pixel_sample(pixels, width, height, format, x, y);
+                    total_luma += s.y;
+                    count++;
+                }
+            }
+            if (count == 0) return MOONSHINE_ERR_FATAL;
+            float avg_luma = static_cast<float>(total_luma / count);
+            float max_allowed = 10.0f + (tol * 20.0f);
+            if (avg_luma >= max_allowed) {
+                return -2; // Verification failed: average luminance not near black
+            }
+            return MOONSHINE_SUCCESS;
+        }
+
+        case 1: { // Pattern 1 (Teal): asserts green > 100, blue > 100, red < 80
+            double total_r = 0.0;
+            double total_g = 0.0;
+            double total_b = 0.0;
+            uint64_t count = 0;
+            const uint32_t min_dim = (width < height) ? width : height;
+            const uint32_t step = (min_dim / 128 > 1) ? (min_dim / 128) : 1;
+            for (uint32_t y = 0; y < height; y += step) {
+                for (uint32_t x = 0; x < width; x += step) {
+                    PixelSample s = get_pixel_sample(pixels, width, height, format, x, y);
+                    total_r += s.r;
+                    total_g += s.g;
+                    total_b += s.b;
+                    count++;
+                }
+            }
+            if (count == 0) return MOONSHINE_ERR_FATAL;
+            float avg_r = static_cast<float>(total_r / count);
+            float avg_g = static_cast<float>(total_g / count);
+            float avg_b = static_cast<float>(total_b / count);
+
+            float min_g = 100.0f - (tol * 35.0f);
+            float min_b = 100.0f - (tol * 35.0f);
+            float max_r = 80.0f + (tol * 35.0f);
+
+            if (avg_g < min_g || avg_b < min_b || avg_r > max_r) {
+                return -2; // Verification failed: teal channel dominance unsatisfied
+            }
+            return MOONSHINE_SUCCESS;
+        }
+
+        case 2: { // Pattern 2 (Gradient): asserts horizontal luminance monotonicity across bars
+            const uint32_t num_bars = 8;
+            std::vector<double> bar_luma(num_bars, 0.0);
+            std::vector<uint64_t> bar_count(num_bars, 0);
+            const uint32_t min_dim = (width < height) ? width : height;
+            const uint32_t step = (min_dim / 128 > 1) ? (min_dim / 128) : 1;
+
+            for (uint32_t y = 0; y < height; y += step) {
+                for (uint32_t x = 0; x < width; x += step) {
+                    uint32_t calc_bar = (x * num_bars) / width;
+                    uint32_t bar_idx = (calc_bar < num_bars - 1) ? calc_bar : (num_bars - 1);
+                    PixelSample s = get_pixel_sample(pixels, width, height, format, x, y);
+                    bar_luma[bar_idx] += s.y;
+                    bar_count[bar_idx]++;
+                }
+            }
+
+            std::vector<float> avg_bar_luma(num_bars, 0.0f);
+            for (uint32_t i = 0; i < num_bars; ++i) {
+                if (bar_count[i] > 0) {
+                    avg_bar_luma[i] = static_cast<float>(bar_luma[i] / bar_count[i]);
+                }
+            }
+
+            float monotonicity_slack = 5.0f + (tol * 20.0f);
+            for (uint32_t i = 0; i < num_bars - 1; ++i) {
+                if (avg_bar_luma[i] > avg_bar_luma[i + 1] + monotonicity_slack) {
+                    return -2; // Verification failed: horizontal luminance not monotonic
+                }
+            }
+
+            if (avg_bar_luma[num_bars - 1] - avg_bar_luma[0] < (20.0f - tol * 15.0f)) {
+                return -2; // Verification failed: insufficient horizontal gradient delta
+            }
+            return MOONSHINE_SUCCESS;
+        }
+
+        case 3: { // Pattern 3 (Moving Pattern): asserts moving block contrast delta against background
+            double global_luma = 0.0;
+            uint64_t global_count = 0;
+            const uint32_t min_dim = (width < height) ? width : height;
+            const uint32_t step = (min_dim / 64 > 1) ? (min_dim / 64) : 1;
+
+            const uint32_t grid_x = 8;
+            const uint32_t grid_y = 8;
+            std::vector<double> block_luma(grid_x * grid_y, 0.0);
+            std::vector<uint64_t> block_count(grid_x * grid_y, 0);
+
+            for (uint32_t y = 0; y < height; y += step) {
+                uint32_t by_calc = (y * grid_y) / height;
+                uint32_t by = (by_calc < grid_y - 1) ? by_calc : (grid_y - 1);
+                for (uint32_t x = 0; x < width; x += step) {
+                    uint32_t bx_calc = (x * grid_x) / width;
+                    uint32_t bx = (bx_calc < grid_x - 1) ? bx_calc : (grid_x - 1);
+                    PixelSample s = get_pixel_sample(pixels, width, height, format, x, y);
+                    global_luma += s.y;
+                    global_count++;
+
+                    uint32_t block_idx = by * grid_x + bx;
+                    block_luma[block_idx] += s.y;
+                    block_count[block_idx]++;
+                }
+            }
+
+            if (global_count == 0) return MOONSHINE_ERR_FATAL;
+            float max_block_luma = 0.0f;
+            float min_block_luma = 255.0f;
+
+            for (uint32_t i = 0; i < grid_x * grid_y; ++i) {
+                if (block_count[i] > 0) {
+                    float b = static_cast<float>(block_luma[i] / block_count[i]);
+                    if (b > max_block_luma) max_block_luma = b;
+                    if (b < min_block_luma) min_block_luma = b;
+                }
+            }
+
+            float contrast_delta = max_block_luma - min_block_luma;
+            float min_delta_required = 15.0f - (tol * 10.0f);
+            if (contrast_delta < min_delta_required) {
+                return -2; // Verification failed: moving pattern contrast delta insufficient
+            }
+            return MOONSHINE_SUCCESS;
+        }
+
+        case 4: // SMPTE Bars (7 vertical bars across width)
+        default: {
+            const uint32_t num_bars = 7;
+            std::vector<double> bar_luma(num_bars, 0.0);
+            std::vector<double> bar_r(num_bars, 0.0);
+            std::vector<double> bar_g(num_bars, 0.0);
+            std::vector<double> bar_b(num_bars, 0.0);
+            std::vector<uint64_t> bar_count(num_bars, 0);
+
+            const uint32_t min_dim_smpte = (width < height) ? width : height;
+            const uint32_t step = (min_dim_smpte / 128 > 1) ? (min_dim_smpte / 128) : 1;
+
+            for (uint32_t bar = 0; bar < num_bars; ++bar) {
+                uint32_t x_start = static_cast<uint32_t>((bar + 0.25f) * width / num_bars);
+                uint32_t x_end = static_cast<uint32_t>((bar + 0.75f) * width / num_bars);
+                for (uint32_t y = static_cast<uint32_t>(height * 0.2f); y < static_cast<uint32_t>(height * 0.8f); y += step) {
+                    for (uint32_t x = x_start; x <= x_end; x += step) {
+                        PixelSample s = get_pixel_sample(pixels, width, height, format, x, y);
+                        bar_luma[bar] += s.y;
+                        bar_r[bar] += s.r;
+                        bar_g[bar] += s.g;
+                        bar_b[bar] += s.b;
+                        bar_count[bar]++;
+                    }
+                }
+            }
+
+            std::vector<float> avg_luma(num_bars, 0.0f);
+            std::vector<float> avg_r(num_bars, 0.0f);
+            std::vector<float> avg_g(num_bars, 0.0f);
+            std::vector<float> avg_b(num_bars, 0.0f);
+
+            for (uint32_t i = 0; i < num_bars; ++i) {
+                if (bar_count[i] > 0) {
+                    avg_luma[i] = static_cast<float>(bar_luma[i] / bar_count[i]);
+                    avg_r[i] = static_cast<float>(bar_r[i] / bar_count[i]);
+                    avg_g[i] = static_cast<float>(bar_g[i] / bar_count[i]);
+                    avg_b[i] = static_cast<float>(bar_b[i] / bar_count[i]);
+                }
+            }
+
+            float tol_slack = tol * 25.0f + 6.0f;
+            for (uint32_t i = 0; i < num_bars - 1; ++i) {
+                if (avg_luma[i] + tol_slack < avg_luma[i + 1]) {
+                    return -2; // Verification failed: SMPTE vertical bar luminance order violated
+                }
+            }
+
+            if (avg_luma[0] - avg_luma[6] < (60.0f - tol * 30.0f)) {
+                return -2; // Verification failed: SMPTE dynamic range too low
+            }
+
+            return MOONSHINE_SUCCESS;
         }
     }
 }
@@ -2974,6 +3262,229 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_d3d11_render_pattern(
     #endif
     } catch (...) {
         return 0;
+    }
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_d3d11_readback_pixels(
+    void* d3d_device,
+    void* d3d_texture,
+    uint8_t* out_pixels,
+    uint32_t max_bytes,
+    uint32_t* out_bytes
+) {
+    try {
+        if (!d3d_texture || !out_bytes) {
+            return MOONSHINE_ERR_INVALID_ARGUMENT;
+        }
+
+    #if defined(_WIN32)
+        auto* src_tex = static_cast<ID3D11Texture2D*>(d3d_texture);
+
+        Microsoft::WRL::ComPtr<ID3D11Device> device;
+        if (d3d_device) {
+            device = static_cast<ID3D11Device*>(d3d_device);
+        } else {
+            src_tex->GetDevice(&device);
+        }
+
+        if (!device) {
+            return MOONSHINE_ERR_INVALID_ARGUMENT;
+        }
+
+        D3D11_TEXTURE2D_DESC src_desc{};
+        src_tex->GetDesc(&src_desc);
+        const uint32_t width = src_desc.Width;
+        const uint32_t height = src_desc.Height;
+
+        if (width == 0 || height == 0) {
+            return MOONSHINE_ERR_INVALID_ARGUMENT;
+        }
+
+        uint32_t required_bytes = 0;
+        switch (src_desc.Format) {
+            case DXGI_FORMAT_NV12:
+                required_bytes = width * height * 3 / 2;
+                break;
+            case DXGI_FORMAT_P010:
+            case DXGI_FORMAT_P016:
+                required_bytes = width * height * 3;
+                break;
+            case DXGI_FORMAT_R16G16B16A16_UNORM:
+            case DXGI_FORMAT_R16G16B16A16_FLOAT:
+                required_bytes = width * height * 8;
+                break;
+            case DXGI_FORMAT_R8_UNORM:
+            case DXGI_FORMAT_A8_UNORM:
+                required_bytes = width * height;
+                break;
+            default:
+                required_bytes = width * height * 4;
+                break;
+        }
+
+        *out_bytes = required_bytes;
+        if (!out_pixels) {
+            return MOONSHINE_SUCCESS;
+        }
+
+        if (max_bytes < required_bytes) {
+            return MOONSHINE_ERR_BUFFER_TOO_SMALL;
+        }
+
+        Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
+        device->GetImmediateContext(&context);
+        if (!context) {
+            return MOONSHINE_ERR_FATAL;
+        }
+
+        Microsoft::WRL::ComPtr<ID3D11Texture2D> staging_tex;
+        if (src_desc.Usage == D3D11_USAGE_STAGING && (src_desc.CPUAccessFlags & D3D11_CPU_ACCESS_READ)) {
+            staging_tex = src_tex;
+        } else {
+            D3D11_TEXTURE2D_DESC staging_desc{};
+            staging_desc.Width = width;
+            staging_desc.Height = height;
+            staging_desc.MipLevels = 1;
+            staging_desc.ArraySize = 1;
+            staging_desc.Format = src_desc.Format;
+            staging_desc.SampleDesc.Count = 1;
+            staging_desc.SampleDesc.Quality = 0;
+            staging_desc.Usage = D3D11_USAGE_STAGING;
+            staging_desc.BindFlags = 0;
+            staging_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+            staging_desc.MiscFlags = 0;
+
+            HRESULT hr = device->CreateTexture2D(&staging_desc, nullptr, &staging_tex);
+            if (FAILED(hr) || !staging_tex) {
+                return MOONSHINE_ERR_FATAL;
+            }
+
+            context->CopySubresourceRegion(staging_tex.Get(), 0, 0, 0, 0, src_tex, 0, nullptr);
+        }
+
+        D3D11_MAPPED_SUBRESOURCE mapped{};
+        HRESULT hr = context->Map(staging_tex.Get(), 0, D3D11_MAP_READ, 0, &mapped);
+        if (FAILED(hr) || !mapped.pData) {
+            return MOONSHINE_ERR_FATAL;
+        }
+
+        const uint8_t* src_bytes = static_cast<const uint8_t*>(mapped.pData);
+
+        if (src_desc.Format == DXGI_FORMAT_NV12) {
+            for (uint32_t y = 0; y < height; ++y) {
+                std::memcpy(out_pixels + y * width, src_bytes + y * mapped.RowPitch, width);
+            }
+            uint8_t* out_uv = out_pixels + (width * height);
+            const uint8_t* src_uv = src_bytes + (mapped.RowPitch * height);
+            for (uint32_t y = 0; y < height / 2; ++y) {
+                std::memcpy(out_uv + y * width, src_uv + y * mapped.RowPitch, width);
+            }
+        } else if (src_desc.Format == DXGI_FORMAT_P010 || src_desc.Format == DXGI_FORMAT_P016) {
+            for (uint32_t y = 0; y < height; ++y) {
+                std::memcpy(out_pixels + y * width * 2, src_bytes + y * mapped.RowPitch, width * 2);
+            }
+            uint8_t* out_uv = out_pixels + (width * height * 2);
+            const uint8_t* src_uv = src_bytes + (mapped.RowPitch * height);
+            for (uint32_t y = 0; y < height / 2; ++y) {
+                std::memcpy(out_uv + y * width * 2, src_uv + y * mapped.RowPitch, width * 2);
+            }
+        } else {
+            uint32_t tight_pitch = width * 4;
+            for (uint32_t y = 0; y < height; ++y) {
+                std::memcpy(out_pixels + y * tight_pitch, src_bytes + y * mapped.RowPitch, tight_pitch);
+            }
+        }
+
+        context->Unmap(staging_tex.Get(), 0);
+        return MOONSHINE_SUCCESS;
+    #else
+        (void)d3d_device; (void)d3d_texture; (void)out_pixels; (void)max_bytes; (void)out_bytes;
+        return MOONSHINE_ERR_UNSUPPORTED_HARDWARE;
+    #endif
+    } catch (const std::exception&) {
+        return MOONSHINE_ERR_FATAL;
+    } catch (...) {
+        return MOONSHINE_ERR_FATAL;
+    }
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_video_verify_decoded_pattern(
+    void* decoder,
+    uint32_t pattern_type,
+    float tolerance
+) {
+    try {
+        if (!decoder) {
+            return MOONSHINE_ERR_INVALID_ARGUMENT;
+        }
+
+    #if defined(_WIN32)
+        void* tex_handle = nullptr;
+        void* dev_handle = nullptr;
+        uint32_t width = 0;
+        uint32_t height = 0;
+
+        auto* unk = static_cast<IUnknown*>(decoder);
+        Microsoft::WRL::ComPtr<ID3D11Texture2D> d3d_tex;
+        if (SUCCEEDED(unk->QueryInterface(IID_PPV_ARGS(&d3d_tex))) && d3d_tex) {
+            D3D11_TEXTURE2D_DESC desc{};
+            d3d_tex->GetDesc(&desc);
+            tex_handle = d3d_tex.Get();
+            width = desc.Width;
+            height = desc.Height;
+            Microsoft::WRL::ComPtr<ID3D11Device> dev;
+            d3d_tex->GetDevice(&dev);
+            dev_handle = dev.Get();
+        } else {
+            auto* dec = static_cast<video::IVideoDecoder*>(decoder);
+            tex_handle = dec->GetTextureHandle();
+            dev_handle = dec->GetDeviceHandle();
+            dec->GetDimensions(width, height);
+        }
+
+        if (!tex_handle || width == 0 || height == 0) {
+            return MOONSHINE_ERR_INVALID_ARGUMENT;
+        }
+
+        uint32_t needed_bytes = 0;
+        int size_res = moonshine_d3d11_readback_pixels(dev_handle, tex_handle, nullptr, 0, &needed_bytes);
+        if (size_res != MOONSHINE_SUCCESS || needed_bytes == 0) {
+            return MOONSHINE_ERR_FATAL;
+        }
+
+        std::vector<uint8_t> pixels(needed_bytes);
+        uint32_t read_bytes = 0;
+        int read_res = moonshine_d3d11_readback_pixels(
+            dev_handle,
+            tex_handle,
+            pixels.data(),
+            static_cast<uint32_t>(pixels.size()),
+            &read_bytes
+        );
+        if (read_res != MOONSHINE_SUCCESS || read_bytes == 0) {
+            return MOONSHINE_ERR_FATAL;
+        }
+
+        auto* src_tex = static_cast<ID3D11Texture2D*>(tex_handle);
+        D3D11_TEXTURE2D_DESC desc{};
+        src_tex->GetDesc(&desc);
+
+        return verify_pattern_pixel_data(
+            pixels.data(),
+            width,
+            height,
+            static_cast<uint32_t>(desc.Format),
+            pattern_type,
+            tolerance
+        );
+    #else
+        (void)decoder; (void)pattern_type; (void)tolerance;
+        return MOONSHINE_ERR_UNSUPPORTED_HARDWARE;
+    #endif
+    } catch (const std::exception&) {
+        return MOONSHINE_ERR_FATAL;
+    } catch (...) {
+        return MOONSHINE_ERR_FATAL;
     }
 }
 
@@ -3101,6 +3612,34 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_amf_set_intra_refresh(
             return active->set_intra_refresh(enable != 0, mbs_per_slot) ? 1 : 0;
         }
         return 1;
+    } catch (const std::exception&) {
+        return -999;
+    } catch (...) {
+        return -999;
+    }
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_amf_drain(
+    MoonshineEncoderHandle handle
+) {
+    try {
+        if (!handle) return 0;
+        auto* unified = static_cast<encoder::UnifiedVideoEncoder*>(handle);
+        return unified->drain() ? 1 : 0;
+    } catch (const std::exception&) {
+        return -999;
+    } catch (...) {
+        return -999;
+    }
+}
+
+MOONSHINE_API int MOONSHINE_CONV moonshine_amf_flush(
+    MoonshineEncoderHandle handle
+) {
+    try {
+        if (!handle) return 0;
+        auto* unified = static_cast<encoder::UnifiedVideoEncoder*>(handle);
+        return unified->flush() ? 1 : 0;
     } catch (const std::exception&) {
         return -999;
     } catch (...) {

@@ -35,6 +35,8 @@ public:
     );
 
     bool reconfigure(const EncoderConfig& new_config);
+    bool drain();
+    bool flush();
     void close();
 
     [[nodiscard]] bool is_open() const noexcept;

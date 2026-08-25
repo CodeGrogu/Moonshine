@@ -191,10 +191,26 @@ bool AmfSession::encode(
         _encoder->SetProperty(AMF_VIDEO_ENCODER_FORCE_PICTURE_TYPE, make_int64_variant(3)); // 3: IDR
     }
 
-    AMF_RESULT res = _encoder->SubmitInput(pSurface);
+    // Submit input with bounded retry handling for AMF_INPUT_FULL and AMF_REPEAT
+    AMF_RESULT submit_res = AMF_INPUT_FULL;
+    for (int retry = 0; retry < 25; ++retry) {
+        submit_res = _encoder->SubmitInput(pSurface);
+        if (submit_res == AMF_OK || submit_res == AMF_NEED_MORE_INPUT) {
+            break;
+        }
+        if (submit_res == AMF_INPUT_FULL || submit_res == AMF_REPEAT) {
+            AMFData* pPendingData = nullptr;
+            if (_encoder->QueryOutput(&pPendingData) == AMF_OK && pPendingData) {
+                pPendingData->Release();
+            }
+            std::this_thread::yield();
+        } else {
+            break;
+        }
+    }
     pSurface->Release();
 
-    if (res != AMF_OK && res != AMF_INPUT_FULL && res != AMF_NEED_MORE_INPUT) {
+    if (submit_res != AMF_OK && submit_res != AMF_NEED_MORE_INPUT) {
         return false;
     }
 
@@ -202,12 +218,15 @@ bool AmfSession::encode(
     AMFData* pData = nullptr;
     AMF_RESULT query_res = AMF_REPEAT;
 
-    for (int poll_attempt = 0; poll_attempt < 20; ++poll_attempt) {
+    for (int poll_attempt = 0; poll_attempt < 30; ++poll_attempt) {
         query_res = _encoder->QueryOutput(&pData);
         if (query_res == AMF_OK && pData) {
             break;
         }
-        if (query_res == AMF_EOF || query_res == AMF_INVALID_ARG) {
+        if (query_res == AMF_EOF || query_res == AMF_INVALID_ARG || query_res == AMF_WRONG_STATE) {
+            return false;
+        }
+        if (query_res == AMF_NEED_MORE_INPUT) {
             return false;
         }
         if (query_res == AMF_REPEAT) {
@@ -235,25 +254,46 @@ bool AmfSession::encode(
                 out_desc.timestamp_qpc = static_cast<int64_t>(timestamp_us);
                 out_desc.payload_size = out_written_size;
 
-                // Inspect bitstream NAL units to detect keyframe status authoritatively
+                // Inspect bitstream NAL / OBU units to detect keyframe status authoritatively
                 bool is_keyframe = false;
                 const uint8_t* ptr = static_cast<const uint8_t*>(pNative);
-                for (size_t i = 0; i + 4 < buffer_size && i < 128; ++i) {
-                    if (ptr[i] == 0 && ptr[i+1] == 0 && ptr[i+2] == 1) {
-                        if (_config.codec == static_cast<uint32_t>(VideoCodec::H264)) {
-                            uint8_t nal_type = ptr[i+3] & 0x1F;
-                            if (nal_type == 5 || nal_type == 7) is_keyframe = true;
-                        } else {
-                            uint8_t nal_type = (ptr[i+3] >> 1) & 0x3F;
-                            if (nal_type == 19 || nal_type == 20 || nal_type == 32) is_keyframe = true;
+                auto video_codec = static_cast<VideoCodec>(_config.codec);
+
+                if (video_codec == VideoCodec::Av1) {
+                    // AV1 OBU Inspection
+                    for (size_t i = 0; i + 1 < buffer_size && i < 64; ) {
+                        uint8_t header = ptr[i];
+                        uint8_t obu_type = (header >> 3) & 0x0F;
+                        bool has_size = (header & 0x02) != 0;
+                        if (obu_type == 1 /* Sequence Header */ || obu_type == 6 /* Frame */) {
+                            is_keyframe = true;
                         }
-                    } else if (ptr[i] == 0 && ptr[i+1] == 0 && ptr[i+2] == 0 && ptr[i+3] == 1) {
-                        if (_config.codec == static_cast<uint32_t>(VideoCodec::H264)) {
-                            uint8_t nal_type = ptr[i+4] & 0x1F;
-                            if (nal_type == 5 || nal_type == 7) is_keyframe = true;
+                        if (has_size && i + 2 < buffer_size) {
+                            uint8_t obu_len = ptr[i + 1] & 0x7F;
+                            i += 2 + obu_len;
                         } else {
-                            uint8_t nal_type = (ptr[i+4] >> 1) & 0x3F;
-                            if (nal_type == 19 || nal_type == 20 || nal_type == 32) is_keyframe = true;
+                            break;
+                        }
+                    }
+                } else {
+                    // H.264 / HEVC NAL Unit Inspection
+                    for (size_t i = 0; i + 4 < buffer_size && i < 128; ++i) {
+                        if (ptr[i] == 0 && ptr[i+1] == 0 && ptr[i+2] == 1) {
+                            if (video_codec == VideoCodec::H264) {
+                                uint8_t nal_type = ptr[i+3] & 0x1F;
+                                if (nal_type == 5 || nal_type == 7) is_keyframe = true;
+                            } else {
+                                uint8_t nal_type = (ptr[i+3] >> 1) & 0x3F;
+                                if (nal_type == 19 || nal_type == 20 || nal_type == 21 || nal_type == 32) is_keyframe = true;
+                            }
+                        } else if (ptr[i] == 0 && ptr[i+1] == 0 && ptr[i+2] == 0 && ptr[i+3] == 1) {
+                            if (video_codec == VideoCodec::H264) {
+                                uint8_t nal_type = ptr[i+4] & 0x1F;
+                                if (nal_type == 5 || nal_type == 7) is_keyframe = true;
+                            } else {
+                                uint8_t nal_type = (ptr[i+4] >> 1) & 0x3F;
+                                if (nal_type == 19 || nal_type == 20 || nal_type == 21 || nal_type == 32) is_keyframe = true;
+                            }
                         }
                     }
                 }
@@ -296,13 +336,50 @@ bool AmfSession::reconfigure(const EncoderConfig& new_config) {
     }
 
     if (new_config.width != _config.width || new_config.height != _config.height) {
-        if (_encoder->ReInit(static_cast<amf_int32>(new_config.width), static_cast<amf_int32>(new_config.height)) != AMF_OK) {
-            return false;
+        AMF_RESULT reinit_res = _encoder->ReInit(static_cast<amf_int32>(new_config.width), static_cast<amf_int32>(new_config.height));
+        if (reinit_res != AMF_OK) {
+            // Dynamic re-initialisation fallback
+            _encoder->Drain();
+            _encoder->Terminate();
+            _encoder->Release();
+            _encoder = nullptr;
+            _is_configured = false;
+            return configure(new_config);
         }
     }
 
     _config = new_config;
     return true;
+}
+
+bool AmfSession::drain() {
+    if (!_encoder) return false;
+    std::lock_guard<std::mutex> lock(_mutex);
+
+    AMF_RESULT res = _encoder->Drain();
+    if (res != AMF_OK) return false;
+
+    // Poll until AMF_EOF or completion
+    for (int i = 0; i < 50; ++i) {
+        AMFData* pData = nullptr;
+        AMF_RESULT qres = _encoder->QueryOutput(&pData);
+        if (qres == AMF_OK && pData) {
+            pData->Release();
+        } else if (qres == AMF_EOF) {
+            return true;
+        } else if (qres == AMF_REPEAT) {
+            std::this_thread::yield();
+        } else {
+            break;
+        }
+    }
+    return true;
+}
+
+bool AmfSession::flush() {
+    if (!_encoder) return false;
+    std::lock_guard<std::mutex> lock(_mutex);
+    return _encoder->Flush() == AMF_OK;
 }
 
 void AmfSession::close() {
