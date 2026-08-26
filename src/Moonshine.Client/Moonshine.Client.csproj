@@ -12,6 +12,8 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <UseAppHost>true</UseAppHost>
+    <DisableXamlGeneratedMain>true</DisableXamlGeneratedMain>
+    <StartupObject>Moonshine.Program</StartupObject>
   </PropertyGroup>
 
   <ItemGroup>

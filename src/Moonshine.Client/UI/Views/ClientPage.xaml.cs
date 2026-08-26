@@ -13,24 +13,36 @@ public sealed partial class ClientPage : Page, IDisposable
 
     public ClientPage()
     {
-        this.NavigationCacheMode = NavigationCacheMode.Required;
-        this.ViewModel = AppServices.Client;
-        this.InitializeComponent();
-
-        _videoPresenter = new DirectXVideoPresenter(VideoSwapChainPanel);
-
-        ViewModel.SwapChainCreated += (s, swapChainHandle) =>
+        string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+        try
         {
-            _videoPresenter.AttachSwapChain(swapChainHandle);
-        };
+            System.IO.File.AppendAllText(System.IO.Path.Combine(baseDir, "moonshine_app.log"), "[INFO] ClientPage ctor initializing...\n");
+            this.NavigationCacheMode = NavigationCacheMode.Required;
+            this.ViewModel = AppServices.Client;
+            this.InitializeComponent();
 
-        VideoSwapChainPanel.IsTabStop = true;
-        VideoSwapChainPanel.PointerPressed += OnPointerPressed;
-        VideoSwapChainPanel.PointerMoved += OnPointerMoved;
-        VideoSwapChainPanel.PointerReleased += OnPointerReleased;
-        VideoSwapChainPanel.PointerWheelChanged += OnPointerWheelChanged;
-        VideoSwapChainPanel.KeyDown += OnKeyDown;
-        VideoSwapChainPanel.KeyUp += OnKeyUp;
+            _videoPresenter = new DirectXVideoPresenter(VideoSwapChainPanel);
+
+            ViewModel.SwapChainCreated += (s, swapChainHandle) =>
+            {
+                _videoPresenter.AttachSwapChain(swapChainHandle);
+            };
+
+            VideoSwapChainPanel.IsTabStop = true;
+            VideoSwapChainPanel.PointerPressed += OnPointerPressed;
+            VideoSwapChainPanel.PointerMoved += OnPointerMoved;
+            VideoSwapChainPanel.PointerReleased += OnPointerReleased;
+            VideoSwapChainPanel.PointerWheelChanged += OnPointerWheelChanged;
+            VideoSwapChainPanel.KeyDown += OnKeyDown;
+            VideoSwapChainPanel.KeyUp += OnKeyUp;
+            System.IO.File.AppendAllText(System.IO.Path.Combine(baseDir, "moonshine_app.log"), "[INFO] ClientPage initialized successfully.\n");
+        }
+        // ALLOWED_EXCEPTION: Log critical initialization error to disk before rethrowing.
+        catch (Exception ex)
+        {
+            System.IO.File.AppendAllText(System.IO.Path.Combine(baseDir, "moonshine_app.log"), $"[CRASH in ClientPage.ctor]: {ex}\nInner: {ex.InnerException}\n");
+            throw;
+        }
     }
 
     public void Dispose()
