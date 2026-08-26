@@ -339,7 +339,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Persist server certificate securely using `SecureFileStore`.
   - [x] 100% pass rate in `PairingTests` and `PairingCryptoTests`.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T02:03:52Z | Commit: 6d065d8 | Proof: 10/10 tests passed in Moonshine.Core.Tests verifying 5-step X.509 pairing and mutual auth -->
+  - <!-- VERIFIED: 2026-08-26T02:03:52Z | Commit: 2cd3f67 | Proof: 10/10 tests passed in Moonshine.Core.Tests verifying 5-step X.509 pairing and mutual auth -->
 
 ---
 
@@ -354,7 +354,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Resume ready state after hardware reinitialization without memory or socket leaks.
   - [x] 100% pass rate in `UnifiedEngine_DeviceLossRecovery` and capture recovery tests.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T01:48:00Z | Commit: 6d065d8 | Proof: 100% pass in UnifiedEngine_DeviceLossRecovery_RecreatesSessionAndResumesReadyState in Moonshine.Host.Tests -->
+  - <!-- VERIFIED: 2026-08-26T01:48:00Z | Commit: 2cd3f67 | Proof: 100% pass in UnifiedEngine_DeviceLossRecovery_RecreatesSessionAndResumesReadyState in Moonshine.Host.Tests -->
 
 ---
 
@@ -369,7 +369,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Assert absence of physical hardware skips gracefully without false failures.
   - [x] 100% pass rate across entire test matrix in `verify_codebase.ps1`.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T02:02:36Z | Commit: 6d065d8 | Proof: 28/28 CTests and 975+ xUnit tests cleanly partitioned with 100% pass rate in verify_codebase.ps1 -->
+  - <!-- VERIFIED: 2026-08-26T02:02:36Z | Commit: 2cd3f67 | Proof: 28/28 CTests and 975+ xUnit tests cleanly partitioned with 100% pass rate in verify_codebase.ps1 -->
 
 ---
 
