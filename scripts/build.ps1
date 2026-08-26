@@ -63,16 +63,13 @@ if (-not $hostDll) {
 }
 Write-Host "[+] Managed Windows artifact verified: $($hostDll.FullName)" -ForegroundColor Green
 
-$clientExe = Get-ChildItem -Path "$RootDir\src\Moonshine.Client\bin\$Configuration" -Recurse -Filter "Moonshine.exe" -File | Select-Object -First 1
-if ($clientExe) {
-    $targetBinDir = Join-Path $RootDir "bin"
-    if (-not (Test-Path $targetBinDir)) { New-Item -ItemType Directory -Path $targetBinDir -Force | Out-Null }
-    try {
-        Copy-Item "$($clientExe.DirectoryName)\*" -Destination $targetBinDir -Force -Recurse -ErrorAction Stop
-        Write-Host "[+] Staged Moonshine executable to root: $(Join-Path $targetBinDir 'Moonshine.exe')" -ForegroundColor Green
-    } catch {
-        Write-Host "[-] Warning: Could not stage to root bin (process may be running): $($_.Exception.Message)" -ForegroundColor Yellow
-    }
+$targetBinDir = Join-Path $RootDir "bin"
+if (-not (Test-Path $targetBinDir)) { New-Item -ItemType Directory -Path $targetBinDir -Force | Out-Null }
+try {
+    & $DotNetExe publish "$RootDir\src\Moonshine.Client\Moonshine.Client.csproj" -c $Configuration -r win-x64 --self-contained true --no-restore -o $targetBinDir
+    Write-Host "[+] Staged self-contained Moonshine executable to root: $(Join-Path $targetBinDir 'Moonshine.exe')" -ForegroundColor Green
+} catch {
+    Write-Host "[-] Warning: Could not stage to root bin: $($_.Exception.Message)" -ForegroundColor Yellow
 }
 
 Get-Process -Name testhost*, vstest* -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
