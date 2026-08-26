@@ -609,7 +609,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Verify British English, no em dashes, and no emojis across all markdown documents.
   - [x] 0 preflight violations in `scripts/preflight.ps1`.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T03:16:39Z | Commit: 78d6731 | Proof: 0 preflight violations across all 81 docs and 391 source files -->
+  - <!-- VERIFIED: 2026-08-26T03:16:39Z | Commit: e7bfcce | Proof: 0 preflight violations across all 81 docs and 391 source files -->
 
 ---
 
@@ -624,7 +624,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Ensure all completed tasks reference topological Git commit SHAs.
   - [x] 100% pass rate in backlog and provenance validation scripts.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T03:16:39Z | Commit: 78d6731 | Proof: 100% commit-to-issue association verified across all commits -->
+  - <!-- VERIFIED: 2026-08-26T03:16:39Z | Commit: e7bfcce | Proof: 100% commit-to-issue association verified across all commits -->
 
 ---
 
@@ -639,7 +639,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] 100% pass rate across all native CTests and managed xUnit test suites.
   - [x] Full repository Definition of Done satisfaction.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T03:16:39Z | Commit: 78d6731 | Proof: 100% pass across 28 CTests, 975+ xUnit tests, and 0 preflight violations -->
+  - <!-- VERIFIED: 2026-08-26T03:16:39Z | Commit: e7bfcce | Proof: 100% pass across 28 CTests, 975+ xUnit tests, and 0 preflight violations -->
 
 ---
 
