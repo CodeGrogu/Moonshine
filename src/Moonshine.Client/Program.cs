@@ -1,14 +1,27 @@
 using Moonshine.App;
-using Moonshine.Core.Runtime;
 
-if (!MoonshineApplication.TryParseRole(args, out ApplicationRole role))
+using var cts = new CancellationTokenSource();
+
+Console.CancelKeyPress += (sender, eventArgs) =>
 {
-    Console.Error.WriteLine("Usage: Moonshine --role host|client|host-client");
-    return 2;
-}
+    eventArgs.Cancel = true;
+    cts.Cancel();
+};
 
+var options = CliOptions.Parse(args);
 using var application = new MoonshineApplication();
-ApplicationStartResult result = application.Start(role);
-Console.WriteLine($"Moonshine role: {role.FormatRole()}");
-Console.WriteLine(result.Message);
-return result.IsStarted ? 0 : 1;
+
+try
+{
+    return await application.RunAsync(options, cts.Token).ConfigureAwait(false);
+}
+catch (OperationCanceledException)
+{
+    return 0;
+}
+// ALLOWED_EXCEPTION: Report top-level CLI uncaught exception to stderr before process termination.
+catch (Exception ex)
+{
+    Console.Error.WriteLine($"\n[-] Fatal error: {ex.Message}");
+    return 1;
+}

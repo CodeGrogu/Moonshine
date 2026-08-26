@@ -81,6 +81,10 @@ bool UnifiedVideoEncoder::query_capabilities(EncoderVendor vendor, void* d3d_dev
 bool UnifiedVideoEncoder::initialize(void* d3d_device, const EncoderConfig& config) {
     cleanup();
 
+    if (!d3d_device) {
+        return false;
+    }
+
     if (_preferred_vendor != EncoderVendor::Auto) {
         _active_encoder = create_encoder(_preferred_vendor);
         if (_active_encoder && _active_encoder->initialize(d3d_device, config)) {

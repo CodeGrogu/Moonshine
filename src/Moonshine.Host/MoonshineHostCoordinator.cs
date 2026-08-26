@@ -49,6 +49,7 @@ public sealed class MoonshineHostCoordinator : IMoonshineHostService
     }
 
     public ApplicationRole Role => ApplicationRole.Host;
+    public IMoonshineHostNetworkManager NetworkManager => _networkManager;
 
     public HostState State
     {

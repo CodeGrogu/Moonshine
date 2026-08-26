@@ -32,6 +32,7 @@ public sealed class UnifiedDesktopCaptureEngine : IDesktopCapturePipeline
     public uint OutputIndex => _activePipeline.OutputIndex;
     public CaptureSourceDescriptor? Source => _activePipeline.Source ?? _source;
     public bool IsAvailable => _activePipeline.IsAvailable;
+    public IntPtr DeviceHandle => _activePipeline.DeviceHandle;
     public CaptureMetrics Metrics => _activePipeline.Metrics;
 
     public UnifiedDesktopCaptureEngine(

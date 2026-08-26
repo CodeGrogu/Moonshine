@@ -28,6 +28,7 @@ public:
     [[nodiscard]] virtual uint32_t format() const noexcept { return 87; }
     [[nodiscard]] virtual bool is_hdr() const noexcept { return false; }
     [[nodiscard]] virtual bool is_initialized() const noexcept = 0;
+    [[nodiscard]] virtual void* get_device() const noexcept { return nullptr; }
 };
 
 } // namespace moonshine::capture

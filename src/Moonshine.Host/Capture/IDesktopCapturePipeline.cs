@@ -14,6 +14,7 @@ public interface IDesktopCapturePipeline : IDisposable
     uint AdapterIndex { get; }
     uint OutputIndex { get; }
     bool IsAvailable { get; }
+    IntPtr DeviceHandle => IntPtr.Zero;
     CaptureSourceDescriptor? Source { get; }
     CaptureMetrics Metrics { get; }
 

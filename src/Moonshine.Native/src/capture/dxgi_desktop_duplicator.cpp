@@ -164,6 +164,18 @@ bool DxgiDesktopDuplicator::acquire_frame(uint32_t timeout_ms, CaptureFrame& out
 
     HRESULT hr = m_duplication->AcquireNextFrame(timeout_ms, &frameInfo, &desktopResource);
     if (hr == DXGI_ERROR_WAIT_TIMEOUT) {
+        if (m_shared_texture) {
+            LARGE_INTEGER qpc;
+            QueryPerformanceCounter(&qpc);
+            out_frame.texture_handle = m_shared_texture.Get();
+            out_frame.width = m_width;
+            out_frame.height = m_height;
+            out_frame.format = m_format;
+            out_frame.timestamp_qpc = static_cast<uint64_t>(qpc.QuadPart);
+            out_frame.accumulated_frames = 0;
+            out_frame.cursor_visible = true;
+            return true;
+        }
         return false;
     }
 

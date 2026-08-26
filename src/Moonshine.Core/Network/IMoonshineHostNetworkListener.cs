@@ -24,6 +24,11 @@ public interface IMoonshineHostNetworkListener : IDisposable
     ProtocolType Protocol { get; }
 
     /// <summary>
+    /// Gets the underlying native socket.
+    /// </summary>
+    Socket Socket { get; }
+
+    /// <summary>
     /// Gets a value indicating whether this listener is actively accepting/processing traffic.
     /// </summary>
     bool IsListening { get; }

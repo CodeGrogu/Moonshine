@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using Moonshine.Core.Network;
@@ -216,6 +217,30 @@ public sealed class MoonshineHostDiscoveryAdvertiser : IDisposable
                     try
                     {
                         await socket.SendToAsync(buffer.AsMemory(0, bytesWritten), SocketFlags.None, broadcastTarget, _cts.Token).ConfigureAwait(false);
+
+                        foreach (var iface in NetworkInterface.GetAllNetworkInterfaces())
+                        {
+                            if (iface.OperationalStatus != OperationalStatus.Up || iface.NetworkInterfaceType == NetworkInterfaceType.Loopback)
+                            {
+                                continue;
+                            }
+
+                            foreach (var u in iface.GetIPProperties().UnicastAddresses)
+                            {
+                                if (u.Address.AddressFamily == AddressFamily.InterNetwork && u.IPv4Mask != null)
+                                {
+                                    byte[] ipBytes = u.Address.GetAddressBytes();
+                                    byte[] maskBytes = u.IPv4Mask.GetAddressBytes();
+                                    byte[] bcastBytes = new byte[4];
+                                    for (int i = 0; i < 4; i++)
+                                    {
+                                        bcastBytes[i] = (byte)(ipBytes[i] | ~maskBytes[i]);
+                                    }
+                                    var directedEp = new IPEndPoint(new IPAddress(bcastBytes), _endpointConfig.DiscoveryUdpPort);
+                                    await socket.SendToAsync(buffer.AsMemory(0, bytesWritten), SocketFlags.None, directedEp, _cts.Token).ConfigureAwait(false);
+                                }
+                            }
+                        }
                     }
                     // ALLOWED_EXCEPTION: Transient broadcast failure or shutdown socket closure on restricted subnet.
                     catch (Exception ex) when (ex is SocketException or ObjectDisposedException or OperationCanceledException)

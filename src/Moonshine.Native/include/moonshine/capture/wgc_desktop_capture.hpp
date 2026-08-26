@@ -40,6 +40,13 @@ public:
     [[nodiscard]] bool is_hdr() const noexcept override { return m_is_hdr; }
     [[nodiscard]] uint32_t target_fps() const noexcept { return m_target_fps; }
     [[nodiscard]] bool is_initialized() const noexcept override { return m_initialized; }
+    [[nodiscard]] void* get_device() const noexcept override {
+#if defined(_WIN32)
+        return m_d3d11_device.Get();
+#else
+        return nullptr;
+#endif
+    }
 
 private:
     void* m_hmonitor = nullptr;

@@ -36,6 +36,7 @@ public sealed class WgcDesktopCapturePipeline : IDesktopCapturePipeline
     public uint TargetFps => _targetFps;
     public CaptureSourceDescriptor? Source => _source;
     public bool IsAvailable => _handle != IntPtr.Zero;
+    public IntPtr DeviceHandle => _handle != IntPtr.Zero ? MoonshineNativeMethods.CaptureGetDevice(_handle) : IntPtr.Zero;
 
     public CaptureMetrics Metrics
     {

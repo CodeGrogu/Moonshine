@@ -738,6 +738,10 @@ public static unsafe partial class MoonshineNativeMethods
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int CaptureRecover(IntPtr handle);
 
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_capture_get_device")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial IntPtr CaptureGetDevice(IntPtr handle);
+
     [LibraryImport(LibraryName, EntryPoint = "moonshine_capture_get_format")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial uint CaptureGetFormat(IntPtr handle);

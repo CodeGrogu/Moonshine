@@ -324,6 +324,38 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
             _controlKeepAliveTask = Task.Run(ControlKeepAliveLoopAsync, CancellationToken.None);
             _controlReceiveTask = Task.Run(ControlReceiveLoopAsync, CancellationToken.None);
 
+            // Send initial hole-punch datagrams so Windows Firewall and NAT routers open bidirectional UDP states
+            byte[] punchBuffer = new byte[MoonshineProtocolConstants.HeaderSize];
+            var punchHeader = new MoonshinePacketHeader(
+                Magic: MoonshineProtocolConstants.Magic,
+                Version: MoonshineProtocolConstants.Version10,
+                MessageType: MoonshineMessageType.KeepAlive,
+                PayloadSize: 0,
+                SequenceNumber: 0,
+                SessionId: _config.SessionId,
+                TimestampUs: (ulong)Stopwatch.GetTimestamp());
+            MoonshineProtocolCodec.TryWriteHeader(in punchHeader, punchBuffer);
+
+            try
+            {
+                if (_videoSocket != null && _hostVideoEndpoint != null)
+                {
+                    _ = _videoSocket.SendTo(punchBuffer, SocketFlags.None, _hostVideoEndpoint);
+                }
+                if (_audioSocket != null && _hostAudioEndpoint != null)
+                {
+                    _ = _audioSocket.SendTo(punchBuffer, SocketFlags.None, _hostAudioEndpoint);
+                }
+                if (_controlSocket != null && _hostControlEndpoint != null)
+                {
+                    _ = _controlSocket.SendTo(punchBuffer, SocketFlags.None, _hostControlEndpoint);
+                }
+            }
+            // ALLOWED_EXCEPTION: Ignore transient hole punch errors on startup.
+            catch (Exception)
+            {
+            }
+
             // 8. Transition to Streaming state
             lock (_stateLock)
             {

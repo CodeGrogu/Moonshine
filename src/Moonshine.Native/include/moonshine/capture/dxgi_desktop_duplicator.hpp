@@ -37,6 +37,13 @@ public:
     [[nodiscard]] uint32_t format() const noexcept override { return m_format; }
     [[nodiscard]] bool is_hdr() const noexcept override { return m_is_hdr; }
     [[nodiscard]] bool is_initialized() const noexcept override { return m_initialized; }
+    [[nodiscard]] void* get_device() const noexcept override {
+#if defined(_WIN32)
+        return m_device.Get();
+#else
+        return nullptr;
+#endif
+    }
 
 private:
     uint32_t m_adapter_index;

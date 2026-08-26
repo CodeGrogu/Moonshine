@@ -178,6 +178,37 @@ public sealed class MoonshineLanDiscoveryEngine : IAsyncDisposable
         {
             destinations.Add(new IPEndPoint(MulticastIPv4, _discoveryPort));
             destinations.Add(new IPEndPoint(IPAddress.Broadcast, _discoveryPort));
+
+            try
+            {
+                foreach (var iface in NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    if (iface.OperationalStatus != OperationalStatus.Up ||
+                        iface.NetworkInterfaceType == NetworkInterfaceType.Loopback)
+                    {
+                        continue;
+                    }
+
+                    foreach (var u in iface.GetIPProperties().UnicastAddresses)
+                    {
+                        if (u.Address.AddressFamily == AddressFamily.InterNetwork && u.IPv4Mask != null)
+                        {
+                            byte[] ipBytes = u.Address.GetAddressBytes();
+                            byte[] maskBytes = u.IPv4Mask.GetAddressBytes();
+                            byte[] broadcastBytes = new byte[4];
+                            for (int i = 0; i < 4; i++)
+                            {
+                                broadcastBytes[i] = (byte)(ipBytes[i] | ~maskBytes[i]);
+                            }
+                            destinations.Add(new IPEndPoint(new IPAddress(broadcastBytes), _discoveryPort));
+                        }
+                    }
+                }
+            }
+            // ALLOWED_EXCEPTION: Defensive network interface enumeration for directed subnet broadcast calculation.
+            catch (Exception)
+            {
+            }
         }
 
         foreach (var dest in destinations)

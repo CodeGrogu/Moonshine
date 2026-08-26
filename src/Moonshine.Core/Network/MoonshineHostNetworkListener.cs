@@ -30,6 +30,7 @@ public sealed class MoonshineHostNetworkListener : IMoonshineHostNetworkListener
     public string ServiceName => _serviceName;
     public IPEndPoint LocalEndPoint => _localEndPoint;
     public ProtocolType Protocol => _protocol;
+    public Socket Socket => _socket;
 
     public bool IsListening
     {

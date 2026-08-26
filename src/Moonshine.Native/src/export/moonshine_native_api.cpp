@@ -1863,6 +1863,16 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_capture_recover(MoonshineCaptureHandl
     }
 }
 
+MOONSHINE_API void* MOONSHINE_CONV moonshine_capture_get_device(MoonshineCaptureHandle handle) {
+    try {
+        if (!handle) return nullptr;
+        auto* cap = static_cast<capture::IDesktopCapture*>(handle);
+        return cap->get_device();
+    } catch (...) {
+        return nullptr;
+    }
+}
+
 MOONSHINE_API uint32_t MOONSHINE_CONV moonshine_capture_get_format(MoonshineCaptureHandle handle) {
     try {
         if (!handle) return 0;
@@ -2079,20 +2089,6 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_capture_get_display_info(
         out_info->refresh_rate_den = 1;
         out_info->bits_per_color = 8;
         out_info->is_hdr = 0;
-
-        UINT numModes = 0;
-        if (SUCCEEDED(output->GetDisplayModeList(DXGI_FORMAT_B8G8R8A8_UNORM, 0, &numModes, nullptr)) && numModes > 0) {
-            std::vector<DXGI_MODE_DESC> modes(numModes);
-            if (SUCCEEDED(output->GetDisplayModeList(DXGI_FORMAT_B8G8R8A8_UNORM, 0, &numModes, modes.data()))) {
-                for (const auto& mode : modes) {
-                    if (mode.Width == out_info->width && mode.Height == out_info->height) {
-                        out_info->refresh_rate_num = mode.RefreshRate.Numerator;
-                        out_info->refresh_rate_den = mode.RefreshRate.Denominator;
-                        break;
-                    }
-                }
-            }
-        }
 
         Microsoft::WRL::ComPtr<IDXGIOutput6> output6;
         if (SUCCEEDED(output.As(&output6))) {
