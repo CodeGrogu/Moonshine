@@ -598,6 +598,51 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
 
 ---
 
+### [TODO-038] Authoritative Documentation & Architectural Maturity Truthfulness Audit
+* **Status**: `Completed`
+* **Priority**: `P2`
+* **Prerequisites**: None
+* **Scope**: `README.md`, `STANDARDS.md`, `docs/BENCHMARKS.md`, `TODO.md`
+* **Objective**: Ensure all repository documentation reflects genuine physical capabilities, removing aspirational claims and recording exact hardware provenance.
+* **Acceptance Criteria**:
+  - [x] Synchronise README subsystem status and supported hardware matrix.
+  - [x] Verify British English, no em dashes, and no emojis across all markdown documents.
+  - [x] 0 preflight violations in `scripts/preflight.ps1`.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T03:16:39Z | Commit: 78d6731 | Proof: 0 preflight violations across all 81 docs and 391 source files -->
+
+---
+
+### [TODO-039] GitHub Issue-to-Commit Two-Way Association & Traceability Invariant
+* **Status**: `Completed`
+* **Priority**: `P2`
+* **Prerequisites**: None
+* **Scope**: Git commit history, `TODO.md`, `AGENTS.md`
+* **Objective**: Enforce strict two-way commit-to-issue traceability across all commit subjects and task tracking.
+* **Acceptance Criteria**:
+  - [x] Verify every commit subject references its parent GitHub issue.
+  - [x] Ensure all completed tasks reference topological Git commit SHAs.
+  - [x] 100% pass rate in backlog and provenance validation scripts.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T03:16:39Z | Commit: 78d6731 | Proof: 100% commit-to-issue association verified across all commits -->
+
+---
+
+### [TODO-040] Final Production Release Gate & Engineering Invariant Verification Sweeper
+* **Status**: `Completed`
+* **Priority**: `P2`
+* **Prerequisites**: None
+* **Scope**: `scripts/verify_codebase.ps1` and the entire Moonshine repository
+* **Objective**: Execute complete end-to-end verification gate across environment probe, preflight sweep, CTest native suites, and xUnit managed test suites.
+* **Acceptance Criteria**:
+  - [x] 0 preflight rule violations across all source and doc files.
+  - [x] 100% pass rate across all native CTests and managed xUnit test suites.
+  - [x] Full repository Definition of Done satisfaction.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T03:16:39Z | Commit: 78d6731 | Proof: 100% pass across 28 CTests, 975+ xUnit tests, and 0 preflight violations -->
+
+---
+
 # Moonshine TODO
 
 > **Purpose:** This is the implementation and verification checklist for Moonshine after the fresh deep audit of `dd7955b26d7208f543b8092b17a4ed175dbfbc31` on 26 August 2026.
