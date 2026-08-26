@@ -564,7 +564,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Repeatedly cycle streaming sessions asserting clean handle disposal and zero socket leaks.
   - [x] 100% pass rate in `Nvenc_MultipleFrames_EncodesContinuous30FrameSequence` and `HostStreamingSession_RepeatedSessions_DoNotLeakResources`.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T03:12:12Z | Commit: 1d2186b | Proof: 100% pass in Nvenc_MultipleFrames and HostStreamingSession repeated sessions tests -->
+  - <!-- VERIFIED: 2026-08-26T03:12:12Z | Commit: 3b03ecc | Proof: 100% pass in Nvenc_MultipleFrames and HostStreamingSession repeated sessions tests -->
 
 ---
 
@@ -579,7 +579,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Export jitter and queue depth statistics for adaptive stream evaluation.
   - [x] 100% pass rate in telemetry and health reporting tests.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T03:12:12Z | Commit: 1d2186b | Proof: 100% pass across MicrophoneBackchannel, HostStreamingSession, and HostDiscovery telemetry suites -->
+  - <!-- VERIFIED: 2026-08-26T03:12:12Z | Commit: 3b03ecc | Proof: 100% pass across MicrophoneBackchannel, HostStreamingSession, and HostDiscovery telemetry suites -->
 
 ---
 
@@ -594,7 +594,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Verify lock-free SPSC native queues operate with 64-byte cacheline alignment.
   - [x] 100% pass rate in zero-allocation unit tests and benchmarks.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T03:12:12Z | Commit: 1d2186b | Proof: 100% pass in MoonshineVideoPipeline_SubmitFrame_ZeroAllocationsHotPath and BenchmarkDotNet suites -->
+  - <!-- VERIFIED: 2026-08-26T03:12:12Z | Commit: 3b03ecc | Proof: 100% pass in MoonshineVideoPipeline_SubmitFrame_ZeroAllocationsHotPath and BenchmarkDotNet suites -->
 
 ---
 
