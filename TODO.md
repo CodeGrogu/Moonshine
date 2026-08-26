@@ -519,7 +519,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Real WASAPI audio and authenticated input message pipelines verified.
   - [x] 100% pass rate in `HardwareVideoEncoderConformanceTests` and loopback suites.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T03:07:41Z | Commit: cf7daa2 | Proof: 100% pass across hardware encoder, decoder loopback, WASAPI, and remote control suites -->
+  - <!-- VERIFIED: 2026-08-26T03:07:41Z | Commit: e784da0 | Proof: 100% pass across hardware encoder, decoder loopback, WASAPI, and remote control suites -->
 
 ---
 
@@ -534,7 +534,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Assert packets with stale session IDs or epoch timestamps are discarded.
   - [x] 100% pass rate in reconnect and session lifecycle tests.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T03:07:41Z | Commit: cf7daa2 | Proof: 100% pass in session teardown, timeout, and state-reset immunity tests -->
+  - <!-- VERIFIED: 2026-08-26T03:07:41Z | Commit: e784da0 | Proof: 100% pass in session teardown, timeout, and state-reset immunity tests -->
 
 ---
 
@@ -549,7 +549,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Assert zero CPU readback operations in normal streaming presentation hot path.
   - [x] 100% pass rate in zero-copy swapchain and encoder tests.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T03:07:41Z | Commit: cf7daa2 | Proof: 100% pass in MoonshineVideoPipeline_SubmitFrame_ZeroAllocationsHotPath and swapchain tests -->
+  - <!-- VERIFIED: 2026-08-26T03:07:41Z | Commit: e784da0 | Proof: 100% pass in MoonshineVideoPipeline_SubmitFrame_ZeroAllocationsHotPath and swapchain tests -->
 
 ---
 
