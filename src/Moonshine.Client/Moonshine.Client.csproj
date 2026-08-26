@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <TargetFramework>net9.0-windows10.0.22000.0</TargetFramework>
     <OutputType>WinExe</OutputType>
     <RootNamespace>Moonshine</RootNamespace>
     <AssemblyName>Moonshine</AssemblyName>
