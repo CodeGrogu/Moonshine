@@ -20,7 +20,7 @@ public static class AppServices
         _host = new HostViewModel(_dispatcher);
         _client = new ClientViewModel(_dispatcher);
         _acceptance = new AcceptanceViewModel(_dispatcher);
-        _diagnostics = new DiagnosticsViewModel();
+        _diagnostics = new DiagnosticsViewModel(_dispatcher);
     }
 
     public static HostViewModel Host => _host ?? throw new InvalidOperationException("AppServices not initialized");

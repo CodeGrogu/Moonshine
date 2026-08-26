@@ -155,6 +155,11 @@ public sealed class AudioJitterBuffer
                 return false;
             }
 
+            if (_packetsPopped == 0 && _queuedCount < 2)
+            {
+                return false;
+            }
+
             int slotIndex = (int)(_headSeq % (uint)_capacity);
             ref readonly var slot = ref _slots[slotIndex];
 

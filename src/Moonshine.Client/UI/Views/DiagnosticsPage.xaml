@@ -5,6 +5,7 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:vm="using:Moonshine.UI.ViewModels"
+    xmlns:sys="using:System"
     mc:Ignorable="d">
 
     <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -41,6 +42,43 @@
                     </DataTemplate>
                 </ListView.ItemTemplate>
             </ListView>
+
+            <!-- Live Application Logs -->
+            <Grid Margin="0,16,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" Spacing="4">
+                    <TextBlock Text="Live Application Logs" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                    <TextBlock Text="Real-time structured streaming events and diagnostics trace" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <Button Content="Open Logs Folder" Command="{x:Bind ViewModel.OpenLogsFolderCommand}" />
+                    <Button Content="Copy Logs" Command="{x:Bind ViewModel.CopyLogsCommand}" />
+                    <Button Content="Clear Logs" Command="{x:Bind ViewModel.ClearLogsCommand}" />
+                </StackPanel>
+            </Grid>
+
+            <Border Background="{ThemeResource LayerFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="8"
+                    Height="300">
+                <ListView ItemsSource="{x:Bind ViewModel.LogEntries}"
+                          SelectionMode="None"
+                          ScrollViewer.VerticalScrollBarVisibility="Auto">
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="sys:String">
+                            <TextBlock Text="{x:Bind}"
+                                       FontFamily="Cascadia Code, Consolas, Courier New"
+                                       FontSize="12"
+                                       TextWrapping="Wrap" />
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </Border>
 
         </StackPanel>
     </ScrollViewer>

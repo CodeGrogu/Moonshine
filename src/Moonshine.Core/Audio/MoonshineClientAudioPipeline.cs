@@ -43,6 +43,7 @@ public sealed class MoonshineClientAudioPipeline : IDisposable
     private ulong _framesDecoded;
     private ulong _framesRendered;
     private uint _underruns;
+    private int _consecutivePlcCount;
 
     private readonly byte[] _popBuffer = new byte[2048];
     private float[] _decodePcmBuffer;
@@ -259,6 +260,7 @@ public sealed class MoonshineClientAudioPipeline : IDisposable
                 Span<float> pcmSpan = _decodePcmBuffer.AsSpan();
                 if (popped && bytesPopped > 0)
                 {
+                    _consecutivePlcCount = 0;
                     bool decOk = _decoder.DecodeFloat(popSpan[..bytesPopped], pcmSpan, out uint samplesDecoded, false);
                     if (decOk && samplesDecoded > 0)
                     {
@@ -271,11 +273,16 @@ public sealed class MoonshineClientAudioPipeline : IDisposable
                 }
                 else
                 {
-                    // Underrun PLC concealment frame
                     _underruns++;
-                    if (_decoder.DecodeFloat(ReadOnlySpan<byte>.Empty, pcmSpan, out uint samplesDecoded, true))
+                    // Cap Opus PLC concealment synthesis to max 3 consecutive frames (~15ms)
+                    // after initial media reception, decaying to pure silence to prevent continuous airy/hissing noise
+                    if (_framesDecoded > 0 && _consecutivePlcCount < 3)
                     {
-                        _renderer.SubmitPcm(pcmSpan[..(int)samplesDecoded]);
+                        _consecutivePlcCount++;
+                        if (_decoder.DecodeFloat(ReadOnlySpan<byte>.Empty, pcmSpan, out uint samplesDecoded, true))
+                        {
+                            _renderer.SubmitPcm(pcmSpan[..(int)samplesDecoded]);
+                        }
                     }
                 }
             }

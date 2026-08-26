@@ -7,8 +7,12 @@ namespace Moonshine.Interop.Tests;
 public class SwapchainNativeTests
 {
     [Fact]
-    public void SwapchainCreate_NullHwnd_ReturnsNullHandle() =>
-        MoonshineNativeMethods.SwapchainCreate(IntPtr.Zero, IntPtr.Zero, 1920, 1080, 2, 0).Should().Be(IntPtr.Zero);
+    public void SwapchainCreate_NullHwnd_CreatesCompositionSwapchain()
+    {
+        IntPtr handle = MoonshineNativeMethods.SwapchainCreate(IntPtr.Zero, IntPtr.Zero, 1920, 1080, 2, 0);
+        handle.Should().NotBe(IntPtr.Zero);
+        MoonshineNativeMethods.SwapchainDestroy(handle);
+    }
 
     [Fact]
     public void SwapchainCreate_ZeroDimensions_ReturnsNullHandle() =>

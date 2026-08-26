@@ -17,6 +17,11 @@ namespace Moonshine.App;
 
 public static class HostServerRunner
 {
+    /// <summary>
+    /// The currently active MoonshineHostCoordinator instance, if running.
+    /// </summary>
+    public static MoonshineHostCoordinator? ActiveCoordinator { get; private set; }
+
     public static async Task RunHostAsync(CliOptions options, CancellationToken ct)
     {
         Console.WriteLine("==========================================================");
@@ -34,8 +39,10 @@ public static class HostServerRunner
         );
 
         using var host = new MoonshineHostCoordinator(endpointConfig: endpointConfig);
+        ActiveCoordinator = host;
 
         Console.WriteLine($"[*] Starting Host Services on ports {endpointConfig.ControlTcpPort}..{endpointConfig.MicUdpPort}...");
+        Moonshine.Core.AppLogger.Log($"[Host] Starting Host Services on ports {endpointConfig.ControlTcpPort}..{endpointConfig.MicUdpPort}");
         try
         {
             await host.StartAsync(ct).ConfigureAwait(false);
@@ -43,7 +50,9 @@ public static class HostServerRunner
         // ALLOWED_EXCEPTION: Report user-facing error message when host server initialization fails.
         catch (Exception ex)
         {
+            Moonshine.Core.AppLogger.Log($"[Host] Failed to start Host server: {ex.Message}");
             Console.WriteLine($"[-] Failed to start Host server: {ex.Message}");
+            ActiveCoordinator = null;
             return;
         }
 
@@ -76,8 +85,10 @@ public static class HostServerRunner
         }
 
         Console.WriteLine("\n[*] Shutting down Host Server and releasing hardware pipelines...");
+        ActiveCoordinator = null;
         await host.StopAsync(CancellationToken.None).ConfigureAwait(false);
         Console.WriteLine("[+] Host Server stopped cleanly.");
+        Moonshine.Core.AppLogger.Log("[Host] Host Server stopped cleanly.");
     }
 
     private static async Task ListenForClientsAsync(

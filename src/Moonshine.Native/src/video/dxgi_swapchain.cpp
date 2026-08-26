@@ -102,7 +102,7 @@ int DxgiSwapchain::CreateOrRecreateViews() {
 int DxgiSwapchain::Initialize(void* hwnd, void* d3d11_device, uint32_t width, uint32_t height, uint32_t buffer_count, bool is_hdr10) {
     Shutdown();
 
-    if (!hwnd || width == 0 || height == 0) {
+    if (width == 0 || height == 0) {
         return -1;
     }
 
@@ -273,6 +273,18 @@ int DxgiSwapchain::Present(uint32_t sync_interval, uint32_t flags) {
 #endif
 }
 
+#if defined(_WIN32)
+static bool SafeGetTextureDesc(ID3D11Texture2D* tex, D3D11_TEXTURE2D_DESC* out_desc) noexcept {
+    if (!tex || !out_desc) return false;
+    __try {
+        tex->GetDesc(out_desc);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+#endif
+
 int DxgiSwapchain::PresentTexture(void* texture_handle, uint32_t sync_interval, uint32_t flags) {
     if (!initialized_) return -1;
 
@@ -282,37 +294,37 @@ int DxgiSwapchain::PresentTexture(void* texture_handle, uint32_t sync_interval, 
     if (texture_handle) {
         auto* src_tex = static_cast<ID3D11Texture2D*>(texture_handle);
         D3D11_TEXTURE2D_DESC src_desc{};
-        src_tex->GetDesc(&src_desc);
+        if (SafeGetTextureDesc(src_tex, &src_desc)) {
+            if (backbuffer_) {
+                D3D11_TEXTURE2D_DESC dst_desc{};
+                backbuffer_->GetDesc(&dst_desc);
 
-        if (backbuffer_) {
-            D3D11_TEXTURE2D_DESC dst_desc{};
-            backbuffer_->GetDesc(&dst_desc);
+                if (src_desc.Format == dst_desc.Format && src_desc.Width == dst_desc.Width && src_desc.Height == dst_desc.Height) {
+                    context_->CopyResource(backbuffer_.Get(), src_tex);
+                } else if (video_processor_ && video_context_ && video_output_view_) {
+                    D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC in_desc{};
+                    in_desc.ViewDimension = D3D11_VPIV_DIMENSION_TEXTURE2D;
+                    in_desc.Texture2D.MipSlice = 0;
 
-            if (src_desc.Format == dst_desc.Format && src_desc.Width == dst_desc.Width && src_desc.Height == dst_desc.Height) {
-                context_->CopyResource(backbuffer_.Get(), src_tex);
-            } else if (video_processor_ && video_context_ && video_output_view_) {
-                D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC in_desc{};
-                in_desc.ViewDimension = D3D11_VPIV_DIMENSION_TEXTURE2D;
-                in_desc.Texture2D.MipSlice = 0;
+                    ComPtr<ID3D11VideoProcessorInputView> input_view;
+                    if (SUCCEEDED(video_device_->CreateVideoProcessorInputView(src_tex, video_enumerator_.Get(), &in_desc, &input_view))) {
+                        D3D11_VIDEO_PROCESSOR_STREAM stream{};
+                        stream.Enable = TRUE;
+                        stream.pInputSurface = input_view.Get();
 
-                ComPtr<ID3D11VideoProcessorInputView> input_view;
-                if (SUCCEEDED(video_device_->CreateVideoProcessorInputView(src_tex, video_enumerator_.Get(), &in_desc, &input_view))) {
-                    D3D11_VIDEO_PROCESSOR_STREAM stream{};
-                    stream.Enable = TRUE;
-                    stream.pInputSurface = input_view.Get();
-
-                    video_context_->VideoProcessorBlt(
-                        video_processor_.Get(),
-                        video_output_view_.Get(),
-                        0,
-                        1,
-                        &stream
-                    );
+                        video_context_->VideoProcessorBlt(
+                            video_processor_.Get(),
+                            video_output_view_.Get(),
+                            0,
+                            1,
+                            &stream
+                        );
+                    } else {
+                        context_->CopyResource(backbuffer_.Get(), src_tex);
+                    }
                 } else {
                     context_->CopyResource(backbuffer_.Get(), src_tex);
                 }
-            } else {
-                context_->CopyResource(backbuffer_.Get(), src_tex);
             }
         }
     }

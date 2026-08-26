@@ -420,6 +420,22 @@ public sealed partial class ClientViewModel : ObservableObject, IDisposable
         }
     }
 
+    public void SendMouseInput(int x, int y, short wheelY = 0, short wheelX = 0, ushort buttonFlags = 0, bool isAbsolute = false)
+    {
+        if (IsConnected && _activeSession != null)
+        {
+            _activeSession.SendMouseInput(x, y, wheelY, wheelX, buttonFlags, isAbsolute);
+        }
+    }
+
+    public void SendKeyboardInput(ushort keyCode, ushort scanCode, bool isDown, byte modifiers = 0)
+    {
+        if (IsConnected && _activeSession != null)
+        {
+            _activeSession.SendKeyboardInput(keyCode, scanCode, isDown, modifiers);
+        }
+    }
+
     private void OnTelemetryTick(object? sender, System.Timers.ElapsedEventArgs e)
     {
         if (_activeSession == null || !IsConnected) return;

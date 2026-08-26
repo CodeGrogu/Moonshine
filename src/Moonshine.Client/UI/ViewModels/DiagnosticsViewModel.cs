@@ -1,8 +1,11 @@
 using System;
 using System.Collections.ObjectModel;
 using System.Runtime.InteropServices;
+using Windows.ApplicationModel.DataTransfer;
+using Microsoft.UI.Dispatching;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Moonshine.Core;
 using Moonshine.Interop;
 
 namespace Moonshine.UI.ViewModels;
@@ -15,13 +18,82 @@ public sealed class HardwareInfoItem
     public string Status { get; set; } = "OK";
 }
 
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:MarkMembersAsStatic", Justification = "Instance members required for XAML data binding and RelayCommand contracts.")]
 public sealed partial class DiagnosticsViewModel : ObservableObject
 {
+    private readonly DispatcherQueue? _dispatcher;
     public ObservableCollection<HardwareInfoItem> Items { get; } = new();
+    public ObservableCollection<string> LogEntries { get; } = new();
 
-    public DiagnosticsViewModel()
+    public string CurrentLogPath => AppLogger.CurrentLogFilePath;
+    public string LogsDirectory => AppLogger.LogsDirectoryPath;
+
+    public DiagnosticsViewModel(DispatcherQueue? dispatcher = null)
     {
+        _dispatcher = dispatcher;
         RefreshDiagnostics();
+
+        // Load existing logs
+        var existing = AppLogger.GetRecentLogs();
+        foreach (var log in existing)
+        {
+            LogEntries.Add(log);
+        }
+
+        // Subscribe to live log stream
+        AppLogger.OnLogMessage += OnLogMessageReceived;
+    }
+
+    private void OnLogMessageReceived(string message)
+    {
+        if (_dispatcher != null)
+        {
+            _dispatcher.TryEnqueue(() =>
+            {
+                if (LogEntries.Count >= 1000)
+                {
+                    LogEntries.RemoveAt(0);
+                }
+                LogEntries.Add(message);
+            });
+        }
+        else
+        {
+            if (LogEntries.Count >= 1000)
+            {
+                LogEntries.RemoveAt(0);
+            }
+            LogEntries.Add(message);
+        }
+    }
+
+    [RelayCommand]
+    public void OpenLogsFolder()
+    {
+        AppLogger.OpenLogDirectory();
+    }
+
+    [RelayCommand]
+    public void ClearLogs()
+    {
+        AppLogger.ClearRecentLogs();
+        LogEntries.Clear();
+    }
+
+    [RelayCommand]
+    public void CopyLogs()
+    {
+        try
+        {
+            var text = string.Join(Environment.NewLine, LogEntries);
+            var package = new DataPackage();
+            package.SetText(text);
+            Clipboard.SetContent(package);
+        }
+        // ALLOWED_EXCEPTION: Ignore clipboard errors on restricted security contexts.
+        catch (Exception)
+        {
+        }
     }
 
     [RelayCommand]

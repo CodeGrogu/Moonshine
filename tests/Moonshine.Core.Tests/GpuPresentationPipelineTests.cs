@@ -18,10 +18,12 @@ public class GpuPresentationPipelineTests
     }
 
     [Fact]
-    public void DxgiSwapchainPipeline_NullHwnd_ThrowsInvalidOperationException()
+    public void DxgiSwapchainPipeline_NullHwnd_CreatesCompositionSwapchainSuccessfully()
     {
-        var act = () => new DxgiSwapchainPipeline(IntPtr.Zero, IntPtr.Zero, 1920, 1080);
-        act.Should().Throw<InvalidOperationException>();
+        using var pipeline = new DxgiSwapchainPipeline(IntPtr.Zero, IntPtr.Zero, 1920, 1080);
+        pipeline.Handle.Should().NotBe(IntPtr.Zero);
+        pipeline.Width.Should().Be(1920);
+        pipeline.Height.Should().Be(1080);
     }
 
     [Fact]

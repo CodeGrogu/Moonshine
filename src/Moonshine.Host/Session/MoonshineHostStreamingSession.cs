@@ -584,6 +584,8 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
             int micPort = _config.LocalMicPort != 0 ? _config.LocalMicPort : _config.MicUdpPort;
             _micSocket.Bind(new IPEndPoint(IPAddress.Any, micPort));
         }
+
+        Moonshine.Core.AppLogger.Log($"[Host] Bound UDP sockets: Video={BoundLocalVideoPort}, Audio={BoundLocalAudioPort}, Ctrl={BoundLocalControlPort}, Mic={BoundLocalMicPort}");
     }
 
     /// <summary>
@@ -793,6 +795,8 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                             isKeyframe: isKeyframe,
                             isHdr10: _config.EnableHdr10,
                             sink: SendVideoPacket);
+
+                        if (frameIndex % 60 == 0) Moonshine.Core.AppLogger.Log($"[Host] Encoded frame {frameIndex}, size: {encodedBytes} bytes, packets: {packetsSent}");
 
                         Interlocked.Add(ref _totalPacketsSent, (ulong)packetsSent);
 
@@ -1023,7 +1027,7 @@ public sealed class MoonshineHostStreamingSession : IAsyncDisposable, IDisposabl
                                 PayloadSize: 0,
                                 SequenceNumber: packetHeader.SequenceNumber,
                                 SessionId: _config.SessionId,
-                                TimestampUs: (ulong)((Stopwatch.GetTimestamp() * 1_000_000L) / Stopwatch.Frequency));
+                                TimestampUs: packetHeader.TimestampUs);
 
                             if (MoonshineProtocolCodec.TryWriteHeader(in ackHeader, ackBuffer))
                             {

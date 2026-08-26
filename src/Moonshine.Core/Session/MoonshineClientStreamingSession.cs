@@ -119,6 +119,7 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
     private MoonshineClientAudioPipeline? _audioPipeline;
     private MoonshineFeedbackReporter? _feedbackReporter;
     private ClientMicrophoneCapturePipeline? _micCapturePipeline;
+    private WasapiMicrophoneCapturePipeline? _wasapiMicCapture;
     private MoonshineRemoteHostControlClient? _controlClient;
 
     private Socket? _videoSocket;
@@ -135,6 +136,7 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
     private Task? _audioReceiveTask;
     private Task? _controlKeepAliveTask;
     private Task? _controlReceiveTask;
+    private Task? _micCaptureTask;
 
     private ClientSessionState _state = ClientSessionState.Created;
     private string? _lastError;
@@ -323,6 +325,11 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
             _audioReceiveTask = Task.Run(AudioReceiveLoopAsync, CancellationToken.None);
             _controlKeepAliveTask = Task.Run(ControlKeepAliveLoopAsync, CancellationToken.None);
             _controlReceiveTask = Task.Run(ControlReceiveLoopAsync, CancellationToken.None);
+            if (_config.EnableMicrophoneUplink)
+            {
+                _wasapiMicCapture ??= new WasapiMicrophoneCapturePipeline(48000, 1, 10);
+                _micCaptureTask = Task.Run(MicrophoneCaptureLoopAsync, CancellationToken.None);
+            }
 
             // Send initial hole-punch datagrams so Windows Firewall and NAT routers open bidirectional UDP states
             byte[] punchBuffer = new byte[MoonshineProtocolConstants.HeaderSize];
@@ -333,7 +340,7 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
                 PayloadSize: 0,
                 SequenceNumber: 0,
                 SessionId: _config.SessionId,
-                TimestampUs: (ulong)Stopwatch.GetTimestamp());
+                TimestampUs: (ulong)(Stopwatch.GetTimestamp() * 1_000_000.0 / Stopwatch.Frequency));
             MoonshineProtocolCodec.TryWriteHeader(in punchHeader, punchBuffer);
 
             try
@@ -420,6 +427,9 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
             _micSocket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
             _micSocket.Bind(new IPEndPoint(IPAddress.Any, _config.LocalMicPort));
         }
+
+        Moonshine.Core.AppLogger.Log($"[Client] Bound UDP sockets: Video={BoundLocalVideoPort}, Audio={BoundLocalAudioPort}, Ctrl={BoundLocalControlPort}, Mic={BoundLocalMicPort}");
+        Moonshine.Core.AppLogger.Log($"[Client] Target Endpoints: Video={_hostVideoEndpoint}, Audio={_hostAudioEndpoint}, Ctrl={_hostControlEndpoint}");
     }
 
     private async Task PerformHandshakeAsync(CancellationToken cancellationToken)
@@ -712,6 +722,8 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
                         // Frame complete!
                         Interlocked.Increment(ref _totalVideoFramesCompleted);
 
+                        if (_totalVideoFramesCompleted % 60 == 0) Moonshine.Core.AppLogger.Log($"[Client] Reassembled video frame {_totalVideoFramesCompleted}");
+
                         if (_reassemblyPipeline.TryPopFrame(out MoonshineFrameDesc frame))
                         {
                             OnVideoFrameReassembled?.Invoke(frame);
@@ -862,6 +874,38 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
         }
     }
 
+    private async Task MicrophoneCaptureLoopAsync()
+    {
+        float[] pcmBuffer = new float[480]; // 10ms at 48kHz mono
+        while (!_cts.Token.IsCancellationRequested)
+        {
+            try
+            {
+                if (_wasapiMicCapture != null && _wasapiMicCapture.IsActive)
+                {
+                    if (_wasapiMicCapture.TryReadSamples(pcmBuffer, out int readSamples, out _))
+                    {
+                        if (readSamples > 0)
+                        {
+                            TrySendMicrophoneFrame(pcmBuffer.AsSpan(0, readSamples));
+                        }
+                    }
+                }
+                await Task.Delay(10, _cts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            // ALLOWED_EXCEPTION: Microphone capture worker loop resilience.
+            catch (Exception)
+            {
+                if (_cts.Token.IsCancellationRequested) break;
+                await Task.Delay(20, _cts.Token).ConfigureAwait(false);
+            }
+        }
+    }
+
     private async Task ControlKeepAliveLoopAsync()
     {
         byte[] keepAliveBuffer = new byte[MoonshineProtocolConstants.HeaderSize];
@@ -883,7 +927,7 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
                     PayloadSize: 0,
                     SequenceNumber: ++seq,
                     SessionId: _config.SessionId,
-                    TimestampUs: (ulong)Stopwatch.GetTimestamp());
+                    TimestampUs: (ulong)(Stopwatch.GetTimestamp() * 1_000_000.0 / Stopwatch.Frequency));
 
                 if (MoonshineProtocolCodec.TryWriteHeader(in header, keepAliveBuffer))
                 {
@@ -1007,7 +1051,7 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
             PayloadSize: 12,
             SequenceNumber: unchecked(++_inputSequenceNumber),
             SessionId: _config.SessionId,
-            TimestampUs: (ulong)Stopwatch.GetTimestamp());
+            TimestampUs: (ulong)(Stopwatch.GetTimestamp() * 1_000_000.0 / Stopwatch.Frequency));
 
         var payload = new MoonshineInputKeyboardPayload
         {
@@ -1054,7 +1098,7 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
             PayloadSize: 20,
             SequenceNumber: unchecked(++_inputSequenceNumber),
             SessionId: _config.SessionId,
-            TimestampUs: (ulong)Stopwatch.GetTimestamp());
+            TimestampUs: (ulong)(Stopwatch.GetTimestamp() * 1_000_000.0 / Stopwatch.Frequency));
 
         var payload = new MoonshineInputMousePayload
         {
@@ -1113,7 +1157,7 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
             PayloadSize: 24,
             SequenceNumber: unchecked(++_inputSequenceNumber),
             SessionId: _config.SessionId,
-            TimestampUs: (ulong)Stopwatch.GetTimestamp());
+            TimestampUs: (ulong)(Stopwatch.GetTimestamp() * 1_000_000.0 / Stopwatch.Frequency));
 
         var payload = new MoonshineInputGamepadPayload
         {
@@ -1289,6 +1333,7 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
         if (_audioReceiveTask != null) tasks.Add(_audioReceiveTask);
         if (_controlKeepAliveTask != null) tasks.Add(_controlKeepAliveTask);
         if (_controlReceiveTask != null) tasks.Add(_controlReceiveTask);
+        if (_micCaptureTask != null) tasks.Add(_micCaptureTask);
 
         if (tasks.Count > 0)
         {
@@ -1316,6 +1361,9 @@ public sealed class MoonshineClientStreamingSession : IAsyncDisposable, IDisposa
 
         _controlSocket?.Dispose();
         _controlSocket = null;
+
+        _wasapiMicCapture?.Dispose();
+        _wasapiMicCapture = null;
 
         if (_ownsMicCapture)
         {

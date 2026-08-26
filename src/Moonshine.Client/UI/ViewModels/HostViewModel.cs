@@ -220,9 +220,46 @@ public sealed partial class HostViewModel : ObservableObject, IDisposable
     {
         if (!IsRunning) return;
 
+        var coordinator = Moonshine.App.HostServerRunner.ActiveCoordinator;
+        if (coordinator == null) return;
+
+        var sessions = coordinator.ActiveSessions;
+        int clientCount = sessions.Count;
+        ulong totalFrames = 0;
+        ulong dropped = 0;
+        double totalBitrateMbps = 0.0;
+        double avgEncodeLatencyMs = 0.0;
+
+        foreach (var session in sessions)
+        {
+            var m = session.Metrics;
+            totalFrames += m.TotalFramesEncoded;
+            if (m.TotalFramesCaptured > m.TotalFramesEncoded)
+            {
+                dropped += (m.TotalFramesCaptured - m.TotalFramesEncoded);
+            }
+            totalBitrateMbps += m.CurrentBitrateKbps / 1000.0;
+            if (m.AverageCaptureToNetworkLatencyUs > 0)
+            {
+                avgEncodeLatencyMs = m.AverageCaptureToNetworkLatencyUs / 1000.0;
+            }
+        }
+
         _dispatcher.TryEnqueue(() =>
         {
-            // Throttled telemetry tick
+            ActiveClients = clientCount;
+            TotalFramesEncoded = totalFrames;
+            DroppedFrames = dropped;
+            StreamingBitrateMbps = Math.Round(totalBitrateMbps, 2);
+            EncodeLatencyMs = Math.Round(avgEncodeLatencyMs, 2);
+            if (IsRunning && clientCount > 0)
+            {
+                StatusText = $"Hosting active - {clientCount} client(s) connected";
+            }
+            else if (IsRunning)
+            {
+                StatusText = $"Hosting on port {Port} - Ready for connections";
+            }
         });
     }
 
