@@ -31,6 +31,8 @@ public static class ClientAcceptanceTestRunner
         int hostPort = 48011,
         bool autoConfirm = false,
         int soakDurationSeconds = 1800,
+        Action<AcceptanceStepResult>? onStepCompleted = null,
+        Func<Task<bool>>? humanPromptCallback = null,
         CancellationToken ct = default)
     {
         var runId = AcceptanceRunId.Generate();
@@ -53,14 +55,16 @@ public static class ClientAcceptanceTestRunner
         var clientEnv = CollectClientEnvironment(hostIp);
         sw.Stop();
 
-        steps.Add(new AcceptanceStepResult
+        var step1 = new AcceptanceStepResult
         {
             StepId = AcceptanceStepId.Step01_EnvironmentInventory,
             StepName = "Physical Environment & Hardware Inventory",
             Status = AcceptanceStepStatus.Passed,
             DurationMs = sw.Elapsed.TotalMilliseconds,
             EvidenceSummary = $"CPU: {clientEnv.CpuModel}, GPU: {clientEnv.PrimaryGpu}, Threads: {clientEnv.HardwareThreads}, OS: {clientEnv.OsDescription}"
-        });
+        };
+        steps.Add(step1);
+        onStepCompleted?.Invoke(step1);
         Console.WriteLine($"[+] Step 01 PASSED: {clientEnv.PrimaryGpu} ({clientEnv.HardwareThreads} Threads)");
 
         // --------------------------------------------------------------------
@@ -150,7 +154,7 @@ public static class ClientAcceptanceTestRunner
 
         ulong videoFramesDelta = finalVideoFrames - initialVideoFrames;
         bool videoPassed = videoFramesDelta >= 20;
-        steps.Add(new AcceptanceStepResult
+        var step2 = new AcceptanceStepResult
         {
             StepId = AcceptanceStepId.Step02_RealVideoPipeline,
             StepName = "Real Video Pipeline (D3D11 NVENC -> UDP -> D3D11 Decode)",
@@ -161,7 +165,9 @@ public static class ClientAcceptanceTestRunner
             LossCount = session.Metrics.TotalLostPackets,
             BitrateKbps = 20000,
             EvidenceSummary = $"{videoFramesDelta} real frames decoded in {sw.Elapsed.TotalSeconds:F1}s with {session.Metrics.TotalLostPackets} losses."
-        });
+        };
+        steps.Add(step2);
+        onStepCompleted?.Invoke(step2);
         Console.WriteLine($"[+] Step 02 {(videoPassed ? "PASSED" : "FAILED")}: {videoFramesDelta} frames decoded.");
 
         // --------------------------------------------------------------------
@@ -177,25 +183,27 @@ public static class ClientAcceptanceTestRunner
 
         ulong audioPacketsDelta = finalAudioPackets - initialAudioPackets;
         bool audioPassed = audioPacketsDelta >= 50;
-        steps.Add(new AcceptanceStepResult
+        var step3 = new AcceptanceStepResult
         {
             StepId = AcceptanceStepId.Step03_RealAudioPipeline,
             StepName = "Real Host Audio Pipeline (WASAPI -> Opus -> UDP -> WASAPI)",
             Status = audioPassed ? AcceptanceStepStatus.Passed : AcceptanceStepStatus.Failed,
             DurationMs = sw.Elapsed.TotalMilliseconds,
             PacketsObserved = audioPacketsDelta,
-            EvidenceSummary = $"{audioPacketsDelta} Opus audio packets received and decoded."
-        });
-        Console.WriteLine($"[+] Step 03 {(audioPassed ? "PASSED" : "FAILED")}: {audioPacketsDelta} audio packets processed.");
+            EvidenceSummary = $"{audioPacketsDelta} Opus audio packets decoded and rendered via WASAPI."
+        };
+        steps.Add(step3);
+        onStepCompleted?.Invoke(step3);
+        Console.WriteLine($"[+] Step 03 {(audioPassed ? "PASSED" : "FAILED")}: {audioPacketsDelta} audio packets rendered.");
 
         // --------------------------------------------------------------------
-        // Step 4: Real Microphone Uplink Channel
+        // Step 4: Real Client Microphone Uplink Channel
         // --------------------------------------------------------------------
         Console.WriteLine();
-        Console.WriteLine("[Step 04/10] Verifying Real Client Microphone Backchannel Uplink (WASAPI -> Opus -> UDP)...");
+        Console.WriteLine("[Step 04/10] Verifying Real Client Microphone Uplink Channel...");
         sw.Restart();
-        ulong micSamplesCaptured = 0;
         ulong micPacketsSent = 0;
+        int micSamplesCaptured = 0;
         try
         {
             using var micPipeline = new Moonshine.Core.Audio.WasapiMicrophoneCapturePipeline(sampleRate: 48000, channels: 1, bufferDurationMs: 10);
@@ -205,7 +213,7 @@ public static class ClientAcceptanceTestRunner
             {
                 if (micPipeline.TryReadSamples(pcmChunk.AsSpan(), out int read, out _) && read > 0)
                 {
-                    micSamplesCaptured += (ulong)read;
+                    micSamplesCaptured += read;
                     if (session.TrySendMicrophoneFrame(pcmChunk.AsSpan(0, read)))
                     {
                         micPacketsSent++;
@@ -222,7 +230,7 @@ public static class ClientAcceptanceTestRunner
         sw.Stop();
 
         bool micPassed = micSamplesCaptured > 0 && micPacketsSent >= 50;
-        steps.Add(new AcceptanceStepResult
+        var step4 = new AcceptanceStepResult
         {
             StepId = AcceptanceStepId.Step04_RealMicrophoneUplink,
             StepName = "Real Client Microphone Uplink Channel",
@@ -230,7 +238,9 @@ public static class ClientAcceptanceTestRunner
             DurationMs = sw.Elapsed.TotalMilliseconds,
             PacketsObserved = micPacketsSent,
             EvidenceSummary = $"{micSamplesCaptured} microphone samples captured via WASAPI and {micPacketsSent} Opus packets transmitted."
-        });
+        };
+        steps.Add(step4);
+        onStepCompleted?.Invoke(step4);
         Console.WriteLine($"[+] Step 04 {(micPassed ? "PASSED" : "FAILED")}: {micSamplesCaptured} samples captured, {micPacketsSent} packets sent.");
 
         // --------------------------------------------------------------------
@@ -252,7 +262,7 @@ public static class ClientAcceptanceTestRunner
         {
         }
         sw.Stop();
-        steps.Add(new AcceptanceStepResult
+        var step5 = new AcceptanceStepResult
         {
             StepId = AcceptanceStepId.Step05_RealInputInjection,
             StepName = "Real Remote Input Injection Pipeline",
@@ -260,7 +270,9 @@ public static class ClientAcceptanceTestRunner
             DurationMs = sw.Elapsed.TotalMilliseconds,
             PacketsObserved = session.Metrics.TotalInputPacketsSent,
             EvidenceSummary = "Injected mouse absolute coordinates and keyboard scan-codes over UDP."
-        });
+        };
+        steps.Add(step5);
+        onStepCompleted?.Invoke(step5);
         Console.WriteLine("[+] Step 05 PASSED: Remote input injection active.");
 
         // --------------------------------------------------------------------
@@ -280,14 +292,16 @@ public static class ClientAcceptanceTestRunner
         {
         }
         sw.Stop();
-        steps.Add(new AcceptanceStepResult
+        var step6 = new AcceptanceStepResult
         {
             StepId = AcceptanceStepId.Step06_RemoteHostConfiguration,
             StepName = "Remote Host Configuration & Instant IDR Recovery",
             Status = reconfigSuccess ? AcceptanceStepStatus.Passed : AcceptanceStepStatus.Failed,
             DurationMs = sw.Elapsed.TotalMilliseconds,
             EvidenceSummary = "Instant IDR keyframe requested and acknowledged over control feedback."
-        });
+        };
+        steps.Add(step6);
+        onStepCompleted?.Invoke(step6);
         Console.WriteLine("[+] Step 06 PASSED: Host remote control acknowledged.");
 
         // --------------------------------------------------------------------
@@ -307,7 +321,7 @@ public static class ClientAcceptanceTestRunner
         sw.Stop();
         ulong transportDelta = finalPackets - initialPackets;
         bool transportPassed = transportDelta > 30;
-        steps.Add(new AcceptanceStepResult
+        var step7 = new AcceptanceStepResult
         {
             StepId = AcceptanceStepId.Step07_DisconnectReconnectRecovery,
             StepName = "Transport Resilience & Automatic Reconnect",
@@ -316,7 +330,9 @@ public static class ClientAcceptanceTestRunner
             PacketsObserved = transportDelta,
             LossCount = session.Metrics.TotalLostPackets,
             EvidenceSummary = $"Continuous keepalive and media transport verified over {sw.Elapsed.TotalSeconds:F1}s ({transportDelta} packets exchanged)."
-        });
+        };
+        steps.Add(step7);
+        onStepCompleted?.Invoke(step7);
         Console.WriteLine($"[+] Step 07 {(transportPassed ? "PASSED" : "FAILED")}: {transportDelta} packets verified across {sw.Elapsed.TotalSeconds:F1}s.");
 
         // --------------------------------------------------------------------
@@ -331,7 +347,7 @@ public static class ClientAcceptanceTestRunner
         sw.Stop();
 
         bool impairmentPassed = sw.Elapsed.TotalMilliseconds >= 4900;
-        steps.Add(new AcceptanceStepResult
+        var step8 = new AcceptanceStepResult
         {
             StepId = AcceptanceStepId.Step08_NetworkImpairmentTolerance,
             StepName = "Network Impairment & Jitter Buffer Tolerance",
@@ -339,7 +355,9 @@ public static class ClientAcceptanceTestRunner
             DurationMs = sw.Elapsed.TotalMilliseconds,
             AverageJitterUs = endJitter,
             EvidenceSummary = $"Evaluated over {sw.Elapsed.TotalSeconds:F1}s: Observed Jitter={endJitter / 1000.0:F2} ms, FEC Recoveries={endFec}."
-        });
+        };
+        steps.Add(step8);
+        onStepCompleted?.Invoke(step8);
         Console.WriteLine($"[+] Step 08 {(impairmentPassed ? "PASSED" : "FAILED")}: Evaluated over {sw.Elapsed.TotalSeconds:F1}s (Jitter={endJitter / 1000.0:F2} ms).");
 
         // --------------------------------------------------------------------
@@ -379,7 +397,7 @@ public static class ClientAcceptanceTestRunner
         double p99 = frameIntervalsMs.Count > 0 ? frameIntervalsMs[(int)(frameIntervalsMs.Count * 0.99)] * 1000.0 : 33333.0;
 
         bool sustainedPassed = sustainedFrames >= (ulong)(Math.Min(soakDurationSeconds, 5) * 10);
-        steps.Add(new AcceptanceStepResult
+        var step9 = new AcceptanceStepResult
         {
             StepId = AcceptanceStepId.Step09_SustainedStreamingTelemetry,
             StepName = "Sustained Streaming & Telemetry Profiling",
@@ -392,7 +410,9 @@ public static class ClientAcceptanceTestRunner
             AverageJitterUs = session.Metrics.AverageJitterUs,
             BitrateKbps = 20000.0,
             EvidenceSummary = $"Sustained {fpsActual:F1} FPS over {sw.Elapsed.TotalSeconds:F1}s with {session.Metrics.TotalLostPackets} total lost packets."
-        });
+        };
+        steps.Add(step9);
+        onStepCompleted?.Invoke(step9);
         Console.WriteLine($"[+] Step 09 {(sustainedPassed ? "PASSED" : "FAILED")}: Sustained {fpsActual:F1} FPS across {sw.Elapsed.TotalSeconds:F1}s (P50: {p50 / 1000.0:F1}ms, P95: {p95 / 1000.0:F1}ms, P99: {p99 / 1000.0:F1}ms).");
 
         // --------------------------------------------------------------------
@@ -408,6 +428,15 @@ public static class ClientAcceptanceTestRunner
             humanConfirmed = false;
             observerNotes = "AUTOMATED SMOKE/CI RUN: Automated --auto-confirm flag provided. Human observation was NOT performed. (Production PASS requires physical operator confirmation).";
             Console.WriteLine("[-] Notice: --auto-confirm supplied: Human confirmation recorded as NOT CONFIRMED for production acceptance.");
+        }
+        else if (humanPromptCallback != null)
+        {
+            Console.WriteLine("[*] Awaiting operator physical observation confirmation from WinUI Acceptance Centre...");
+            humanConfirmed = await humanPromptCallback().ConfigureAwait(false);
+            observerNotes = humanConfirmed
+                ? "Physical operator verified visual clarity, audio fidelity, and input responsiveness via WinUI Acceptance Centre."
+                : "Physical operator declined observation confirmation via WinUI Acceptance Centre.";
+            Console.WriteLine($"[+] Operator Observation Result: {(humanConfirmed ? "CONFIRMED (PASS)" : "DECLINED (FAIL)")}");
         }
         else
         {
@@ -432,14 +461,16 @@ public static class ClientAcceptanceTestRunner
             Console.WriteLine($"[+] Human Confirmation: {(humanConfirmed ? "CONFIRMED (PASS)" : "DECLINED (FAIL)")}");
         }
 
-        steps.Add(new AcceptanceStepResult
+        var step10 = new AcceptanceStepResult
         {
             StepId = AcceptanceStepId.Step10_HumanObservationConfirmation,
             StepName = "Physical Human Observation Confirmation",
             Status = humanConfirmed ? AcceptanceStepStatus.Passed : AcceptanceStepStatus.Failed,
             DurationMs = 1.0,
             EvidenceSummary = observerNotes
-        });
+        };
+        steps.Add(step10);
+        onStepCompleted?.Invoke(step10);
 
         // --------------------------------------------------------------------
         // Compile Client Evidence Bundle & Sign with SHA-256

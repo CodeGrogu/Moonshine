@@ -11,6 +11,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Dispatching;
 using Moonshine.App;
 using Moonshine.Core;
+using Moonshine.Core.Discovery;
 using Moonshine.Core.Session;
 using Moonshine.Protocol;
 using Moonshine.Protocol.Codecs;
@@ -163,44 +164,48 @@ public sealed partial class ClientViewModel : ObservableObject, IDisposable
 
         try
         {
-            using var udp = new UdpClient();
-            udp.EnableBroadcast = true;
-            var endpoint = new IPEndPoint(IPAddress.Broadcast, Port);
-            var reqBytes = Encoding.UTF8.GetBytes("{\"Type\":\"MoonshineDiscoveryProbe\",\"Version\":\"1.0\"}");
-            await udp.SendAsync(reqBytes, reqBytes.Length, endpoint).ConfigureAwait(false);
+            await using var discovery = new MoonshineLanDiscoveryEngine(discoveryPort: Port);
+            discovery.Start();
 
-            var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-            while (!cts.IsCancellationRequested)
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+            await discovery.SendProbeAsync(cancellationToken: cts.Token).ConfigureAwait(false);
+
+            if (!string.IsNullOrWhiteSpace(HostAddress) &&
+                HostAddress != "127.0.0.1" &&
+                IPAddress.TryParse(HostAddress, out var directIp))
             {
-                try
-                {
-                    var result = await udp.ReceiveAsync(cts.Token).ConfigureAwait(false);
-                    string ip = result.RemoteEndPoint.Address.ToString();
-                    _dispatcher.TryEnqueue(() =>
-                    {
-                        if (!DiscoveredHosts.Contains(ip))
-                        {
-                            DiscoveredHosts.Add(ip);
-                            HostAddress = ip;
-                            StatusText = $"Discovered host at {ip}";
-                        }
-                    });
-                }
-                catch (OperationCanceledException)
-                {
-                    break;
-                }
+                await discovery.SendProbeAsync(new IPEndPoint(directIp, Port), cancellationToken: cts.Token).ConfigureAwait(false);
             }
+
+            await Task.Delay(2000, cts.Token).ConfigureAwait(false);
+
+            var hosts = discovery.ActiveHosts.ToList();
+            _dispatcher.TryEnqueue(() =>
+            {
+                foreach (var h in hosts)
+                {
+                    string ip = h.EndpointAddress.ToString();
+                    if (!DiscoveredHosts.Contains(ip))
+                    {
+                        DiscoveredHosts.Add(ip);
+                    }
+                }
+
+                if (hosts.Count > 0)
+                {
+                    HostAddress = hosts[0].EndpointAddress.ToString();
+                    StatusText = $"Discovered {hosts.Count} host(s). Ready to connect.";
+                }
+                else
+                {
+                    StatusText = "No LAN hosts responded. Ensure host server is running.";
+                }
+            });
         }
         // ALLOWED_EXCEPTION: Handle UDP discovery network broadcast errors.
         catch (Exception ex)
         {
-            StatusText = $"Discovery probe finished: {ex.Message}";
-        }
-
-        if (DiscoveredHosts.Count == 0)
-        {
-            StatusText = "No LAN hosts responded to broadcast. Enter IP manually.";
+            StatusText = $"Discovery finished: {ex.Message}";
         }
     }
 

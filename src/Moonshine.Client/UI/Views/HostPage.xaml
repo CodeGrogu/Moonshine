@@ -47,14 +47,14 @@
                     <TextBox Grid.Row="0" Grid.Column="0" Header="Control / Discovery Port" Text="{x:Bind ViewModel.Port, Mode=TwoWay}" />
                     <TextBox Grid.Row="0" Grid.Column="1" Header="Target Bitrate (Kbps)" Text="{x:Bind ViewModel.BitrateKbps, Mode=TwoWay}" />
 
-                    <ComboBox Grid.Row="1" Grid.Column="0" Header="Video Codec" SelectedValue="{x:Bind ViewModel.SelectedCodec, Mode=TwoWay}" HorizontalAlignment="Stretch">
-                        <ComboBoxItem Content="HEVC (H.265)" IsSelected="True" />
+                    <ComboBox Grid.Row="1" Grid.Column="0" Header="Video Codec" SelectedValue="{x:Bind ViewModel.SelectedCodec, Mode=TwoWay}" SelectedValuePath="Content" HorizontalAlignment="Stretch">
+                        <ComboBoxItem Content="HEVC (H.265)" />
                         <ComboBoxItem Content="H.264 (AVC)" />
                         <ComboBoxItem Content="AV1" />
                     </ComboBox>
 
-                    <ComboBox Grid.Row="1" Grid.Column="1" Header="Target Frame Rate" SelectedValue="{x:Bind ViewModel.Fps, Mode=TwoWay}" HorizontalAlignment="Stretch">
-                        <ComboBoxItem Content="60" IsSelected="True" />
+                    <ComboBox Grid.Row="1" Grid.Column="1" Header="Target Frame Rate" SelectedValue="{x:Bind ViewModel.SelectedFpsString, Mode=TwoWay}" SelectedValuePath="Content" HorizontalAlignment="Stretch">
+                        <ComboBoxItem Content="60" />
                         <ComboBoxItem Content="120" />
                     </ComboBox>
 

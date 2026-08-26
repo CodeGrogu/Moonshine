@@ -23,6 +23,7 @@ public partial class App : Application
             this.InitializeComponent();
             File.AppendAllText(Path.Combine(baseDir, "moonshine_app.log"), "[INFO] App() InitializeComponent succeeded.\n");
         }
+        // ALLOWED_EXCEPTION: Log critical initialization crash to disk before rethrowing exception.
         catch (Exception ex)
         {
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
@@ -36,12 +37,16 @@ public partial class App : Application
         try
         {
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            File.AppendAllText(Path.Combine(baseDir, "moonshine_app.log"), "[INFO] OnLaunched entered, creating MainWindow...\n");
+            File.AppendAllText(Path.Combine(baseDir, "moonshine_app.log"), "[INFO] OnLaunched entered, initializing AppServices...\n");
+            AppServices.Initialize(Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread());
+
+            File.AppendAllText(Path.Combine(baseDir, "moonshine_app.log"), "[INFO] AppServices initialized, creating MainWindow...\n");
             _mainWindow = new MainWindow();
             File.AppendAllText(Path.Combine(baseDir, "moonshine_app.log"), "[INFO] MainWindow created, activating...\n");
             _mainWindow.Activate();
             File.AppendAllText(Path.Combine(baseDir, "moonshine_app.log"), "[INFO] MainWindow activated successfully.\n");
         }
+        // ALLOWED_EXCEPTION: Log critical launch crash to disk before rethrowing exception.
         catch (Exception ex)
         {
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;

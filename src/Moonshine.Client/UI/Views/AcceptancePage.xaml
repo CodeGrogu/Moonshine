@@ -38,8 +38,8 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
-                    <ComboBox Grid.Column="0" Header="Acceptance Role" SelectedValue="{x:Bind ViewModel.AcceptanceRole, Mode=TwoWay}" VerticalAlignment="Bottom">
-                        <ComboBoxItem Content="Client" IsSelected="True" />
+                    <ComboBox Grid.Column="0" Header="Acceptance Role" SelectedValue="{x:Bind ViewModel.AcceptanceRole, Mode=TwoWay}" SelectedValuePath="Content" VerticalAlignment="Bottom">
+                        <ComboBoxItem Content="Client" />
                         <ComboBoxItem Content="Host" />
                     </ComboBox>
 

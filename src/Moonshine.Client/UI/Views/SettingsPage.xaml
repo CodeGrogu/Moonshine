@@ -17,16 +17,16 @@
             <StackPanel Spacing="16">
                 <TextBlock Text="Video Stream Defaults" Style="{ThemeResource SubtitleTextBlockStyle}" />
 
-                <ComboBox Header="Default Codec" SelectedValue="{x:Bind ViewModel.DefaultCodec, Mode=TwoWay}" HorizontalAlignment="Stretch">
-                    <ComboBoxItem Content="HEVC (H.265)" IsSelected="True" />
+                <ComboBox Header="Default Codec" SelectedValue="{x:Bind ViewModel.DefaultCodec, Mode=TwoWay}" SelectedValuePath="Content" HorizontalAlignment="Stretch">
+                    <ComboBoxItem Content="HEVC (H.265)" />
                     <ComboBoxItem Content="H.264 (AVC)" />
                     <ComboBoxItem Content="AV1" />
                 </ComboBox>
 
                 <TextBox Header="Default Bitrate (Kbps)" Text="{x:Bind ViewModel.DefaultBitrateKbps, Mode=TwoWay}" />
 
-                <ComboBox Header="Default Frame Rate" SelectedValue="{x:Bind ViewModel.DefaultFps, Mode=TwoWay}" HorizontalAlignment="Stretch">
-                    <ComboBoxItem Content="60" IsSelected="True" />
+                <ComboBox Header="Default Frame Rate" SelectedValue="{x:Bind ViewModel.SelectedFpsString, Mode=TwoWay}" SelectedValuePath="Content" HorizontalAlignment="Stretch">
+                    <ComboBoxItem Content="60" />
                     <ComboBoxItem Content="120" />
                 </ComboBox>
 
@@ -36,8 +36,8 @@
             <StackPanel Spacing="16">
                 <TextBlock Text="Audio Subsystem" Style="{ThemeResource SubtitleTextBlockStyle}" />
 
-                <ComboBox Header="Audio Playback Sink" SelectedValue="{x:Bind ViewModel.AudioSink, Mode=TwoWay}" HorizontalAlignment="Stretch">
-                    <ComboBoxItem Content="WASAPI Exclusive (Low Latency)" IsSelected="True" />
+                <ComboBox Header="Audio Playback Sink" SelectedValue="{x:Bind ViewModel.AudioSink, Mode=TwoWay}" SelectedValuePath="Content" HorizontalAlignment="Stretch">
+                    <ComboBoxItem Content="WASAPI Exclusive (Low Latency)" />
                     <ComboBoxItem Content="WASAPI Shared (Standard)" />
                     <ComboBoxItem Content="Moonshine Virtual Audio Driver" />
                 </ComboBox>

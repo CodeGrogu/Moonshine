@@ -40,7 +40,25 @@ public sealed partial class HostViewModel : ObservableObject, IDisposable
     public int Fps
     {
         get => _fps;
-        set => SetProperty(ref _fps, value);
+        set
+        {
+            if (SetProperty(ref _fps, value))
+            {
+                OnPropertyChanged(nameof(SelectedFpsString));
+            }
+        }
+    }
+
+    public string SelectedFpsString
+    {
+        get => _fps.ToString();
+        set
+        {
+            if (int.TryParse(value, out int v))
+            {
+                Fps = v;
+            }
+        }
     }
 
     private string _selectedResolution = "1920x1080";

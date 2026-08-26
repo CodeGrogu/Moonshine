@@ -1,4 +1,3 @@
-using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using Moonshine.UI.ViewModels;
@@ -11,13 +10,8 @@ public sealed partial class AcceptancePage : Page
 
     public AcceptancePage()
     {
+        this.NavigationCacheMode = NavigationCacheMode.Required;
+        this.ViewModel = AppServices.Acceptance;
         this.InitializeComponent();
-        ViewModel = new AcceptanceViewModel(DispatcherQueue.GetForCurrentThread());
-    }
-
-    protected override void OnNavigatedFrom(NavigationEventArgs e)
-    {
-        base.OnNavigatedFrom(e);
-        ViewModel.Dispose();
     }
 }

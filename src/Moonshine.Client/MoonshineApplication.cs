@@ -102,7 +102,7 @@ public sealed class MoonshineApplication : IDisposable
                     options.Port,
                     options.AutoConfirm,
                     soakSecs,
-                    ct).ConfigureAwait(false);
+                    ct: ct).ConfigureAwait(false);
 
             default:
                 PrintHelp();

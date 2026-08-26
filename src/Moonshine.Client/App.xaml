@@ -8,6 +8,7 @@
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
             <converters:InverseBoolConverter x:Key="InverseBoolConverter" xmlns:converters="using:Moonshine.UI.Converters" />
+            <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" xmlns:converters="using:Moonshine.UI.Converters" />
             <converters:StringFormatConverter x:Key="StringFormatConverter" xmlns:converters="using:Moonshine.UI.Converters" />
         </ResourceDictionary>
     </Application.Resources>

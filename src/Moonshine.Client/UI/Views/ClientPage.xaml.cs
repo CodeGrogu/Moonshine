@@ -1,5 +1,4 @@
 using System;
-using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using Moonshine.UI.Controls;
@@ -10,12 +9,14 @@ namespace Moonshine.UI.Views;
 public sealed partial class ClientPage : Page, IDisposable
 {
     public ClientViewModel ViewModel { get; }
-    private readonly DirectXVideoPresenter _videoPresenter;
+    private DirectXVideoPresenter? _videoPresenter;
 
     public ClientPage()
     {
+        this.NavigationCacheMode = NavigationCacheMode.Required;
+        this.ViewModel = AppServices.Client;
         this.InitializeComponent();
-        ViewModel = new ClientViewModel(DispatcherQueue.GetForCurrentThread());
+
         _videoPresenter = new DirectXVideoPresenter(VideoSwapChainPanel);
 
         ViewModel.SwapChainCreated += (s, swapChainHandle) =>
@@ -24,15 +25,9 @@ public sealed partial class ClientPage : Page, IDisposable
         };
     }
 
-    protected override void OnNavigatedFrom(NavigationEventArgs e)
-    {
-        base.OnNavigatedFrom(e);
-        Dispose();
-    }
-
     public void Dispose()
     {
-        _videoPresenter.Dispose();
-        ViewModel.Dispose();
+        _videoPresenter?.Dispose();
+        _videoPresenter = null;
     }
 }

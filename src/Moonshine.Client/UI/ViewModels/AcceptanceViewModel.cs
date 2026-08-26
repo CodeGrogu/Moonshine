@@ -226,6 +226,20 @@ public sealed partial class AcceptanceViewModel : ObservableObject, IDisposable
                     hostPort: Port,
                     autoConfirm: false,
                     soakDurationSeconds: 30, // Default interactive soak
+                    onStepCompleted: stepResult =>
+                    {
+                        _dispatcher.TryEnqueue(() =>
+                        {
+                            int idx = (int)stepResult.StepId;
+                            if (idx >= 0 && idx < Steps.Count)
+                            {
+                                Steps[idx].Status = stepResult.Status == AcceptanceStepStatus.Passed ? "PASS" : "FAIL";
+                                Steps[idx].Duration = $"{stepResult.DurationMs:F0} ms";
+                                Steps[idx].EvidenceSummary = stepResult.EvidenceSummary;
+                            }
+                        });
+                    },
+                    humanPromptCallback: PromptOperatorObservationAsync,
                     ct: _acceptanceCts.Token).ConfigureAwait(false);
 
                 _dispatcher.TryEnqueue(() =>
