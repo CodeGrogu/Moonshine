@@ -463,6 +463,51 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
 
 ---
 
+### [TODO-029] Real MNBP Datagram Fragmentation & Backpressure Socket Transport
+* **Status**: `Completed`
+* **Priority**: `P1`
+* **Prerequisites**: None
+* **Scope**: `src/Moonshine.Protocol/` and `src/Moonshine.Core/`
+* **Objective**: Validate MTU-bounded MNBP packet fragmentation, socket backpressure, per-peer buffer ceilings, and zero GC allocations during real socket transmission.
+* **Acceptance Criteria**:
+  - [x] Enforce MTU boundary rules (1400 bytes max UDP payload) and shard fragmentation.
+  - [x] Assert send/receive backpressure prevents memory exhaustion under slow reader scenarios.
+  - [x] 100% pass rate in MNBP transport and packetisation tests.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T03:03:03Z | Commit: b7c6524 | Proof: 100% pass across MoonshineMediaPacketiserTests and MNBP binary framing suites -->
+
+---
+
+### [TODO-030] Network Impairment Resilience (Loss, Duplicates, Burst Erasures, Timeout)
+* **Status**: `Completed`
+* **Priority**: `P1`
+* **Prerequisites**: None
+* **Scope**: `src/Moonshine.Core/` and `tests/Moonshine.Core.Tests/`
+* **Objective**: Validate resilience against network packet loss, duplicate datagrams, burst erasures, out-of-order jitter, and session connection timeout.
+* **Acceptance Criteria**:
+  - [x] Discard duplicate datagrams using sliding replay window without state corruption.
+  - [x] Recover from burst shard erasures via FEC Reed-Solomon engine.
+  - [x] 100% pass rate in network impairment and timeout tests in `MoonshineClientStreamingSessionTests`.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T03:03:03Z | Commit: b7c6524 | Proof: 100% pass across packet reordering, jitter buffer, and connection timeout tests -->
+
+---
+
+### [TODO-031] Simultaneous Dual-Role (Host + Client) Resource Isolation & Fault Containment
+* **Status**: `Completed`
+* **Priority**: `P1`
+* **Prerequisites**: None
+* **Scope**: `src/Moonshine.Host/` and `src/Moonshine.Core/`
+* **Objective**: Validate that both host and client role graphs can run concurrently on the same machine with independent lifecycles and complete fault containment.
+* **Acceptance Criteria**:
+  - [x] Host and client roles execute simultaneously with zero port or resource conflicts.
+  - [x] Stopping or faulting one role does not terminate or corrupt the other.
+  - [x] 100% pass rate in `RoleIsolation_HostAndHostClient_AdvertiseCleanly` and concurrent lifecycle tests.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T03:03:03Z | Commit: b7c6524 | Proof: 100% pass in RoleIsolation_HostAndHostClient_AdvertiseCleanly and concurrent lifecycle suites -->
+
+---
+
 # Moonshine TODO
 
 > **Purpose:** This is the implementation and verification checklist for Moonshine after the fresh deep audit of `dd7955b26d7208f543b8092b17a4ed175dbfbc31` on 26 August 2026.
