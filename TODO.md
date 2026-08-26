@@ -703,6 +703,66 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
 
 ---
 
+### [TODO-045] Cross-Vendor Host Hardware & GPU Diagnostic Telemetry Pipeline (Issue #37)
+* **Status**: `Completed`
+* **Priority**: `P1`
+* **Prerequisites**: None
+* **Scope**: `src/Moonshine.Host/` and `src/Moonshine.Core/`
+* **Objective**: Expose real hardware metrics from Windows OS and GPU vendor APIs (NVIDIA NVML/D3D11, AMD, Intel) reporting CPU utilization, VRAM, and encoder state.
+* **Acceptance Criteria**:
+  - [x] Retrieve physical GPU adapter LUID, device name, and VRAM memory metrics.
+  - [x] Distinguish unavailable metrics from zero without fabricating data.
+  - [x] 100% pass rate in hardware telemetry and adapter inventory tests.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T03:36:01Z | Commit: d5d1b44 | Proof: 100% pass in GpuAdapterInventoryTests and HostCapabilityProbeEngineTests -->
+
+---
+
+### [TODO-046] Production Hardware Metric Polling & Zero-Fabrication Invariant (Issue #37)
+* **Status**: `Completed`
+* **Priority**: `P1`
+* **Prerequisites**: None
+* **Scope**: `src/Moonshine.Host/` and `tests/Moonshine.Host.Tests/`
+* **Objective**: Ensure telemetry polling runs on bounded intervals off media hot paths with zero GC allocations and strict data provenance.
+* **Acceptance Criteria**:
+  - [x] Assert telemetry polling does not block video capture, encoding, or audio streaming.
+  - [x] Bounded JSON/binary telemetry payloads with zero hardcoded simulation values.
+  - [x] 100% pass rate in `HostDiscoveryAdvertiser_HealthAndTelemetry_ReportsAccurately`.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T03:36:01Z | Commit: d5d1b44 | Proof: 100% pass in HostDiscoveryAdvertiser and health telemetry tests -->
+
+---
+
+### [TODO-047] Unified Runtime Role Coordinator & Zero-Resource Role Isolation (Issue #28)
+* **Status**: `Completed`
+* **Priority**: `P1`
+* **Prerequisites**: None
+* **Scope**: `src/Moonshine.Core/` and `tests/Moonshine.Core.Tests/`
+* **Objective**: Implement deterministic runtime coordinator supporting Host-only, Client-only, and Host + Client modes with complete resource isolation.
+* **Acceptance Criteria**:
+  - [x] Assert disabled roles allocate 0 sockets, 0 listeners, and 0 background workers.
+  - [x] Role transitions and runtime fault recovery operate deterministically.
+  - [x] 100% pass rate in `RuntimeCoordinatorTests` and `MoonshineLanDiscoveryTests`.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T03:36:01Z | Commit: d5d1b44 | Proof: 100% pass across 10/10 RuntimeCoordinatorTests -->
+
+---
+
+### [TODO-048] Authenticated Host Remote RPC Control Plane & Mutex Authorization (Issue #28)
+* **Status**: `Completed`
+* **Priority**: `P1`
+* **Prerequisites**: None
+* **Scope**: `src/Moonshine.Protocol/` and `tests/Moonshine.Protocol.Tests/`
+* **Objective**: Validate Moonshine-native authenticated RPC control plane with mandatory HMAC-SHA256 signatures, request IDs, and replay protection.
+* **Acceptance Criteria**:
+  - [x] Enforce authorization policy: unauthenticated mutations are strictly rejected.
+  - [x] Reject replayed, stale, or malformed remote control requests.
+  - [x] 100% pass rate in `MoonshineRemoteHostControlClientTests` and `RemoteControlSecurityTests`.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T03:36:01Z | Commit: d5d1b44 | Proof: 100% pass across 25/25 RemoteControl and host control client tests -->
+
+---
+
 # Moonshine TODO
 
 > **Purpose:** This is the implementation and verification checklist for Moonshine after the fresh deep audit of `dd7955b26d7208f543b8092b17a4ed175dbfbc31` on 26 August 2026.
