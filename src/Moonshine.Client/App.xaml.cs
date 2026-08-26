@@ -6,13 +6,19 @@ namespace Moonshine.UI;
 
 public partial class App : Application
 {
+    public static App? CurrentApp { get; set; }
+    public static Window? MainWindowInstance { get; private set; }
+
     private Window? _mainWindow;
 
     public App()
     {
+        CurrentApp = this;
         this.UnhandledException += (s, e) =>
         {
-            File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "winui_unhandled.log"), $"[UnhandledException]: {e.Message} \nException: {e.Exception}\n");
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            File.WriteAllText(Path.Combine(baseDir, "winui_unhandled.log"), $"[UnhandledException]: {e.Message} \nException: {e.Exception}\n");
+            File.AppendAllText(Path.Combine(baseDir, "moonshine_app.log"), $"[CRASH App.UnhandledException]: {e.Message}\n{e.Exception}\n");
             e.Handled = true;
         };
 
@@ -41,7 +47,8 @@ public partial class App : Application
             AppServices.Initialize(Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread());
 
             File.AppendAllText(Path.Combine(baseDir, "moonshine_app.log"), "[INFO] AppServices initialized, creating MainWindow...\n");
-            _mainWindow = new MainWindow();
+            MainWindowInstance = new MainWindow();
+            _mainWindow = MainWindowInstance;
             File.AppendAllText(Path.Combine(baseDir, "moonshine_app.log"), "[INFO] MainWindow created, activating...\n");
             _mainWindow.Activate();
             File.AppendAllText(Path.Combine(baseDir, "moonshine_app.log"), "[INFO] MainWindow activated successfully.\n");

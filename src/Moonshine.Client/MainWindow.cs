@@ -24,6 +24,10 @@ public sealed class MainWindow : Window
             BuildUi();
             File.AppendAllText(Path.Combine(baseDir, "moonshine_app.log"), "[INFO] MainWindow BuildUi succeeded.\n");
             this.Title = "Moonshine - Ultra-Low-Latency Streaming Platform (Windows 11)";
+            this.Closed += (s, e) =>
+            {
+                File.AppendAllText(Path.Combine(baseDir, "moonshine_app.log"), $"[INFO] MainWindow.Closed event fired at {DateTime.UtcNow:O}.\n");
+            };
         }
         // ALLOWED_EXCEPTION: Log critical UI initialization failure before rethrowing.
         catch (Exception ex)
@@ -112,7 +116,6 @@ public sealed class MainWindow : Window
         if (MainNav.MenuItems.Count > 1)
         {
             MainNav.SelectedItem = MainNav.MenuItems[1];
-            NavigateTo("Client");
         }
     }
 

@@ -41,6 +41,18 @@ public static partial class Program
             return CliProgram.RunCliAsync(args).GetAwaiter().GetResult();
         }
 
+        AppDomain.CurrentDomain.UnhandledException += (s, e) =>
+        {
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            File.AppendAllText(Path.Combine(baseDir, "moonshine_app.log"), $"[CRASH CurrentDomain.UnhandledException]: {e.ExceptionObject}\n");
+        };
+
+        TaskScheduler.UnobservedTaskException += (s, e) =>
+        {
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            File.AppendAllText(Path.Combine(baseDir, "moonshine_app.log"), $"[CRASH TaskScheduler.UnobservedTaskException]: {e.Exception}\n");
+        };
+
         // WinUI 3 Desktop App Initialization
         WinRT.ComWrappersSupport.InitializeComWrappers();
 
@@ -48,7 +60,7 @@ public static partial class Program
         {
             var context = new DispatcherQueueSynchronizationContext(DispatcherQueue.GetForCurrentThread());
             SynchronizationContext.SetSynchronizationContext(context);
-            _ = new Moonshine.UI.App();
+            Moonshine.UI.App.CurrentApp = new Moonshine.UI.App();
         });
 
         return 0;
