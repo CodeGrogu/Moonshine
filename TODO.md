@@ -429,7 +429,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Validate backchannel gain, mute, and dynamic stream telemetry.
   - [x] 100% pass rate in `MicrophoneBackchannelTests` and WASAPI loopback tests.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T02:07:41Z | Commit: 9696f7d | Proof: 100% pass across MicrophoneBackchannel and WASAPI capture tests in Moonshine.Core.Tests -->
+  - <!-- VERIFIED: 2026-08-26T02:07:41Z | Commit: 743f39f | Proof: 100% pass across MicrophoneBackchannel and WASAPI capture tests in Moonshine.Core.Tests -->
 
 ---
 
@@ -444,7 +444,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Detect mode changes and reconstruct duplication context without pipeline crashes.
   - [x] 100% pass rate in desktop capture unit and integration tests in `Moonshine.Host.Tests`.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T02:07:41Z | Commit: 9696f7d | Proof: 100% pass across DesktopDuplication and hardware encoder surface capture tests in Moonshine.Host.Tests -->
+  - <!-- VERIFIED: 2026-08-26T02:07:41Z | Commit: 743f39f | Proof: 100% pass across DesktopDuplication and hardware encoder surface capture tests in Moonshine.Host.Tests -->
 
 ---
 
@@ -459,7 +459,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Maintain synchronisation across extended playback with zero unbounded queue growth.
   - [x] 100% pass rate in AV synchronisation unit tests.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T02:07:41Z | Commit: 9696f7d | Proof: 100% pass across audio/video timestamp conversion and jitter buffer resequencing tests -->
+  - <!-- VERIFIED: 2026-08-26T02:07:41Z | Commit: 743f39f | Proof: 100% pass across audio/video timestamp conversion and jitter buffer resequencing tests -->
 
 ---
 
