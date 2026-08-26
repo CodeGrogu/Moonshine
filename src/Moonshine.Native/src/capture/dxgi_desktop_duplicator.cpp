@@ -27,15 +27,53 @@ bool DxgiDesktopDuplicator::initialize() {
     HRESULT hr = CreateDXGIFactory1(IID_PPV_ARGS(&factory));
     if (FAILED(hr)) return false;
 
-    // 2. Enumerate target hardware adapter
-    ComPtr<IDXGIAdapter1> adapter;
-    hr = factory->EnumAdapters1(m_adapter_index, &adapter);
-    if (FAILED(hr)) return false;
+    // 2. Locate active physical adapter and display output
+    ComPtr<IDXGIAdapter1> selectedAdapter;
+    ComPtr<IDXGIOutput1> selectedOutput;
 
-    DXGI_ADAPTER_DESC1 adapterDesc = {};
-    adapter->GetDesc1(&adapterDesc);
-    if (adapterDesc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) {
-        // Reject software WARP adapters in production
+    // First attempt requested adapter and output index
+    ComPtr<IDXGIAdapter1> candidateAdapter;
+    if (SUCCEEDED(factory->EnumAdapters1(m_adapter_index, &candidateAdapter))) {
+        DXGI_ADAPTER_DESC1 desc = {};
+        candidateAdapter->GetDesc1(&desc);
+        if (!(desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE)) {
+            ComPtr<IDXGIOutput> out;
+            if (SUCCEEDED(candidateAdapter->EnumOutputs(m_output_index, &out))) {
+                ComPtr<IDXGIOutput1> out1;
+                if (SUCCEEDED(out.As(&out1))) {
+                    selectedAdapter = candidateAdapter;
+                    selectedOutput = out1;
+                }
+            }
+        }
+    }
+
+    // If requested adapter/output has no display, scan all physical adapters for the first active display output
+    if (!selectedAdapter || !selectedOutput) {
+        for (UINT a = 0; ; ++a) {
+            ComPtr<IDXGIAdapter1> ad;
+            if (FAILED(factory->EnumAdapters1(a, &ad))) break;
+            DXGI_ADAPTER_DESC1 desc = {};
+            ad->GetDesc1(&desc);
+            if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) continue;
+
+            for (UINT o = 0; ; ++o) {
+                ComPtr<IDXGIOutput> out;
+                if (FAILED(ad->EnumOutputs(o, &out))) break;
+                ComPtr<IDXGIOutput1> out1;
+                if (SUCCEEDED(out.As(&out1))) {
+                    selectedAdapter = ad;
+                    selectedOutput = out1;
+                    m_adapter_index = a;
+                    m_output_index = o;
+                    break;
+                }
+            }
+            if (selectedAdapter && selectedOutput) break;
+        }
+    }
+
+    if (!selectedAdapter || !selectedOutput) {
         return false;
     }
 
@@ -48,7 +86,7 @@ bool DxgiDesktopDuplicator::initialize() {
     UINT creationFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
 
     hr = D3D11CreateDevice(
-        adapter.Get(),
+        selectedAdapter.Get(),
         D3D_DRIVER_TYPE_UNKNOWN,
         nullptr,
         creationFlags,
@@ -60,28 +98,12 @@ bool DxgiDesktopDuplicator::initialize() {
         &m_context
     );
 
-    if (FAILED(hr)) {
+    if (FAILED(hr) || !m_device) {
         return false;
     }
 
-    // 4. Enumerate target display output on adapter
-    ComPtr<IDXGIOutput> output;
-    hr = adapter->EnumOutputs(m_output_index, &output);
-    if (FAILED(hr)) {
-        // Fallback to primary output of default adapter
-        ComPtr<IDXGIAdapter> defaultAdapter;
-        hr = factory->EnumAdapters(0, &defaultAdapter);
-        if (FAILED(hr) || FAILED(defaultAdapter->EnumOutputs(0, &output))) {
-            return false;
-        }
-    }
-
-    ComPtr<IDXGIOutput1> output1;
-    hr = output.As(&output1);
-    if (FAILED(hr)) return false;
-
-    // 5. Initialize Output Duplication session on hardware device
-    hr = output1->DuplicateOutput(m_device.Get(), &m_duplication);
+    // 4. Initialize Output Duplication session on hardware device
+    hr = selectedOutput->DuplicateOutput(m_device.Get(), &m_duplication);
     if (FAILED(hr)) return false;
 
     DXGI_OUTDUPL_DESC duplDesc = {};

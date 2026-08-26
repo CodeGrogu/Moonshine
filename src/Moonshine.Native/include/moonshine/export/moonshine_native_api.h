@@ -398,6 +398,7 @@ MOONSHINE_API MoonshineDecoderHandle MOONSHINE_CONV moonshine_video_create_d3d12
 MOONSHINE_API void MOONSHINE_CONV moonshine_video_destroy(MoonshineDecoderHandle handle);
 MOONSHINE_API int MOONSHINE_CONV moonshine_video_submit_frame(MoonshineDecoderHandle handle, const MoonshineFrameDesc* frame);
 MOONSHINE_API void* MOONSHINE_CONV moonshine_video_get_texture(MoonshineDecoderHandle handle);
+MOONSHINE_API void* MOONSHINE_CONV moonshine_video_get_device(MoonshineDecoderHandle handle);
 MOONSHINE_API int MOONSHINE_CONV moonshine_video_reset(MoonshineDecoderHandle handle, uint32_t width, uint32_t height);
 MOONSHINE_API int MOONSHINE_CONV moonshine_video_get_dimensions(MoonshineDecoderHandle handle, uint32_t* out_width, uint32_t* out_height);
 MOONSHINE_API int MOONSHINE_CONV moonshine_video_verify_decoded_pattern(void* decoder, uint32_t pattern_type, float tolerance);
@@ -445,6 +446,7 @@ MOONSHINE_API int MOONSHINE_CONV moonshine_swapchain_set_hdr_metadata(MoonshineS
 MOONSHINE_API int MOONSHINE_CONV moonshine_swapchain_get_metrics(MoonshineSwapchainHandle handle, MoonshineSwapchainMetrics* out_metrics);
 MOONSHINE_API int MOONSHINE_CONV moonshine_swapchain_is_tearing_supported(MoonshineSwapchainHandle handle);
 MOONSHINE_API void* MOONSHINE_CONV moonshine_swapchain_get_waitable_object(MoonshineSwapchainHandle handle);
+MOONSHINE_API void* MOONSHINE_CONV moonshine_swapchain_get_dxgi_swapchain(MoonshineSwapchainHandle handle);
 
 // ============================================================================
 // Sub-5ms WASAPI Low-Latency Audio APIs

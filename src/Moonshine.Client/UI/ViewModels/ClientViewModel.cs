@@ -13,6 +13,8 @@ using Moonshine.App;
 using Moonshine.Core;
 using Moonshine.Core.Discovery;
 using Moonshine.Core.Session;
+using Moonshine.Core.Video;
+using Moonshine.Interop;
 using Moonshine.Protocol;
 using Moonshine.Protocol.Codecs;
 using Moonshine.Protocol.Contracts;
@@ -24,6 +26,8 @@ public sealed partial class ClientViewModel : ObservableObject, IDisposable
     private readonly DispatcherQueue _dispatcher;
     private readonly System.Timers.Timer _telemetryTimer;
     private MoonshineClientStreamingSession? _activeSession;
+    private HardwareVideoDecoderPipeline? _videoDecoder;
+    private IntPtr _swapChainHandle = IntPtr.Zero;
     private CancellationTokenSource? _clientCts;
     private ulong _lastFrameCount;
     private DateTime _lastFrameTime = DateTime.UtcNow;
@@ -152,7 +156,7 @@ public sealed partial class ClientViewModel : ObservableObject, IDisposable
     public ClientViewModel(DispatcherQueue dispatcher)
     {
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
-        _telemetryTimer = new System.Timers.Timer(200); // 5 Hz throttled sampling
+        _telemetryTimer = new System.Timers.Timer(200); // 5 Hz throttled telemetry refresh
         _telemetryTimer.Elapsed += OnTelemetryTick;
     }
 
@@ -171,7 +175,6 @@ public sealed partial class ClientViewModel : ObservableObject, IDisposable
             await discovery.SendProbeAsync(cancellationToken: cts.Token).ConfigureAwait(false);
 
             if (!string.IsNullOrWhiteSpace(HostAddress) &&
-                HostAddress != "127.0.0.1" &&
                 IPAddress.TryParse(HostAddress, out var directIp))
             {
                 await discovery.SendProbeAsync(new IPEndPoint(directIp, Port), cancellationToken: cts.Token).ConfigureAwait(false);
@@ -272,7 +275,7 @@ public sealed partial class ClientViewModel : ObservableObject, IDisposable
                 LocalControlFeedbackPort = clientControlPort,
                 EnableMicrophoneUplink = true,
                 SessionId = response.SessionId,
-                VideoCodec = MoonshineVideoCodec.Hevc,
+                VideoCodec = SelectedCodec.Contains("H.264", StringComparison.OrdinalIgnoreCase) ? MoonshineVideoCodec.H264 : (SelectedCodec.Contains("AV1", StringComparison.OrdinalIgnoreCase) ? MoonshineVideoCodec.Av1 : MoonshineVideoCodec.Hevc),
                 VideoWidth = 1920,
                 VideoHeight = 1080,
                 VideoFps = (uint)Fps,
@@ -280,7 +283,56 @@ public sealed partial class ClientViewModel : ObservableObject, IDisposable
                 PerformHandshake = false
             };
 
+            uint codecId = SelectedCodec.Contains("H.264", StringComparison.OrdinalIgnoreCase) ? 0u : (SelectedCodec.Contains("AV1", StringComparison.OrdinalIgnoreCase) ? 3u : 1u);
+            _videoDecoder = new HardwareVideoDecoderPipeline(
+                hwnd: IntPtr.Zero,
+                width: 1920,
+                height: 1080,
+                preferredCodec: codecId,
+                preferredApi: HardwareDecoderApi.Direct3D11
+            );
+
+            IntPtr d3dDev = _videoDecoder.IsActive ? MoonshineNativeMethods.VideoGetDevice(_videoDecoder.Handle) : IntPtr.Zero;
+            _swapChainHandle = MoonshineNativeMethods.SwapchainCreate(
+                hwnd: IntPtr.Zero,
+                d3d11Device: d3dDev,
+                width: 1920,
+                height: 1080,
+                bufferCount: 2,
+                isHdr10: 0
+            );
+
+            if (_swapChainHandle != IntPtr.Zero)
+            {
+                IntPtr dxgiSwapChain = MoonshineNativeMethods.SwapchainGetDxgiSwapChain(_swapChainHandle);
+                if (dxgiSwapChain != IntPtr.Zero)
+                {
+                    _dispatcher.TryEnqueue(() =>
+                    {
+                        NotifySwapChainCreated(dxgiSwapChain);
+                    });
+                }
+            }
+
             _activeSession = new MoonshineClientStreamingSession(sessionConfig);
+            _activeSession.OnVideoFrameReassembled = (frame) =>
+            {
+                if (_videoDecoder != null && _videoDecoder.IsActive)
+                {
+                    if (_videoDecoder.TrySubmitFrame(in frame))
+                    {
+                        if (_swapChainHandle != IntPtr.Zero)
+                        {
+                            IntPtr decodedTex = _videoDecoder.GetDecodedSurface();
+                            if (decodedTex != IntPtr.Zero)
+                            {
+                                _ = MoonshineNativeMethods.SwapchainPresentTexture(_swapChainHandle, decodedTex, 0, 0);
+                            }
+                        }
+                    }
+                }
+            };
+
             await _activeSession.StartAsync(_clientCts.Token).ConfigureAwait(false);
 
             _lastFrameCount = 0;
@@ -327,6 +379,18 @@ public sealed partial class ClientViewModel : ObservableObject, IDisposable
             {
                 await _activeSession.DisposeAsync().ConfigureAwait(false);
                 _activeSession = null;
+            }
+
+            if (_swapChainHandle != IntPtr.Zero)
+            {
+                MoonshineNativeMethods.SwapchainDestroy(_swapChainHandle);
+                _swapChainHandle = IntPtr.Zero;
+            }
+
+            if (_videoDecoder != null)
+            {
+                _videoDecoder.Dispose();
+                _videoDecoder = null;
             }
         }
         // ALLOWED_EXCEPTION: Handle graceful teardown exceptions during client session disconnect.
@@ -391,5 +455,17 @@ public sealed partial class ClientViewModel : ObservableObject, IDisposable
         _clientCts?.Cancel();
         _clientCts?.Dispose();
         _activeSession?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+
+        if (_swapChainHandle != IntPtr.Zero)
+        {
+            MoonshineNativeMethods.SwapchainDestroy(_swapChainHandle);
+            _swapChainHandle = IntPtr.Zero;
+        }
+
+        if (_videoDecoder != null)
+        {
+            _videoDecoder.Dispose();
+            _videoDecoder = null;
+        }
     }
 }

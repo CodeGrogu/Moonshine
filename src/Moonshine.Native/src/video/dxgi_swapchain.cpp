@@ -184,21 +184,34 @@ int DxgiSwapchain::Initialize(void* hwnd, void* d3d11_device, uint32_t width, ui
         desc.Flags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
     }
 
-    HRESULT hr = factory2->CreateSwapChainForHwnd(
-        device_.Get(),
-        static_cast<HWND>(hwnd_),
-        &desc,
-        nullptr,
-        nullptr,
-        &swapchain1_
-    );
+    HRESULT hr = S_OK;
+    if (hwnd_) {
+        desc.Scaling = DXGI_SCALING_NONE;
+        hr = factory2->CreateSwapChainForHwnd(
+            device_.Get(),
+            static_cast<HWND>(hwnd_),
+            &desc,
+            nullptr,
+            nullptr,
+            &swapchain1_
+        );
+        if (SUCCEEDED(hr) && swapchain1_) {
+            factory2->MakeWindowAssociation(static_cast<HWND>(hwnd_), DXGI_MWA_NO_ALT_ENTER);
+        }
+    } else {
+        // WinUI 3 Composition SwapChain for ISwapChainPanelNative
+        desc.Scaling = DXGI_SCALING_STRETCH;
+        hr = factory2->CreateSwapChainForComposition(
+            device_.Get(),
+            &desc,
+            nullptr,
+            &swapchain1_
+        );
+    }
 
     if (FAILED(hr) || !swapchain1_) {
         return -2;
     }
-
-    // Disable default DXGI Alt+Enter handler
-    factory2->MakeWindowAssociation(static_cast<HWND>(hwnd_), DXGI_MWA_NO_ALT_ENTER);
 
     // Query IDXGISwapChain2 for 1-frame latency waitable object
     if (SUCCEEDED(swapchain1_.As(&swapchain2_))) {
@@ -418,6 +431,14 @@ void DxgiSwapchain::Shutdown() {
     swapchain1_.Reset();
     context_.Reset();
     device_.Reset();
+#endif
+}
+
+void* DxgiSwapchain::GetDxgiSwapChain() const noexcept {
+#if defined(_WIN32)
+    return swapchain1_.Get();
+#else
+    return nullptr;
 #endif
 }
 

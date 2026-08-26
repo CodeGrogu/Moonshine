@@ -178,6 +178,7 @@ public sealed class MoonshineLanDiscoveryEngine : IAsyncDisposable
         {
             destinations.Add(new IPEndPoint(MulticastIPv4, _discoveryPort));
             destinations.Add(new IPEndPoint(IPAddress.Broadcast, _discoveryPort));
+            destinations.Add(new IPEndPoint(IPAddress.Loopback, _discoveryPort));
 
             try
             {

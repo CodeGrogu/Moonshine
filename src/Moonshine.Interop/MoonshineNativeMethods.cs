@@ -192,6 +192,10 @@ public static unsafe partial class MoonshineNativeMethods
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial IntPtr VideoGetTexture(IntPtr handle);
 
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_video_get_device")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial IntPtr VideoGetDevice(IntPtr handle);
+
     [LibraryImport(LibraryName, EntryPoint = "moonshine_video_get_dimensions")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int VideoGetDimensions(IntPtr handle, out uint outWidth, out uint outHeight);
@@ -279,6 +283,10 @@ public static unsafe partial class MoonshineNativeMethods
     [LibraryImport(LibraryName, EntryPoint = "moonshine_swapchain_get_waitable_object")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial IntPtr SwapchainGetWaitableObject(IntPtr handle);
+
+    [LibraryImport(LibraryName, EntryPoint = "moonshine_swapchain_get_dxgi_swapchain")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial IntPtr SwapchainGetDxgiSwapChain(IntPtr handle);
 
     // ========================================================================
     // Audio APIs

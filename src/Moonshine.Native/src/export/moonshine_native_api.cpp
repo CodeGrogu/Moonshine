@@ -486,6 +486,18 @@ MOONSHINE_API void* MOONSHINE_CONV moonshine_video_get_texture(MoonshineDecoderH
     }
 }
 
+MOONSHINE_API void* MOONSHINE_CONV moonshine_video_get_device(MoonshineDecoderHandle handle) {
+    try {
+        if (!handle) return nullptr;
+        auto* dec = static_cast<video::IVideoDecoder*>(handle);
+        return dec->GetDeviceHandle();
+    } catch (const std::exception&) {
+        return nullptr;
+    } catch (...) {
+        return nullptr;
+    }
+}
+
 MOONSHINE_API int MOONSHINE_CONV moonshine_video_reset(MoonshineDecoderHandle handle, uint32_t width, uint32_t height) {
     try {
         if (!handle) return -1;
@@ -638,6 +650,18 @@ MOONSHINE_API void* MOONSHINE_CONV moonshine_swapchain_get_waitable_object(Moons
         if (!handle) return nullptr;
         auto* swapchain = static_cast<video::DxgiSwapchain*>(handle);
         return swapchain->GetFrameLatencyWaitableObject();
+    } catch (const std::exception&) {
+        return nullptr;
+    } catch (...) {
+        return nullptr;
+    }
+}
+
+MOONSHINE_API void* MOONSHINE_CONV moonshine_swapchain_get_dxgi_swapchain(MoonshineSwapchainHandle handle) {
+    try {
+        if (!handle) return nullptr;
+        auto* swapchain = static_cast<video::DxgiSwapchain*>(handle);
+        return swapchain->GetDxgiSwapChain();
     } catch (const std::exception&) {
         return nullptr;
     } catch (...) {

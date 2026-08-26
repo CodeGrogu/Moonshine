@@ -48,6 +48,7 @@ public:
     [[nodiscard]] uint32_t GetWidth() const noexcept { return width_; }
     [[nodiscard]] uint32_t GetHeight() const noexcept { return height_; }
     [[nodiscard]] void* GetD3DDevice() const noexcept;
+    [[nodiscard]] void* GetDxgiSwapChain() const noexcept;
 
 private:
     int CreateOrRecreateViews();

@@ -15,6 +15,7 @@ public sealed class HardwareVideoDecoderPipeline : IDisposable
     private readonly Lock _lock = new();
 
     public bool IsActive => _pipeline?.IsActive ?? false;
+    public IntPtr Handle => _pipeline?.Handle ?? IntPtr.Zero;
     public HardwareDecoderApi DecoderApi => _api;
     public uint CodecId => _codecId;
     public uint Width => _pipeline?.Width ?? 0;
