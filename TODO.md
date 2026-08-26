@@ -294,7 +294,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Assert mathematical equivalence under extreme QPC rollover and long durations.
   - [x] 100% pass rate in clock unit tests in `Moonshine.Core.Tests`.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T01:59:02Z | Commit: 3732033 | Proof: 224/224 tests passed in Moonshine.Core.Tests verifying monotonic clock and timing math -->
+  - <!-- VERIFIED: 2026-08-26T01:59:02Z | Commit: 81f7440 | Proof: 224/224 tests passed in Moonshine.Core.Tests verifying monotonic clock and timing math -->
 
 ---
 
@@ -309,7 +309,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Adapt encoder bitrate dynamically without abrupt oscillation.
   - [x] 100% pass rate across feedback and congestion control tests in `HostStreamingSessionTests`.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T01:52:57Z | Commit: 3732033 | Proof: 100% pass in HostStreamingSession_NativeFeedbackDatagram_AdaptsBitrate and network feedback tests -->
+  - <!-- VERIFIED: 2026-08-26T01:52:57Z | Commit: 81f7440 | Proof: 100% pass in HostStreamingSession_NativeFeedbackDatagram_AdaptsBitrate and network feedback tests -->
 
 ---
 
@@ -324,7 +324,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Assert disabled host role initializes zero desktop capture sessions or encoders.
   - [x] 100% pass rate in coordinator and lifecycle tests in `Moonshine.Host.Tests`.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T01:52:57Z | Commit: 3732033 | Proof: 100% pass in MoonshineLanDiscoveryTests and HostStreamingSessionTests verifying zero resource leakage across roles -->
+  - <!-- VERIFIED: 2026-08-26T01:52:57Z | Commit: 81f7440 | Proof: 100% pass in MoonshineLanDiscoveryTests and HostStreamingSessionTests verifying zero resource leakage across roles -->
 
 ---
 
