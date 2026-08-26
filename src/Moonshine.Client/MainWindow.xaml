@@ -20,14 +20,34 @@
             Loaded="OnNavLoaded">
             
             <NavigationView.MenuItems>
-                <NavigationViewItem Content="Host Server" Tag="Host" Icon="Remote" />
-                <NavigationViewItem Content="Client Streamer" Tag="Client" Icon="Play" />
-                <NavigationViewItem Content="Acceptance Centre" Tag="Acceptance" Icon="Accept" />
-                <NavigationViewItem Content="Hardware Diagnostics" Tag="Diagnostics" Icon="Diagnostic" />
+                <NavigationViewItem Content="Host Server" Tag="Host">
+                    <NavigationViewItem.Icon>
+                        <SymbolIcon Symbol="World" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Client Streamer" Tag="Client">
+                    <NavigationViewItem.Icon>
+                        <SymbolIcon Symbol="Play" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Acceptance Centre" Tag="Acceptance">
+                    <NavigationViewItem.Icon>
+                        <SymbolIcon Symbol="Accept" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Hardware Diagnostics" Tag="Diagnostics">
+                    <NavigationViewItem.Icon>
+                        <SymbolIcon Symbol="Repair" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
             </NavigationView.MenuItems>
 
             <NavigationView.FooterMenuItems>
-                <NavigationViewItem Content="Settings" Tag="Settings" Icon="Setting" />
+                <NavigationViewItem Content="Settings" Tag="Settings">
+                    <NavigationViewItem.Icon>
+                        <SymbolIcon Symbol="Setting" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
             </NavigationView.FooterMenuItems>
 
             <Frame x:Name="ContentFrame" Margin="16" />
