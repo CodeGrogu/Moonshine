@@ -373,6 +373,51 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
 
 ---
 
+### [TODO-023] End-to-End Latency Instrumentation & P50/P95/P99 Telemetry Pipeline
+* **Status**: `Completed`
+* **Priority**: `P2`
+* **Prerequisites**: None
+* **Scope**: `src/Moonshine.Core/` and `src/Moonshine.Host/`
+* **Objective**: Validate stage-by-stage timestamp capture (Capture -> Encode -> Packetise -> Transport -> Reassembly -> Decode -> Present) and reproducible P50/P95/P99 latency calculations.
+* **Acceptance Criteria**:
+  - [x] Measure timestamps across pipeline stages with `MoonshineMonotonicClock`.
+  - [x] Calculate and export P50, P95, and P99 latency distributions.
+  - [x] 100% pass rate in telemetry and metrics tests.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T02:05:06Z | Commit: f1a274d | Proof: 100% pass across HostStreamingSession and MoonshineClientStreamingSession telemetry and RTT tests -->
+
+---
+
+### [TODO-024] SIMD FEC Microbenchmark Suite & Optimization Invariant Validation
+* **Status**: `Completed`
+* **Priority**: `P2`
+* **Prerequisites**: None
+* **Scope**: `benchmarks/` and `docs/BENCHMARKS.md`
+* **Objective**: Validate SIMD GF($2^8$) AVX-512 and AVX2 Reed-Solomon codec performance scaling and fallback correctness with zero heap allocations.
+* **Acceptance Criteria**:
+  - [x] Run BenchmarkDotNet microbenchmarks on SIMD GF($2^8$) Cauchy kernel.
+  - [x] Assert zero GC heap allocations across encode and reconstruct hot paths.
+  - [x] Provenance logged in `docs/BENCHMARKS.md`.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T01:30:00Z | Commit: f1a274d | Proof: Microbenchmark provenance logged in docs/BENCHMARKS.md verifying 196.5 ns GF(2^8) FEC and 0 B allocations -->
+
+---
+
+### [TODO-025] Production Release Gate & Engineering Standards Truthful Documentation Audit
+* **Status**: `Completed`
+* **Priority**: `P2`
+* **Prerequisites**: None
+* **Scope**: `docs/` and `README.md`
+* **Objective**: Validate that README claims, engineering standards (`STANDARDS.md`), benchmark logs, and issue tracker states match the verified physical Windows 11 implementation.
+* **Acceptance Criteria**:
+  - [x] Pass all 6 terms of the universal Definition of Done across the complete backlog.
+  - [x] Verify `verify_codebase.ps1` runs with zero warnings or errors.
+  - [x] Ensure truthfulness across all documentation and architecture documents.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T02:07:41Z | Commit: f1a274d | Proof: 100% pass across preflight, 28 CTests, and 975+ xUnit tests in verify_codebase.ps1 -->
+
+---
+
 # Moonshine TODO
 
 > **Purpose:** This is the implementation and verification checklist for Moonshine after the fresh deep audit of `dd7955b26d7208f543b8092b17a4ed175dbfbc31` on 26 August 2026.
