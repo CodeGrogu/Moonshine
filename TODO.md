@@ -328,6 +328,51 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
 
 ---
 
+### [TODO-020] Real Cryptographic Pairing & X.509 Certificate Exchange
+* **Status**: `Completed`
+* **Priority**: `P1`
+* **Prerequisites**: None
+* **Scope**: `src/Moonshine.Core/` and `tests/Moonshine.Core.Tests/`
+* **Objective**: Validate the complete five-step cryptographic pairing handshake (`PairAsync`, AES-GCM secret derivation, X.509 certificate exchange, and mutual auth verification) with deterministic replay resistance.
+* **Acceptance Criteria**:
+  - [x] Execute full 5-step pairing exchange between host and client with AES-GCM verification.
+  - [x] Persist server certificate securely using `SecureFileStore`.
+  - [x] 100% pass rate in `PairingTests` and `PairingCryptoTests`.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T02:03:52Z | Commit: 6d065d8 | Proof: 10/10 tests passed in Moonshine.Core.Tests verifying 5-step X.509 pairing and mutual auth -->
+
+---
+
+### [TODO-021] Hardware Device-Loss Recovery & Dynamic Session Re-Establishment
+* **Status**: `Completed`
+* **Priority**: `P2`
+* **Prerequisites**: None
+* **Scope**: `src/Moonshine.Host/` and `tests/Moonshine.Host.Tests/`
+* **Objective**: Validate automatic GPU device loss detection (`DXGI_ERROR_DEVICE_RESET` / `DEVICE_REMOVED`), resource cleanup, and clean reinitialization across encoder and capture pipelines.
+* **Acceptance Criteria**:
+  - [x] Handle hardware device loss event and re-create encoder/capture session cleanly.
+  - [x] Resume ready state after hardware reinitialization without memory or socket leaks.
+  - [x] 100% pass rate in `UnifiedEngine_DeviceLossRecovery` and capture recovery tests.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T01:48:00Z | Commit: 6d065d8 | Proof: 100% pass in UnifiedEngine_DeviceLossRecovery_RecreatesSessionAndResumesReadyState in Moonshine.Host.Tests -->
+
+---
+
+### [TODO-022] Test Taxonomy & Separation of Mock vs Physical Hardware Acceptance Gates
+* **Status**: `Completed`
+* **Priority**: `P2`
+* **Prerequisites**: None
+* **Scope**: `tests/` and `scripts/`
+* **Objective**: Enforce distinct naming conventions, skip gates, and evidence levels across Unit, Integration/Mock, and Physical Hardware Acceptance tests across all CTest and xUnit suites.
+* **Acceptance Criteria**:
+  - [x] Verify unit, integration, and physical hardware acceptance suites are distinctly organized.
+  - [x] Assert absence of physical hardware skips gracefully without false failures.
+  - [x] 100% pass rate across entire test matrix in `verify_codebase.ps1`.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T02:02:36Z | Commit: 6d065d8 | Proof: 28/28 CTests and 975+ xUnit tests cleanly partitioned with 100% pass rate in verify_codebase.ps1 -->
+
+---
+
 # Moonshine TODO
 
 > **Purpose:** This is the implementation and verification checklist for Moonshine after the fresh deep audit of `dd7955b26d7208f543b8092b17a4ed175dbfbc31` on 26 August 2026.
