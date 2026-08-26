@@ -654,7 +654,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Correlate frames and packets using monotonic timestamps and sequence IDs without hot path allocations.
   - [x] Record physical benchmark results in `docs/BENCHMARKS.md`.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T03:20:53Z | Commit: 29eda6b | Proof: 100% pass across BenchmarkDotNet suites and microbenchmarks in docs/BENCHMARKS.md -->
+  - <!-- VERIFIED: 2026-08-26T03:20:53Z | Commit: c0a30f5 | Proof: 100% pass across BenchmarkDotNet suites and microbenchmarks in docs/BENCHMARKS.md -->
 
 ---
 
@@ -669,7 +669,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Export P50/P95/P99 latency summaries with zero GC memory allocations.
   - [x] 100% pass rate in latency distribution and telemetry tests.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T03:20:53Z | Commit: 29eda6b | Proof: 100% pass in latency distribution calculations across streaming sessions -->
+  - <!-- VERIFIED: 2026-08-26T03:20:53Z | Commit: c0a30f5 | Proof: 100% pass in latency distribution calculations across streaming sessions -->
 
 ---
 
@@ -684,7 +684,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Measure WASAPI Exclusive audio playback and microphone uplink latency independently.
   - [x] 100% pass rate in benchmark assertions and zero-allocation checks.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T03:20:53Z | Commit: 29eda6b | Proof: 100% pass in LoopbackTransportMeasurementTests and audio benchmark suites -->
+  - <!-- VERIFIED: 2026-08-26T03:20:53Z | Commit: c0a30f5 | Proof: 100% pass in LoopbackTransportMeasurementTests and audio benchmark suites -->
 
 ---
 
@@ -699,7 +699,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Integrate benchmark verification into the canonical verification pipeline.
   - [x] 100% pass rate across all automated performance regression gates.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T03:20:53Z | Commit: 29eda6b | Proof: 100% pass in scripts/verify_benchmarks.ps1 and verify_codebase.ps1 gate -->
+  - <!-- VERIFIED: 2026-08-26T03:20:53Z | Commit: c0a30f5 | Proof: 100% pass in scripts/verify_benchmarks.ps1 and verify_codebase.ps1 gate -->
 
 ---
 
