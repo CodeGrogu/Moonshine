@@ -8,7 +8,7 @@
 
 **Title:** `Two-Device Production E2E Acceptance and Evidence Harness`
 
-**Status:** `Completed`
+**Status:** `In Progress` (Hardening Verification & Gatekeeper Engine)
 
 **Priority:** `Critical`
 
@@ -16,9 +16,7 @@
 
 **GitHub issue:** [#82](https://github.com/CodeGrogu/Moonshine/issues/82)
 
-**Completion date:** 2026-08-26
-
-**Blocks:** None (Production Acceptance Milestone Satisfied)
+**Blocks:** Production-readiness declaration / release candidate
 
 ### Objective
 
@@ -454,17 +452,17 @@ No mock capture, synthetic encoder, fake bitstream, simulated audio, fabricated 
 - [x] Environment and hardware provenance is automatically collected from both devices.
 - [x] Real Host -> Client video is tested using the production capture, encoder, transport, decoder, and presentation path.
 - [x] Real host audio is tested through the production audio path.
-- [x] Real client microphone uplink is tested through the production microphone path.
+- [ ] Real client microphone uplink is tested through the production microphone path (active PCM audio capture, Opus encode/decode, and sample count assertion).
 - [x] Real client input is tested through the production input path.
 - [x] Authenticated remote configuration is tested against a real Host.
 - [x] Host-only, Client-only, and Host + Client resource isolation is verified.
-- [x] Disconnect/reconnect behaviour is tested.
-- [x] Controlled network impairment is tested.
-- [x] Device-loss/recovery behaviour is tested where the physical fixture supports it.
-- [x] Sustained streaming tests collect resource and performance telemetry.
-- [x] P50/P95/P99 video and audio/session measurements are recorded from the real two-device run.
+- [ ] Disconnect/reconnect behaviour is tested with non-zero duration active transport interruption and recovery.
+- [ ] Controlled network impairment is tested with active non-zero duration packet drop/jitter injection and FEC recovery proof.
+- [ ] Device-loss/recovery behaviour is tested where the physical fixture supports it.
+- [ ] Sustained streaming tests collect resource and performance telemetry across full soak duration.
+- [ ] P50/P95/P99 video and audio/session measurements are recorded from real physical timestamps.
 - [x] Host and Client maintain independent append-only evidence logs.
-- [x] Human-observable tests require explicit Client-side PASS/FAIL confirmation.
+- [ ] Human-observable tests require explicit interactive operator PASS/FAIL confirmation (auto-confirm restricted to non-production smoke runs).
 - [x] Client evidence is transferred to Host through an authenticated channel.
 - [x] Host verifies Client evidence integrity and completeness.
 - [x] Host produces one deterministic merged acceptance bundle.

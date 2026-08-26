@@ -48,8 +48,7 @@ public static class InteractiveMenuRunner
                     if (!string.IsNullOrWhiteSpace(testHost)) options.HostAddress = testHost;
                     Console.Write("Enter Host Control Port [default 48010]: ");
                     string? testPortStr = Console.ReadLine()?.Trim();
-                    if (int.TryParse(testPortStr, out int testPort)) options.Port = testPort;
-                    await ClientAcceptanceTestRunner.RunAcceptanceSuiteAsync(options.HostAddress, options.Port, autoConfirm: false, ct).ConfigureAwait(false);
+                    await ClientAcceptanceTestRunner.RunAcceptanceSuiteAsync(options.HostAddress, options.Port, autoConfirm: false, soakDurationSeconds: 1800, ct: ct).ConfigureAwait(false);
                     break;
                 case "4":
                     await DiscoveryAndPairingRunner.RunDiscoveryAsync(options, ct).ConfigureAwait(false);

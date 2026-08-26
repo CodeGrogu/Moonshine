@@ -197,6 +197,12 @@ public sealed record ClientEvidenceBundle
     [JsonPropertyName("human_confirmation_notes")]
     public string HumanConfirmationNotes { get; init; } = string.Empty;
 
+    [JsonPropertyName("auto_confirm_used")]
+    public bool AutoConfirmUsed { get; init; }
+
+    [JsonPropertyName("soak_duration_seconds")]
+    public int SoakDurationSeconds { get; init; }
+
     [JsonPropertyName("completed_utc")]
     public DateTime CompletedUtc { get; init; } = DateTime.UtcNow;
 
@@ -262,6 +268,9 @@ public sealed record AcceptanceManifest
 
     [JsonPropertyName("human_confirmation_verified")]
     public bool HumanConfirmationVerified { get; init; }
+
+    [JsonPropertyName("auto_confirm_used")]
+    public bool AutoConfirmUsed { get; init; }
 
     [JsonPropertyName("cryptographic_integrity_verified")]
     public bool CryptographicIntegrityVerified { get; init; }

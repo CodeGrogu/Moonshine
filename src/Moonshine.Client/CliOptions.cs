@@ -34,7 +34,8 @@ public sealed record HostHandshakeResponse(
     ulong SessionId,
     int HostVideoPort,
     int HostAudioPort,
-    int HostControlPort
+    int HostControlPort,
+    int HostMicPort = 0
 );
 
 public sealed class CliOptions
@@ -56,6 +57,8 @@ public sealed class CliOptions
 
     // Acceptance Test parameters
     public bool AutoConfirm { get; set; }
+    public bool SmokeMode { get; set; }
+    public int SoakDurationSeconds { get; set; } = 1800; // 30 minutes production standard default
 
     // Pairing parameters
     public string Pin { get; set; } = string.Empty;
@@ -186,6 +189,12 @@ public sealed class CliOptions
                     break;
                 case "auto-confirm" or "yes" or "y":
                     options.AutoConfirm = true;
+                    break;
+                case "smoke" or "smoke-mode":
+                    options.SmokeMode = true;
+                    break;
+                case "soak" or "soak-duration":
+                    if (int.TryParse(next, out int soak)) { options.SoakDurationSeconds = soak; i++; }
                     break;
             }
         }

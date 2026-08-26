@@ -96,10 +96,12 @@ public sealed class MoonshineApplication : IDisposable
                 return 0;
 
             case AppCommandType.AcceptanceTest:
+                int soakSecs = options.SmokeMode ? 30 : options.SoakDurationSeconds;
                 return await ClientAcceptanceTestRunner.RunAcceptanceSuiteAsync(
                     options.HostAddress,
                     options.Port,
                     options.AutoConfirm,
+                    soakSecs,
                     ct).ConfigureAwait(false);
 
             default:

@@ -61,7 +61,7 @@ public static class AcceptanceReportSynthesizer
             string statusIcon = step.Status == AcceptanceStepStatus.Passed ? "PASSED" : "FAILED";
             string latencyStr = step.P50LatencyUs > 0
                 ? $"{step.P50LatencyUs / 1000.0:F1} / {step.P95LatencyUs / 1000.0:F1} / {step.P99LatencyUs / 1000.0:F1} ms"
-                : "N/A";
+                : "NOT MEASURED";
 
             sb.AppendLine($"| {(ushort)step.StepId:D2} | **{step.StepName}** | `{statusIcon}` | {step.DurationMs:F0} ms | {step.FramesObserved} | {step.LossCount} | {latencyStr} | {step.EvidenceSummary} |");
         }
@@ -71,7 +71,14 @@ public static class AcceptanceReportSynthesizer
         sb.AppendLine();
         sb.AppendLine("## 3. Human Observation Confirmation");
         sb.AppendLine();
-        sb.AppendLine($"* **Human Confirmation Status**: **`{(manifest.HumanConfirmationVerified ? "CONFIRMED (PASS)" : "NOT CONFIRMED (FAIL)")}`**");
+        if (manifest.AutoConfirmUsed)
+        {
+            sb.AppendLine("* **Human Confirmation Status**: **`NOT CONFIRMED (SMOKE AUTO-CONFIRM ONLY)`**");
+        }
+        else
+        {
+            sb.AppendLine($"* **Human Confirmation Status**: **`{(manifest.HumanConfirmationVerified ? "CONFIRMED (PASS)" : "NOT CONFIRMED (FAIL)")}`**");
+        }
         sb.AppendLine($"* **Observer Notes**: `{manifest.ClientEvidence.HumanConfirmationNotes}`");
         sb.AppendLine();
 

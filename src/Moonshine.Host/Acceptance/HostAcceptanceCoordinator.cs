@@ -173,7 +173,31 @@ public sealed class HostAcceptanceCoordinator
             reasons.Add("Client human-observable streaming confirmation was NOT confirmed.");
         }
 
-        bool overallPass = runIdMatch && clientChecksumValid && allStepsPassed && clientEvidence.HumanConfirmationPassed;
+        if (clientEvidence.AutoConfirmUsed)
+        {
+            reasons.Add("Automated smoke/dry-run flag (--auto-confirm) was used. Physical operator confirmation is MANDATORY for production acceptance.");
+        }
+
+        if (clientEvidence.SoakDurationSeconds < 1800)
+        {
+            reasons.Add($"Sustained soak duration was {clientEvidence.SoakDurationSeconds}s. Production acceptance requires a minimum 1800s (30-minute) soak test.");
+        }
+
+        var micStep = clientEvidence.Steps.Find(st => st.StepId == AcceptanceStepId.Step04_RealMicrophoneUplink);
+        if (micStep == null || micStep.PacketsObserved < 50 || micStep.Status != AcceptanceStepStatus.Passed)
+        {
+            allStepsPassed = false;
+            reasons.Add("Microphone uplink failed: active PCM capture and Opus transmission produced < 50 packets.");
+        }
+
+        var impStep = clientEvidence.Steps.Find(st => st.StepId == AcceptanceStepId.Step08_NetworkImpairmentTolerance);
+        if (impStep == null || impStep.DurationMs < 3000 || impStep.Status != AcceptanceStepStatus.Passed)
+        {
+            allStepsPassed = false;
+            reasons.Add("Network impairment test failed: execution duration was < 3000ms.");
+        }
+
+        bool overallPass = runIdMatch && clientChecksumValid && allStepsPassed && clientEvidence.HumanConfirmationPassed && !clientEvidence.AutoConfirmUsed && clientEvidence.SoakDurationSeconds >= 1800;
 
         var manifest = new AcceptanceManifest
         {
@@ -181,7 +205,8 @@ public sealed class HostAcceptanceCoordinator
             HostEvidence = hostBundle,
             ClientEvidence = clientEvidence,
             AllStepsPassed = allStepsPassed,
-            HumanConfirmationVerified = clientEvidence.HumanConfirmationPassed,
+            HumanConfirmationVerified = clientEvidence.HumanConfirmationPassed && !clientEvidence.AutoConfirmUsed,
+            AutoConfirmUsed = clientEvidence.AutoConfirmUsed,
             CryptographicIntegrityVerified = clientChecksumValid && runIdMatch,
             OverallResult = overallPass ? "PASS" : "FAIL",
             EvaluationReasons = reasons,

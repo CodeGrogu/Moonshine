@@ -159,6 +159,7 @@ public static class HostServerRunner
                 ClientVideoPort = request.ClientVideoPort,
                 ClientAudioPort = request.ClientAudioPort,
                 ClientControlFeedbackPort = request.ClientControlPort,
+                EnableMicrophoneBackchannel = true,
                 Width = displayWidth,
                 Height = displayHeight,
                 Fps = request.Fps > 0 ? request.Fps : (uint)options.Fps,
@@ -219,7 +220,8 @@ public static class HostServerRunner
                     SessionId: 0,
                     HostVideoPort: 0,
                     HostAudioPort: 0,
-                    HostControlPort: 0))).ConfigureAwait(false);
+                    HostControlPort: 0,
+                    HostMicPort: 0))).ConfigureAwait(false);
                 return;
             }
 
@@ -228,7 +230,8 @@ public static class HostServerRunner
                 SessionId: sessionId,
                 HostVideoPort: session.BoundLocalVideoPort,
                 HostAudioPort: session.BoundLocalAudioPort,
-                HostControlPort: session.BoundLocalControlPort);
+                HostControlPort: session.BoundLocalControlPort,
+                HostMicPort: session.BoundLocalMicPort);
 
             await writer.WriteLineAsync(JsonSerializer.Serialize(response)).ConfigureAwait(false);
             Console.WriteLine($"\n[+] Live Streaming Active to {remoteIp} (Session 0x{sessionId:X16})");
