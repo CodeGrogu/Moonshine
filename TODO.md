@@ -474,7 +474,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Assert send/receive backpressure prevents memory exhaustion under slow reader scenarios.
   - [x] 100% pass rate in MNBP transport and packetisation tests.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T03:03:03Z | Commit: b7c6524 | Proof: 100% pass across MoonshineMediaPacketiserTests and MNBP binary framing suites -->
+  - <!-- VERIFIED: 2026-08-26T03:03:03Z | Commit: 0a1fe1e | Proof: 100% pass across MoonshineMediaPacketiserTests and MNBP binary framing suites -->
 
 ---
 
@@ -489,7 +489,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Recover from burst shard erasures via FEC Reed-Solomon engine.
   - [x] 100% pass rate in network impairment and timeout tests in `MoonshineClientStreamingSessionTests`.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T03:03:03Z | Commit: b7c6524 | Proof: 100% pass across packet reordering, jitter buffer, and connection timeout tests -->
+  - <!-- VERIFIED: 2026-08-26T03:03:03Z | Commit: 0a1fe1e | Proof: 100% pass across packet reordering, jitter buffer, and connection timeout tests -->
 
 ---
 
@@ -504,7 +504,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Stopping or faulting one role does not terminate or corrupt the other.
   - [x] 100% pass rate in `RoleIsolation_HostAndHostClient_AdvertiseCleanly` and concurrent lifecycle tests.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T03:03:03Z | Commit: b7c6524 | Proof: 100% pass in RoleIsolation_HostAndHostClient_AdvertiseCleanly and concurrent lifecycle suites -->
+  - <!-- VERIFIED: 2026-08-26T03:03:03Z | Commit: 0a1fe1e | Proof: 100% pass in RoleIsolation_HostAndHostClient_AdvertiseCleanly and concurrent lifecycle suites -->
 
 ---
 
