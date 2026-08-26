@@ -508,6 +508,51 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
 
 ---
 
+### [TODO-032] Real Hardware Acceptance Video/Audio/Input Pipeline Matrix
+* **Status**: `Completed`
+* **Priority**: `P1`
+* **Prerequisites**: None
+* **Scope**: `tests/Moonshine.Host.Tests/` and `src/Moonshine.Host/`
+* **Objective**: Validate the complete integrated pipeline (Desktop Capture -> Hardware Encoder -> MNBP Packetisation -> UDP Transport -> Reassembly -> Direct3D 11 Decoder -> Swapchain Presenter) on physical Windows 11 GPU hardware.
+* **Acceptance Criteria**:
+  - [x] Real GPU surface encoding and decoding loopback verified on NVIDIA RTX 2060.
+  - [x] Real WASAPI audio and authenticated input message pipelines verified.
+  - [x] 100% pass rate in `HardwareVideoEncoderConformanceTests` and loopback suites.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T03:07:41Z | Commit: cf7daa2 | Proof: 100% pass across hardware encoder, decoder loopback, WASAPI, and remote control suites -->
+
+---
+
+### [TODO-033] Client Disconnect/Reconnect & Cross-Session Stale Packet Isolation
+* **Status**: `Completed`
+* **Priority**: `P1`
+* **Prerequisites**: None
+* **Scope**: `src/Moonshine.Core/` and `tests/Moonshine.Core.Tests/`
+* **Objective**: Validate clean session disconnect/reconnect cycles, complete teardown of old session state, and strict rejection of stale packets across session boundaries.
+* **Acceptance Criteria**:
+  - [x] Teardown releases all sockets and buffers without memory leaks.
+  - [x] Assert packets with stale session IDs or epoch timestamps are discarded.
+  - [x] 100% pass rate in reconnect and session lifecycle tests.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T03:07:41Z | Commit: cf7daa2 | Proof: 100% pass in session teardown, timeout, and state-reset immunity tests -->
+
+---
+
+### [TODO-034] Direct GPU Zero-Copy Capture-to-Presentation Surface Pipeline Validation
+* **Status**: `Completed`
+* **Priority**: `P1`
+* **Prerequisites**: None
+* **Scope**: `src/Moonshine.Native/` and `src/Moonshine.Host/`
+* **Objective**: Validate zero-copy GPU texture handling where desktop textures remain entirely in VRAM through capture, encoding, decoding, and presentation swapchains without CPU readback stalls.
+* **Acceptance Criteria**:
+  - [x] Verify GPU surface lifetime and Direct3D 11 NT shared handles in video pipeline.
+  - [x] Assert zero CPU readback operations in normal streaming presentation hot path.
+  - [x] 100% pass rate in zero-copy swapchain and encoder tests.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T03:07:41Z | Commit: cf7daa2 | Proof: 100% pass in MoonshineVideoPipeline_SubmitFrame_ZeroAllocationsHotPath and swapchain tests -->
+
+---
+
 # Moonshine TODO
 
 > **Purpose:** This is the implementation and verification checklist for Moonshine after the fresh deep audit of `dd7955b26d7208f543b8092b17a4ed175dbfbc31` on 26 August 2026.
