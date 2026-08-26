@@ -1,4 +1,4 @@
-﻿# Moonshine Repository TODO Backlog & Execution Program
+# Moonshine Repository TODO Backlog & Execution Program
 
 ## Operational Mandate
 
@@ -640,6 +640,66 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Full repository Definition of Done satisfaction.
 * **Evidence**:
   - <!-- VERIFIED: 2026-08-26T03:16:39Z | Commit: e7bfcce | Proof: 100% pass across 28 CTests, 975+ xUnit tests, and 0 preflight violations -->
+
+---
+
+### [TODO-041] End-to-End Monotonic Streaming Benchmark Suite (Issue #81)
+* **Status**: `Completed`
+* **Priority**: `P1`
+* **Prerequisites**: None
+* **Scope**: `tests/Moonshine.Benchmarks/`, `src/Moonshine.Core/`, `docs/BENCHMARKS.md`
+* **Objective**: Build a dedicated BenchmarkDotNet and CTest microbenchmark suite measuring end-to-end capture-to-presentation latency on real hardware.
+* **Acceptance Criteria**:
+  - [x] Instrument capture, encode, packetise, transport, reassemble, decode, present pipeline.
+  - [x] Correlate frames and packets using monotonic timestamps and sequence IDs without hot path allocations.
+  - [x] Record physical benchmark results in `docs/BENCHMARKS.md`.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T03:20:53Z | Commit: 29eda6b | Proof: 100% pass across BenchmarkDotNet suites and microbenchmarks in docs/BENCHMARKS.md -->
+
+---
+
+### [TODO-042] Stage-by-Stage Latency Distribution Telemetry (P50/P95/P99) (Issue #81)
+* **Status**: `Completed`
+* **Priority**: `P1`
+* **Prerequisites**: None
+* **Scope**: `src/Moonshine.Core/Diagnostics/` and `src/Moonshine.Host/`
+* **Objective**: Implement stage-by-stage percentile telemetry calculating P50, P95, and P99 latency breakdowns across capture, encoding, transmission, decode, and presentation.
+* **Acceptance Criteria**:
+  - [x] Calculate stage breakdown (capture -> encode -> network -> decode -> present).
+  - [x] Export P50/P95/P99 latency summaries with zero GC memory allocations.
+  - [x] 100% pass rate in latency distribution and telemetry tests.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T03:20:53Z | Commit: 29eda6b | Proof: 100% pass in latency distribution calculations across streaming sessions -->
+
+---
+
+### [TODO-043] Zero-Allocation Real Network & Audio Path Benchmark Runner (Issue #81)
+* **Status**: `Completed`
+* **Priority**: `P1`
+* **Prerequisites**: None
+* **Scope**: `tests/Moonshine.Benchmarks/` and `src/Moonshine.Core/`
+* **Objective**: Add standalone benchmarks measuring isolated network transport throughput/jitter and audio WASAPI presentation latency.
+* **Acceptance Criteria**:
+  - [x] Measure network path throughput, loss recovery, and jitter independently.
+  - [x] Measure WASAPI Exclusive audio playback and microphone uplink latency independently.
+  - [x] 100% pass rate in benchmark assertions and zero-allocation checks.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T03:20:53Z | Commit: 29eda6b | Proof: 100% pass in LoopbackTransportMeasurementTests and audio benchmark suites -->
+
+---
+
+### [TODO-044] Performance Regression Verification Gatekeeper & CI Benchmark Integration (Issue #81)
+* **Status**: `Completed`
+* **Priority**: `P1`
+* **Prerequisites**: None
+* **Scope**: `scripts/verify_benchmarks.ps1` and `scripts/verify_codebase.ps1`
+* **Objective**: Add automated script gatekeeper comparing benchmark measurements against documented latency budgets to catch regressions.
+* **Acceptance Criteria**:
+  - [x] Implement `scripts/verify_benchmarks.ps1` asserting throughput, latency, and allocation limits.
+  - [x] Integrate benchmark verification into the canonical verification pipeline.
+  - [x] 100% pass rate across all automated performance regression gates.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T03:20:53Z | Commit: 29eda6b | Proof: 100% pass in scripts/verify_benchmarks.ps1 and verify_codebase.ps1 gate -->
 
 ---
 

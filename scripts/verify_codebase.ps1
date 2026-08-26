@@ -34,5 +34,10 @@ if ($LASTEXITCODE -ne 0) { throw "TODO backlog validation failed." }
 Write-Host "`n[Steps 1-4] Executing Unified Build & Test Pipeline ($Configuration)..." -ForegroundColor Yellow
 & "$ScriptDir\build.ps1" -Configuration $Configuration
 
-Write-Host "`n[+] All Toolchain, Preflight, Native CTest, and Managed xUnit suites verified (100%)." -ForegroundColor Green
+# Step 4.5: Performance and Zero-Allocation Gatekeeper (Issue #81)
+Write-Host "`n[Step 4.5] Validating Performance Invariants and Zero-Allocation Gates..." -ForegroundColor Yellow
+& "$ScriptDir\verify_benchmarks.ps1" -Configuration $Configuration
+if ($LASTEXITCODE -ne 0) { throw "Performance regression gatekeeper failed." }
+
+Write-Host "`n[+] All Toolchain, Preflight, Native CTest, Managed xUnit, and Performance suites verified (100%)." -ForegroundColor Green
 Write-Host "[+] Repository Verification Complete: All systems healthy and compliant." -ForegroundColor Green
