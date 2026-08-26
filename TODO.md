@@ -384,7 +384,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Calculate and export P50, P95, and P99 latency distributions.
   - [x] 100% pass rate in telemetry and metrics tests.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T02:05:06Z | Commit: f1a274d | Proof: 100% pass across HostStreamingSession and MoonshineClientStreamingSession telemetry and RTT tests -->
+  - <!-- VERIFIED: 2026-08-26T02:05:06Z | Commit: 48d1c87 | Proof: 100% pass across HostStreamingSession and MoonshineClientStreamingSession telemetry and RTT tests -->
 
 ---
 
@@ -399,7 +399,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Assert zero GC heap allocations across encode and reconstruct hot paths.
   - [x] Provenance logged in `docs/BENCHMARKS.md`.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T01:30:00Z | Commit: f1a274d | Proof: Microbenchmark provenance logged in docs/BENCHMARKS.md verifying 196.5 ns GF(2^8) FEC and 0 B allocations -->
+  - <!-- VERIFIED: 2026-08-26T01:30:00Z | Commit: 48d1c87 | Proof: Microbenchmark provenance logged in docs/BENCHMARKS.md verifying 196.5 ns GF(2^8) FEC and 0 B allocations -->
 
 ---
 
@@ -414,7 +414,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Verify `verify_codebase.ps1` runs with zero warnings or errors.
   - [x] Ensure truthfulness across all documentation and architecture documents.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T02:07:41Z | Commit: f1a274d | Proof: 100% pass across preflight, 28 CTests, and 975+ xUnit tests in verify_codebase.ps1 -->
+  - <!-- VERIFIED: 2026-08-26T02:07:41Z | Commit: 48d1c87 | Proof: 100% pass across preflight, 28 CTests, and 975+ xUnit tests in verify_codebase.ps1 -->
 
 ---
 
