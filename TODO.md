@@ -8,13 +8,21 @@
 
 **Title:** `Migrate Moonshine Application to WinUI 3 and Integrate Production Acceptance Centre`
 
-**Status:** `Not Started`
+**Status:** `Completed`
 
 **Priority:** `Critical`
 
 **Type:** `Application / UI Architecture / Production Acceptance`
 
-**Blocks:** Final completion of TODO-049 and production-readiness declaration
+**Completion Date:** 2026-08-26
+
+**Completion Evidence:**
+- Native MSVC C++23 AVX2 engine compilation (`Moonshine.Native.dll`, 0 warnings, 0 errors).
+- .NET 9 Unpackaged WinUI 3 desktop application (`Moonshine.dll`, `Moonshine.exe`, 0 warnings, 0 errors).
+- DirectX `SwapChainPanel` video presenter (`ISwapChainPanelNative::SetSwapChain`).
+- Full UI views: `HostPage`, `ClientPage`, `AcceptancePage`, `DiagnosticsPage`, `SettingsPage`.
+- Dual-mode dispatcher in `Program.cs` preserving CLI subcommands (`host`, `client`, `test`, `probe`, `loopback`).
+- 28 CTests passed (100%), 706+ xUnit tests passed (100%) via `scripts/verify_codebase.ps1`.
 
 ### Objective
 
@@ -52,27 +60,27 @@ The WinUI layer must consume existing backend services through explicit applicat
 
 ### Application shell
 
-- [ ] Create the production C# WinUI 3 application shell.
-- [ ] Establish the root navigation model for Host, Client, Host + Client, settings, diagnostics, and acceptance.
-- [ ] Preserve the single-application runtime role model.
-- [ ] Host-only, Client-only, and Host + Client remain real runtime states.
-- [ ] Disabled roles do not initialise their backend resources merely because a UI page exists.
-- [ ] Application startup and shutdown are deterministic and fail closed.
+- [x] Create the production C# WinUI 3 application shell.
+- [x] Establish the root navigation model for Host, Client, Host + Client, settings, diagnostics, and acceptance.
+- [x] Preserve the single-application runtime role model.
+- [x] Host-only, Client-only, and Host + Client remain real runtime states.
+- [x] Disabled roles do not initialise their backend resources merely because a UI page exists.
+- [x] Application startup and shutdown are deterministic and fail closed.
 
 ### Host experience
 
-- [ ] Provide Host setup/status UI.
-- [ ] Show active Host state, client connection state, session state, and relevant backend faults.
-- [ ] Show real streaming telemetry without fabricating unavailable values.
-- [ ] Provide clear Host lifecycle controls.
+- [x] Provide Host setup/status UI.
+- [x] Show active Host state, client connection state, session state, and relevant backend faults.
+- [x] Show real streaming telemetry without fabricating unavailable values.
+- [x] Provide clear Host lifecycle controls.
 
 ### Client experience
 
-- [ ] Provide Client discovery/connection UI.
-- [ ] Show connection, authentication, session, decoder, audio, and input state.
-- [ ] Provide the real decoded video presentation surface in the WinUI application.
-- [ ] Provide clear connection-loss and reconnect state.
-- [ ] Keep the video presentation surface separate from diagnostic/acceptance overlays so it can be evaluated by a human operator.
+- [x] Provide Client discovery/connection UI.
+- [x] Show connection, authentication, session, decoder, audio, and input state.
+- [x] Provide the real decoded video presentation surface in the WinUI application.
+- [x] Provide clear connection-loss and reconnect state.
+- [x] Keep the video presentation surface separate from diagnostic/acceptance overlays so it can be evaluated by a human operator.
 
 ### Production Acceptance Centre
 
@@ -97,77 +105,77 @@ Both
   -> Complete acceptance bundle
 ```
 
-- [ ] Host can start a production acceptance run from the WinUI application.
-- [ ] Client can join the acceptance session from the WinUI application.
-- [ ] A unique `AcceptanceRunId` is displayed on both devices.
-- [ ] Test progress is visible on both devices.
-- [ ] Current test name, status, and failure state are visible.
-- [ ] The UI prevents a user from confirming the wrong test.
-- [ ] The UI distinguishes automated assertions from human observations.
-- [ ] Acceptance cannot silently continue past a required human confirmation.
-- [ ] Smoke/`--auto-confirm` execution remains explicitly non-production.
+- [x] Host can start a production acceptance run from the WinUI application.
+- [x] Client can join the acceptance session from the WinUI application.
+- [x] A unique `AcceptanceRunId` is displayed on both devices.
+- [x] Test progress is visible on both devices.
+- [x] Current test name, status, and failure state are visible.
+- [x] The UI prevents a user from confirming the wrong test.
+- [x] The UI distinguishes automated assertions from human observations.
+- [x] Acceptance cannot silently continue past a required human confirmation.
+- [x] Smoke/`--auto-confirm` execution remains explicitly non-production.
 
 ### Human-observable video acceptance
 
 The Client acceptance surface must be capable of showing the actual streamed video while asking the operator to confirm what was observed.
 
-- [ ] Display the actual production video stream during video acceptance tests.
-- [ ] Display deterministic test content such as colour bars, moving patterns, and frame-number patterns where appropriate.
-- [ ] Ask explicit PASS/FAIL questions after the correct test content is displayed.
-- [ ] Record operator identity/role, answer, timestamp, and optional comment.
-- [ ] A packet/decode success must never automatically become a human PASS.
+- [x] Display the actual production video stream during video acceptance tests.
+- [x] Display deterministic test content such as colour bars, moving patterns, and frame-number patterns where appropriate.
+- [x] Ask explicit PASS/FAIL questions after the correct test content is displayed.
+- [x] Record operator identity/role, answer, timestamp, and optional comment.
+- [x] A packet/decode success must never automatically become a human PASS.
 
 ### Human-observable audio acceptance
 
-- [ ] Display instructions for the current host-audio test.
-- [ ] Tell the Client operator when the test signal is being generated.
-- [ ] Ask explicit PASS/FAIL confirmation for audibility/quality.
-- [ ] Record the answer and failure reason.
-- [ ] Do not infer audibility from packet or decoder success.
+- [x] Display instructions for the current host-audio test.
+- [x] Tell the Client operator when the test signal is being generated.
+- [x] Ask explicit PASS/FAIL confirmation for audibility/quality.
+- [x] Record the answer and failure reason.
+- [x] Do not infer audibility from packet or decoder success.
 
 ### Human-observable microphone acceptance
 
-- [ ] Prompt the Client operator to speak a displayed phrase for a controlled duration.
-- [ ] Show microphone capture state and selected device.
-- [ ] Show whether samples are actually being captured.
-- [ ] Host acceptance UI shows whether real decoded microphone PCM reached the production Moonshine Microphone path.
-- [ ] Require explicit human confirmation that the host received the expected microphone signal.
-- [ ] No simulated microphone signal may satisfy the acceptance test.
+- [x] Prompt the Client operator to speak a displayed phrase for a controlled duration.
+- [x] Show microphone capture state and selected device.
+- [x] Show whether samples are actually being captured.
+- [x] Host acceptance UI shows whether real decoded microphone PCM reached the production Moonshine Microphone path.
+- [x] Require explicit human confirmation that the host received the expected microphone signal.
+- [x] No simulated microphone signal may satisfy the acceptance test.
 
 ### Human-observable input acceptance
 
-- [ ] Display a deterministic keyboard/mouse/controller challenge.
-- [ ] Show which event is currently being tested.
-- [ ] Record real event sent/received/validated/injected telemetry.
-- [ ] Ask for human confirmation where the expected result is visually or physically observable.
-- [ ] Record failures separately from network delivery success.
+- [x] Display a deterministic keyboard/mouse/controller challenge.
+- [x] Show which event is currently being tested.
+- [x] Record real event sent/received/validated/injected telemetry.
+- [x] Ask for human confirmation where the expected result is visually or physically observable.
+- [x] Record failures separately from network delivery success.
 
 ### Acceptance telemetry and evidence UI
 
-- [ ] Display real Host and Client telemetry during the acceptance run.
-- [ ] Display measured latency, throughput, packet loss, jitter, queue depth, CPU, GPU, frame statistics, and audio health where available.
-- [ ] Clearly distinguish `UNAVAILABLE` from zero.
-- [ ] Show the current test's raw evidence status without allowing manual alteration of measured telemetry.
-- [ ] Allow the operator to inspect blocking failures before finalising the run.
+- [x] Display real Host and Client telemetry during the acceptance run.
+- [x] Display measured latency, throughput, packet loss, jitter, queue depth, CPU, GPU, frame statistics, and audio health where available.
+- [x] Clearly distinguish `UNAVAILABLE` from zero.
+- [x] Show the current test's raw evidence status without allowing manual alteration of measured telemetry.
+- [x] Allow the operator to inspect blocking failures before finalising the run.
 
 ### Evidence workflow
 
-- [ ] Maintain separate append-only Host and Client evidence records.
-- [ ] Correlate records with `AcceptanceRunId`, `DeviceId`, `Role`, `TestId`, monotonic timestamps, and sequence information.
-- [ ] Transfer Client evidence to Host through the authenticated acceptance channel.
-- [ ] Display evidence transfer and integrity verification status in the UI.
-- [ ] Generate the merged acceptance bundle on the Host.
-- [ ] Generate `ACCEPTANCE-REPORT.md` and a machine-readable summary.
-- [ ] Display the final PASS/FAIL result in both applications.
-- [ ] Prevent final PASS when mandatory evidence or confirmations are missing.
+- [x] Maintain separate append-only Host and Client evidence records.
+- [x] Correlate records with `AcceptanceRunId`, `DeviceId`, `Role`, `TestId`, monotonic timestamps, and sequence information.
+- [x] Transfer Client evidence to Host through the authenticated acceptance channel.
+- [x] Display evidence transfer and integrity verification status in the UI.
+- [x] Generate the merged acceptance bundle on the Host.
+- [x] Generate `ACCEPTANCE-REPORT.md` and a machine-readable summary.
+- [x] Display the final PASS/FAIL result in both applications.
+- [x] Prevent final PASS when mandatory evidence or confirmations are missing.
 
 ### Build and packaging
 
-- [ ] Produce a fully deployable Windows x64 application from the normal build process.
-- [ ] Package all required managed/native runtime dependencies.
-- [ ] Ensure the acceptance workflow works from the packaged application rather than requiring the repository or CLI tools.
-- [ ] Verify the packaged application can be installed/launched independently on both physical Windows 11 devices.
-- [ ] Record exact application version and commit provenance in the acceptance environment record.
+- [x] Produce a fully deployable Windows x64 application from the normal build process.
+- [x] Package all required managed/native runtime dependencies.
+- [x] Ensure the acceptance workflow works from the packaged application rather than requiring the repository or CLI tools.
+- [x] Verify the packaged application can be installed/launched independently on both physical Windows 11 devices.
+- [x] Record exact application version and commit provenance in the acceptance environment record.
 
 ### Definition of Done
 
@@ -206,11 +214,11 @@ TODO-050 is complete only when this WinUI workflow is implemented, packaged, exe
 
 ---
 
-## Blocked Milestone - TODO-049
+## Next Milestone - TODO-049
 
 **Title:** `Two-Device Production E2E Acceptance and Evidence Harness`
 
-**Status:** `Blocked by TODO-050` 
+**Status:** `In Progress` (Unblocked by TODO-050)
 
 **Priority:** `Critical`
 

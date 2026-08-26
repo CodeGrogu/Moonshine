@@ -1,0 +1,112 @@
+<Page
+    x:Class="Moonshine.UI.Views.HostPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="24" MaxWidth="900" HorizontalAlignment="Left">
+            
+            <!-- Header & Action -->
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" Spacing="4">
+                    <TextBlock Text="Moonshine Host Streaming Server" Style="{ThemeResource TitleTextBlockStyle}" />
+                    <TextBlock Text="{x:Bind ViewModel.StatusText, Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12">
+                    <Button Content="Start Host Server"
+                            Style="{ThemeResource AccentButtonStyle}"
+                            Command="{x:Bind ViewModel.StartServerCommand}"
+                            IsEnabled="{x:Bind ViewModel.IsRunning, Converter={StaticResource InverseBoolConverter}, Mode=OneWay}" />
+                    <Button Content="Stop Server"
+                            Command="{x:Bind ViewModel.StopServerCommand}"
+                            IsEnabled="{x:Bind ViewModel.IsRunning, Mode=OneWay}" />
+                </StackPanel>
+            </Grid>
+
+            <!-- Configuration Section -->
+            <StackPanel Spacing="12">
+                <TextBlock Text="Server Configuration" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                <Grid ColumnSpacing="16" RowSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <TextBox Grid.Row="0" Grid.Column="0" Header="Control / Discovery Port" Text="{x:Bind ViewModel.Port, Mode=TwoWay}" />
+                    <TextBox Grid.Row="0" Grid.Column="1" Header="Target Bitrate (Kbps)" Text="{x:Bind ViewModel.BitrateKbps, Mode=TwoWay}" />
+
+                    <ComboBox Grid.Row="1" Grid.Column="0" Header="Video Codec" SelectedValue="{x:Bind ViewModel.SelectedCodec, Mode=TwoWay}" HorizontalAlignment="Stretch">
+                        <ComboBoxItem Content="HEVC (H.265)" IsSelected="True" />
+                        <ComboBoxItem Content="H.264 (AVC)" />
+                        <ComboBoxItem Content="AV1" />
+                    </ComboBox>
+
+                    <ComboBox Grid.Row="1" Grid.Column="1" Header="Target Frame Rate" SelectedValue="{x:Bind ViewModel.Fps, Mode=TwoWay}" HorizontalAlignment="Stretch">
+                        <ComboBoxItem Content="60" IsSelected="True" />
+                        <ComboBoxItem Content="120" />
+                    </ComboBox>
+
+                    <ToggleSwitch Grid.Row="2" Grid.Column="0" Header="HDR10 10-Bit Colorimetry" IsOn="{x:Bind ViewModel.EnableHdr10, Mode=TwoWay}" />
+                </Grid>
+            </StackPanel>
+
+            <!-- Live Telemetry Section -->
+            <StackPanel Spacing="12">
+                <TextBlock Text="Live Streaming Telemetry" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Active Clients -->
+                    <Border Grid.Column="0" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Active Clients" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <TextBlock Text="{x:Bind ViewModel.ActiveClients, Mode=OneWay}" FontSize="24" FontWeight="SemiBold" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Bandwidth -->
+                    <Border Grid.Column="1" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Total Outbound" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <TextBlock Text="{x:Bind ViewModel.StreamingBitrateMbps, Mode=OneWay}" FontSize="24" FontWeight="SemiBold" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Total Frames -->
+                    <Border Grid.Column="2" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Frames Encoded" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <TextBlock Text="{x:Bind ViewModel.TotalFramesEncoded, Mode=OneWay}" FontSize="24" FontWeight="SemiBold" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Dropped Frames -->
+                    <Border Grid.Column="3" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Dropped Frames" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <TextBlock Text="{x:Bind ViewModel.DroppedFrames, Mode=OneWay}" FontSize="24" FontWeight="SemiBold" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </StackPanel>
+
+        </StackPanel>
+    </ScrollViewer>
+</Page>

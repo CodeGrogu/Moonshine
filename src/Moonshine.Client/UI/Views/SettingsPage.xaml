@@ -1,0 +1,48 @@
+<Page
+    x:Class="Moonshine.UI.Views.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="24" MaxWidth="800" HorizontalAlignment="Left">
+            
+            <StackPanel Spacing="4">
+                <TextBlock Text="Moonshine Streaming Settings" Style="{ThemeResource TitleTextBlockStyle}" />
+                <TextBlock Text="Configure defaults for streaming, decoding, audio sink, and jitter tolerance" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+
+            <StackPanel Spacing="16">
+                <TextBlock Text="Video Stream Defaults" Style="{ThemeResource SubtitleTextBlockStyle}" />
+
+                <ComboBox Header="Default Codec" SelectedValue="{x:Bind ViewModel.DefaultCodec, Mode=TwoWay}" HorizontalAlignment="Stretch">
+                    <ComboBoxItem Content="HEVC (H.265)" IsSelected="True" />
+                    <ComboBoxItem Content="H.264 (AVC)" />
+                    <ComboBoxItem Content="AV1" />
+                </ComboBox>
+
+                <TextBox Header="Default Bitrate (Kbps)" Text="{x:Bind ViewModel.DefaultBitrateKbps, Mode=TwoWay}" />
+
+                <ComboBox Header="Default Frame Rate" SelectedValue="{x:Bind ViewModel.DefaultFps, Mode=TwoWay}" HorizontalAlignment="Stretch">
+                    <ComboBoxItem Content="60" IsSelected="True" />
+                    <ComboBoxItem Content="120" />
+                </ComboBox>
+
+                <ToggleSwitch Header="Enable HDR10 10-Bit Colorimetry" IsOn="{x:Bind ViewModel.EnableHdr10, Mode=TwoWay}" />
+            </StackPanel>
+
+            <StackPanel Spacing="16">
+                <TextBlock Text="Audio Subsystem" Style="{ThemeResource SubtitleTextBlockStyle}" />
+
+                <ComboBox Header="Audio Playback Sink" SelectedValue="{x:Bind ViewModel.AudioSink, Mode=TwoWay}" HorizontalAlignment="Stretch">
+                    <ComboBoxItem Content="WASAPI Exclusive (Low Latency)" IsSelected="True" />
+                    <ComboBoxItem Content="WASAPI Shared (Standard)" />
+                    <ComboBoxItem Content="Moonshine Virtual Audio Driver" />
+                </ComboBox>
+            </StackPanel>
+
+        </StackPanel>
+    </ScrollViewer>
+</Page>
