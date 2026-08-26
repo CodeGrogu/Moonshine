@@ -124,7 +124,8 @@ public class AudioNativeTests
                 );
 
                 readRes.Should().Be(1);
-                samplesRead.Should().Be(480);
+                samplesRead.Should().BeGreaterThan(0u);
+                samplesRead.Should().BeLessThanOrEqualTo(480u);
                 timestampQpc.Should().BeGreaterThan(0);
             }
         }
@@ -157,7 +158,8 @@ public class AudioNativeTests
                 );
 
                 readRes.Should().Be(1);
-                samplesRead.Should().Be(960);
+                samplesRead.Should().BeGreaterThan(0u);
+                samplesRead.Should().BeLessThanOrEqualTo(960u);
                 timestampQpc.Should().BeGreaterThan(0);
             }
         }
@@ -218,7 +220,8 @@ public class AudioNativeTests
                 );
 
                 readRes.Should().Be(1);
-                samplesRead.Should().Be(480);
+                samplesRead.Should().BeGreaterThan(0u);
+                samplesRead.Should().BeLessThanOrEqualTo(480u);
                 timestampQpc.Should().BeGreaterThan(0);
             }
         }

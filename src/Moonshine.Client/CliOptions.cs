@@ -12,8 +12,30 @@ public enum AppCommandType
     Pair,
     Discover,
     Probe,
-    Loopback
+    Loopback,
+    AcceptanceTest
 }
+
+public sealed record ClientHandshakeRequest(
+    string ClientName,
+    int ClientVideoPort,
+    int ClientAudioPort,
+    int ClientControlPort,
+    uint DesiredWidth,
+    uint DesiredHeight,
+    uint Fps,
+    uint BitrateKbps,
+    bool EnableHdr10,
+    string Codec = "hevc"
+);
+
+public sealed record HostHandshakeResponse(
+    string Status,
+    ulong SessionId,
+    int HostVideoPort,
+    int HostAudioPort,
+    int HostControlPort
+);
 
 public sealed class CliOptions
 {
@@ -31,6 +53,9 @@ public sealed class CliOptions
     public bool EnableHdr { get; set; }
     public bool UseVirtualAudio { get; set; }
     public int DisplayIndex { get; set; }
+
+    // Acceptance Test parameters
+    public bool AutoConfirm { get; set; }
 
     // Pairing parameters
     public string Pin { get; set; } = string.Empty;
@@ -88,8 +113,11 @@ public sealed class CliOptions
             case "probe" or "info":
                 options.Command = AppCommandType.Probe;
                 break;
-            case "loopback" or "test" or "benchmark":
+            case "loopback" or "benchmark":
                 options.Command = AppCommandType.Loopback;
+                break;
+            case "test" or "acceptance":
+                options.Command = AppCommandType.AcceptanceTest;
                 break;
             case "interactive" or "tui" or "menu":
                 options.Command = AppCommandType.Interactive;
@@ -155,6 +183,9 @@ public sealed class CliOptions
                     break;
                 case "verbose" or "v":
                     options.Verbose = true;
+                    break;
+                case "auto-confirm" or "yes" or "y":
+                    options.AutoConfirm = true;
                     break;
             }
         }

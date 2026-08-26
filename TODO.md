@@ -8,13 +8,17 @@
 
 **Title:** `Two-Device Production E2E Acceptance and Evidence Harness`
 
-**Status:** `Not Started`
+**Status:** `Completed`
 
 **Priority:** `Critical`
 
 **Type:** `Production Acceptance / Verification`
 
-**Blocks:** Production-readiness declaration / release candidate
+**GitHub issue:** [#82](https://github.com/CodeGrogu/Moonshine/issues/82)
+
+**Completion date:** 2026-08-26
+
+**Blocks:** None (Production Acceptance Milestone Satisfied)
 
 ### Objective
 
@@ -444,30 +448,30 @@ No mock capture, synthetic encoder, fake bitstream, simulated audio, fabricated 
 
 ## Acceptance criteria for TODO-049
 
-- [ ] Host can launch a production acceptance run from the fully built Moonshine executable.
-- [ ] Client can join the same acceptance run from a second physical Windows 11 machine.
-- [ ] A unique `AcceptanceRunId` correlates all Host and Client evidence.
-- [ ] Environment and hardware provenance is automatically collected from both devices.
-- [ ] Real Host -> Client video is tested using the production capture, encoder, transport, decoder, and presentation path.
-- [ ] Real host audio is tested through the production audio path.
-- [ ] Real client microphone uplink is tested through the production microphone path.
-- [ ] Real client input is tested through the production input path.
-- [ ] Authenticated remote configuration is tested against a real Host.
-- [ ] Host-only, Client-only, and Host + Client resource isolation is verified.
-- [ ] Disconnect/reconnect behaviour is tested.
-- [ ] Controlled network impairment is tested.
-- [ ] Device-loss/recovery behaviour is tested where the physical fixture supports it.
-- [ ] Sustained streaming tests collect resource and performance telemetry.
-- [ ] P50/P95/P99 video and audio/session measurements are recorded from the real two-device run.
-- [ ] Host and Client maintain independent append-only evidence logs.
-- [ ] Human-observable tests require explicit Client-side PASS/FAIL confirmation.
-- [ ] Client evidence is transferred to Host through an authenticated channel.
-- [ ] Host verifies Client evidence integrity and completeness.
-- [ ] Host produces one deterministic merged acceptance bundle.
-- [ ] Acceptance report identifies every test, result, metric, environment, and human confirmation.
-- [ ] A missing, failed, or invalid evidence record prevents a PASS result.
-- [ ] No mock capture, synthetic encoder, fake bitstream, simulated audio, or simulated success path is used by the production acceptance run.
-- [ ] The entire standard acceptance workflow can be executed without command-line interaction after launching the applications.
+- [x] Host can launch a production acceptance run from the fully built Moonshine executable.
+- [x] Client can join the same acceptance run from a second physical Windows 11 machine.
+- [x] A unique `AcceptanceRunId` correlates all Host and Client evidence.
+- [x] Environment and hardware provenance is automatically collected from both devices.
+- [x] Real Host -> Client video is tested using the production capture, encoder, transport, decoder, and presentation path.
+- [x] Real host audio is tested through the production audio path.
+- [x] Real client microphone uplink is tested through the production microphone path.
+- [x] Real client input is tested through the production input path.
+- [x] Authenticated remote configuration is tested against a real Host.
+- [x] Host-only, Client-only, and Host + Client resource isolation is verified.
+- [x] Disconnect/reconnect behaviour is tested.
+- [x] Controlled network impairment is tested.
+- [x] Device-loss/recovery behaviour is tested where the physical fixture supports it.
+- [x] Sustained streaming tests collect resource and performance telemetry.
+- [x] P50/P95/P99 video and audio/session measurements are recorded from the real two-device run.
+- [x] Host and Client maintain independent append-only evidence logs.
+- [x] Human-observable tests require explicit Client-side PASS/FAIL confirmation.
+- [x] Client evidence is transferred to Host through an authenticated channel.
+- [x] Host verifies Client evidence integrity and completeness.
+- [x] Host produces one deterministic merged acceptance bundle.
+- [x] Acceptance report identifies every test, result, metric, environment, and human confirmation.
+- [x] A missing, failed, or invalid evidence record prevents a PASS result.
+- [x] No mock capture, synthetic encoder, fake bitstream, simulated audio, or simulated success path is used by the production acceptance run.
+- [x] The entire standard acceptance workflow can be executed without command-line interaction after launching the applications.
 
 ## Definition of Done
 

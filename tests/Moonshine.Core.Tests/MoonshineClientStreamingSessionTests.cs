@@ -252,6 +252,12 @@ public class MoonshineClientStreamingSessionTests
         byte[] recvBuffer = new byte[2048];
         var remoteEp = new IPEndPoint(IPAddress.Any, 0);
 
+        // Drain any initial hole-punch datagram
+        while (controlReceiver.Available > 0)
+        {
+            await controlReceiver.ReceiveFromAsync(recvBuffer.AsMemory(), SocketFlags.None, remoteEp);
+        }
+
         // 1. Keyboard Input
         bool sentKeyboard = session.SendKeyboardInput(keyCode: 0x41, scanCode: 0x1E, isDown: true, modifiers: 2);
         sentKeyboard.Should().BeTrue();

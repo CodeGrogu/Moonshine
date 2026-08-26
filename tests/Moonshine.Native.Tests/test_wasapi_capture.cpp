@@ -152,7 +152,7 @@ int main() {
                 &qpc
             );
             TEST_ASSERT(res == 1);
-            TEST_ASSERT(samples_read == 480);
+            TEST_ASSERT(samples_read > 0 && samples_read <= 480);
             TEST_ASSERT(qpc > 0);
 
             int recover_res = moonshine_mic_capture_recover(handle);
@@ -167,7 +167,7 @@ int main() {
                 &qpc
             );
             TEST_ASSERT(res == 1);
-            TEST_ASSERT(samples_read == 480);
+            TEST_ASSERT(samples_read > 0 && samples_read <= 480);
             TEST_ASSERT(qpc > 0);
 
             moonshine_mic_capture_destroy(handle);

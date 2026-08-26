@@ -53,7 +53,16 @@ public enum MoonshineMessageType : ushort
     // Discovery
     DiscoveryProbe = 0x0901,
     DiscoveryAnnouncement = 0x0902,
-    DiscoveryResponse = 0x0903
+    DiscoveryResponse = 0x0903,
+
+    // Acceptance Test Suite (TODO-049)
+    AcceptanceStartRun = 0x0A01,
+    AcceptanceStartRunResponse = 0x0A02,
+    AcceptanceStepExecute = 0x0A03,
+    AcceptanceStepProgress = 0x0A04,
+    AcceptanceStepCompleted = 0x0A05,
+    AcceptanceEvidenceUploadChunk = 0x0A06,
+    AcceptanceEvidenceUploadAck = 0x0A07
 }
 
 public enum MoonshineErrorCode : uint

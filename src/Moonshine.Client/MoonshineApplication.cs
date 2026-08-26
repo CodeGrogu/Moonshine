@@ -95,6 +95,13 @@ public sealed class MoonshineApplication : IDisposable
                 await LoopbackTestRunner.RunLoopbackAsync(options, ct).ConfigureAwait(false);
                 return 0;
 
+            case AppCommandType.AcceptanceTest:
+                return await ClientAcceptanceTestRunner.RunAcceptanceSuiteAsync(
+                    options.HostAddress,
+                    options.Port,
+                    options.AutoConfirm,
+                    ct).ConfigureAwait(false);
+
             default:
                 PrintHelp();
                 return 1;
@@ -110,6 +117,7 @@ public sealed class MoonshineApplication : IDisposable
         Console.WriteLine("Commands:");
         Console.WriteLine("  host         Start the host streaming server and discovery advertiser");
         Console.WriteLine("  client       Connect to a Moonshine host server and stream video/audio");
+        Console.WriteLine("  test         Execute two-device production acceptance test suite (TODO-049)");
         Console.WriteLine("  discover     Search for Moonshine host servers on the local network");
         Console.WriteLine("  pair         Execute cryptographic pairing with a Moonshine host");
         Console.WriteLine("  loopback     Run in-process host + client loopback streaming benchmark");
@@ -118,6 +126,7 @@ public sealed class MoonshineApplication : IDisposable
         Console.WriteLine("Options:");
         Console.WriteLine("  --host <ip>          Target host IP address (default: 127.0.0.1)");
         Console.WriteLine("  --port <int>         Host control port (default: 48010)");
+        Console.WriteLine("  --auto-confirm, -y   Automatically confirm human observation step in test runner");
         Console.WriteLine("  --codec <name>       Video codec: hevc | h264 | av1 (default: hevc)");
         Console.WriteLine("  --bitrate <kbps>     Streaming bitrate in Kbps (default: 20000)");
         Console.WriteLine("  --fps <int>          Target frame rate (default: 60)");

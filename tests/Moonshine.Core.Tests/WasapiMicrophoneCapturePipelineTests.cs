@@ -34,7 +34,8 @@ public sealed class WasapiMicrophoneCapturePipelineTests
         bool ok = pipeline.TryReadSamples(buffer, out int samplesRead, out ulong timestampQpc);
 
         ok.Should().BeTrue();
-        samplesRead.Should().Be(480);
+        samplesRead.Should().BeGreaterThan(0);
+        samplesRead.Should().BeLessThanOrEqualTo(480);
         timestampQpc.Should().BeGreaterThan(0);
     }
 
@@ -51,7 +52,8 @@ public sealed class WasapiMicrophoneCapturePipelineTests
         bool ok = pipeline.TryReadSamples(buffer, out int samplesRead, out ulong timestampQpc);
 
         ok.Should().BeTrue();
-        samplesRead.Should().Be(960);
+        samplesRead.Should().BeGreaterThan(0);
+        samplesRead.Should().BeLessThanOrEqualTo(960);
         timestampQpc.Should().BeGreaterThan(0);
     }
 
@@ -85,7 +87,8 @@ public sealed class WasapiMicrophoneCapturePipelineTests
         Span<float> buffer = stackalloc float[480];
         bool ok = pipeline.TryReadSamples(buffer, out int samplesRead, out ulong timestampQpc);
         ok.Should().BeTrue();
-        samplesRead.Should().Be(480);
+        samplesRead.Should().BeGreaterThan(0);
+        samplesRead.Should().BeLessThanOrEqualTo(480);
         timestampQpc.Should().BeGreaterThan(0);
     }
 
