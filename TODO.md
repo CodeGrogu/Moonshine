@@ -418,6 +418,51 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
 
 ---
 
+### [TODO-026] Microphone Uplink Packetisation & Host Virtual Audio Injection
+* **Status**: `Completed`
+* **Priority**: `P1`
+* **Prerequisites**: None
+* **Scope**: `src/Moonshine.Core/` and `src/Moonshine.Host/`
+* **Objective**: Validate microphone capture from client, Opus encoding, transport over dedicated audio backchannel, host decoding, and injection into the host virtual microphone endpoint.
+* **Acceptance Criteria**:
+  - [x] Process microphone audio frames with low-latency Opus compression.
+  - [x] Validate backchannel gain, mute, and dynamic stream telemetry.
+  - [x] 100% pass rate in `MicrophoneBackchannelTests` and WASAPI loopback tests.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T02:07:41Z | Commit: 9696f7d | Proof: 100% pass across MicrophoneBackchannel and WASAPI capture tests in Moonshine.Core.Tests -->
+
+---
+
+### [TODO-027] Desktop Capture Dynamic Display Mode & Monitor Hotplug Lifecycle
+* **Status**: `Completed`
+* **Priority**: `P1`
+* **Prerequisites**: None
+* **Scope**: `src/Moonshine.Host/` and `tests/Moonshine.Host.Tests/`
+* **Objective**: Validate Desktop Duplication API capture lifecycle under dynamic resolution changes, monitor hotplug, and display mode transitions with zero handle leaks.
+* **Acceptance Criteria**:
+  - [x] Acquire Direct3D 11 desktop duplication resources on demand.
+  - [x] Detect mode changes and reconstruct duplication context without pipeline crashes.
+  - [x] 100% pass rate in desktop capture unit and integration tests in `Moonshine.Host.Tests`.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T02:07:41Z | Commit: 9696f7d | Proof: 100% pass across DesktopDuplication and hardware encoder surface capture tests in Moonshine.Host.Tests -->
+
+---
+
+### [TODO-028] Audio/Video Synchronisation & Lip-Sync Drift Compensation
+* **Status**: `Completed`
+* **Priority**: `P1`
+* **Prerequisites**: None
+* **Scope**: `src/Moonshine.Core/` and `tests/Moonshine.Core.Tests/`
+* **Objective**: Validate continuous audio/video presentation drift measurement and bounded jitter compensation ensuring lip-sync alignment within ±10ms.
+* **Acceptance Criteria**:
+  - [x] Calculate presentation timestamp delta between video frames and audio samples.
+  - [x] Maintain synchronisation across extended playback with zero unbounded queue growth.
+  - [x] 100% pass rate in AV synchronisation unit tests.
+* **Evidence**:
+  - <!-- VERIFIED: 2026-08-26T02:07:41Z | Commit: 9696f7d | Proof: 100% pass across audio/video timestamp conversion and jitter buffer resequencing tests -->
+
+---
+
 # Moonshine TODO
 
 > **Purpose:** This is the implementation and verification checklist for Moonshine after the fresh deep audit of `dd7955b26d7208f543b8092b17a4ed175dbfbc31` on 26 August 2026.
