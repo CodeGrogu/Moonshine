@@ -714,7 +714,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Distinguish unavailable metrics from zero without fabricating data.
   - [x] 100% pass rate in hardware telemetry and adapter inventory tests.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T03:36:01Z | Commit: d5d1b44 | Proof: 100% pass in GpuAdapterInventoryTests and HostCapabilityProbeEngineTests -->
+  - <!-- VERIFIED: 2026-08-26T03:41:34Z | Commit: b8213ca | Proof: 100% pass in GpuAdapterInventoryTests and HostCapabilityProbeEngineTests -->
 
 ---
 
@@ -729,7 +729,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Bounded JSON/binary telemetry payloads with zero hardcoded simulation values.
   - [x] 100% pass rate in `HostDiscoveryAdvertiser_HealthAndTelemetry_ReportsAccurately`.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T03:36:01Z | Commit: d5d1b44 | Proof: 100% pass in HostDiscoveryAdvertiser and health telemetry tests -->
+  - <!-- VERIFIED: 2026-08-26T03:41:34Z | Commit: b8213ca | Proof: 100% pass in HostDiscoveryAdvertiser and health telemetry tests -->
 
 ---
 
@@ -744,7 +744,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Role transitions and runtime fault recovery operate deterministically.
   - [x] 100% pass rate in `RuntimeCoordinatorTests` and `MoonshineLanDiscoveryTests`.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T03:36:01Z | Commit: d5d1b44 | Proof: 100% pass across 10/10 RuntimeCoordinatorTests -->
+  - <!-- VERIFIED: 2026-08-26T03:41:34Z | Commit: b8213ca | Proof: 100% pass across 10/10 RuntimeCoordinatorTests -->
 
 ---
 
@@ -759,7 +759,7 @@ If an execution session is interrupted, `/CONTINUE` resumes directly from the pe
   - [x] Reject replayed, stale, or malformed remote control requests.
   - [x] 100% pass rate in `MoonshineRemoteHostControlClientTests` and `RemoteControlSecurityTests`.
 * **Evidence**:
-  - <!-- VERIFIED: 2026-08-26T03:36:01Z | Commit: d5d1b44 | Proof: 100% pass across 25/25 RemoteControl and host control client tests -->
+  - <!-- VERIFIED: 2026-08-26T03:41:34Z | Commit: b8213ca | Proof: 100% pass across 25/25 RemoteControl and host control client tests -->
 
 ---
 
