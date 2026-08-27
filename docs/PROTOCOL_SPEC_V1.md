@@ -1,22 +1,32 @@
-# Moonshine Native Binary Protocol (MNBP v1) Specification
+# Moonshine Native Binary Protocol (MNBP v1.1) Specification
 
-<!-- VERIFIED: 2026-08-21, via `ctest --test-dir build/release-avx2 -R test_moonshine_protocol` and `tools/dotnet_sdk/dotnet.exe test tests/Moonshine.Protocol.Tests` on Windows 11 Pro build 26200 -->
+<!-- REVISION: 1.1 — supersedes MNBP v1.0. Security-critical revision: adds explicit authentication handshake, key derivation, AEAD packet protection, transcript binding, message state machine, and numeric validation bounds.
+VERIFIED: this revision is verified when `ctest -R test_moonshine_protocol` and `dotnet test tests/Moonshine.Protocol.Tests` pass against revision hash <COMMIT_SHA> on Windows 11 Pro. Verification claims must cite this revision hash. -->
 
 ## 1. Overview and Design Principles
 
-The **Moonshine Native Binary Protocol (MNBP v1)** is a high-performance, versioned, zero-allocation binary transport wire contract owned entirely by Moonshine. It establishes deterministic wire layouts for session control, media streaming, audio transmission, microphone backchannel, input injection, Quality of Service (QoS) feedback, telemetry, and authenticated remote host management.
+The **Moonshine Native Binary Protocol (MNBP v1.1)** is a high-performance, versioned, zero-allocation binary transport wire contract owned entirely by Moonshine. It establishes deterministic wire layouts for session control, **authenticated key exchange**, media streaming, audio transmission, microphone backchannel, input injection, QoS feedback, telemetry, and authenticated remote host management.
 
 ### Architectural Classification
-> [!IMPORTANT]
-> MNBP v1 represents the **wire contract foundation** for the Moonshine ecosystem. It defines canonical message envelopes, endian serialization rules, struct boundaries, validation criteria, and error codes. Concrete network transport engines (QUIC/TCP control plane, UDP media plane, packetisation, and jitter scheduling) consume and produce these contracts across C++23 and .NET 9.
+MNBP v1.1 defines the **wire contract** for the Moonshine ecosystem. Concrete network transport engines (QUIC/TCP control plane, UDP media plane, packetisation, jitter scheduling) consume and produce these contracts across C++23 and .NET 9.
 
 ### Core Architectural Guarantees
-1. **Strict Big-Endian Wire Encoding**: All multi-byte numeric fields are serialized in **Big-Endian** (Network Byte Order) through explicit field-by-field operations (`BinaryPrimitives` in C#, `std::byteswap` in C++23).
-2. **Canonical 16-Byte UUID Representation**: UUIDs and cryptographic salt tokens are encoded as raw 16-byte big-endian buffers (`MoonshineUuid128`), preventing .NET mixed-endian `Guid` memory layout disparities across native and managed boundaries.
-3. **Explicit Separation of Logical Structs and Wire Formats**: Network payloads are governed by canonical serialization functions rather than compiler struct padding assumptions.
-4. **Zero Heap Allocation in Codec Hot Paths**: All packet header and payload codecs operate directly upon `ReadOnlySpan<byte>` and `Span<byte>` buffers without managed heap allocations.
-5. **Codec Independence**: Media framing operates independently of specific video codecs (AV1, HEVC, H.264).
-6. **No Legacy Dependencies**: The protocol replaces all legacy RTSP, RTP, RTCP, GameStream, and Sunshine binary framing formats with first-party Moonshine contracts.
+1. **Strict Big-Endian Wire Encoding**: All multi-byte numeric fields are serialized in Big-Endian (Network Byte Order) through explicit field-by-field operations (`BinaryPrimitives` in C#, `std::byteswap` in C++23).
+2. **Canonical 16-Byte UUID Representation**: UUIDs and cryptographic salts are encoded as raw 16-byte big-endian buffers (`MoonshineUuid128`).
+3. **Explicit Separation of Logical Structs and Wire Formats**: Network payloads are governed by canonical serialization functions, never compiler struct padding. **All structs are packed; there is no implicit alignment.**
+4. **Zero Heap Allocation in Codec Hot Paths**: Post-handshake packet codecs operate directly on `ReadOnlySpan<byte>` / `Span<byte>`.
+5. **Codec Independence**: Media framing is independent of video codec (AV1, HEVC, H.264).
+6. **No Legacy Dependencies**: No RTSP, RTP, RTCP, GameStream, or Sunshine framing.
+7. **Cryptographically Authenticated and Protected**: Every session is mutually authenticated before any capability, configuration, media, or input message is processed, and every post-handshake datagram is AEAD-protected. *(New in v1.1)*
+8. **Fail-Closed Validation**: Any validation failure on a received datagram causes the datagram to be discarded. Repeated failures above the thresholds in §11 cause session teardown. No error path allocates unbounded memory. *(New in v1.1)*
+
+### Security Model Summary *(New in v1.1)*
+- Authentication: **HMAC-SHA-256 challenge–response over a session transcript**, derived from a host-issued salt and a shared secret (host PIN or pairing token) via **Argon2id** (host side) / HKDF.
+- Key agreement: **X25519 ephemeral Diffie–Hellman**, performed during the handshake, producing symmetric keys used for **AEAD (ChaCha20-Poly1305)** protection of all post-handshake traffic.
+- **Auth-before-anything**: No message other than `Hello`, `HelloResponse`, `ClientAuth`, and `ServerConfirm` is accepted before the session reaches the `Established` state (§9).
+- **Anti-reflection/amplification**: The host sends no media, and no high-bandwidth responses of any kind, until authentication completes and the client's UDP endpoints are confirmed by a keyed `MediaEndpointConfirm` packet (§7.6).
+- **Downgrade protection**: negotiated version and capabilities are bound into the authenticated transcript.
+- Session identity is never used as a bearer credential: the AEAD key, not `SessionId`, is the proof of session membership.
 
 ---
 
@@ -38,10 +48,11 @@ Every datagram transmitted across control and media channels starts with a manda
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 |                                                               |
 +                       Session ID (64-bit)                     +
+|                                                               +
 |                                                               |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 |                                                               |
-+                     Timestamp Us (64-bit)                     +
++                       Timestamp Us (64-bit)                   +
 |                                                               |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 ```
@@ -50,28 +61,37 @@ Every datagram transmitted across control and media channels starts with a manda
 
 | Field | Type | Offset | Size | Description |
 | --- | --- | ---: | ---: | --- |
-| `Magic` | `uint32_t` | 0 | 4 | Protocol identifier: must equal `0x4D53484E` (`'MSHN'`). |
-| `Version` | `uint16_t` | 4 | 2 | Protocol version: `0x0001` (Major: 1, Minor: 0). |
-| `MessageType` | `uint16_t` | 6 | 2 | Distinct message family identifier. |
-| `PayloadSize` | `uint32_t` | 8 | 4 | Size of the trailing payload bytes (excluding the 32-byte header). |
-| `SequenceNumber` | `uint32_t` | 12 | 4 | Monotonically increasing message sequence number. |
-| `SessionId` | `uint64_t` | 16 | 8 | 64-bit session token associated with the authenticated peer. |
-| `TimestampUs` | `uint64_t` | 24 | 8 | Microsecond Unix epoch or relative monotonic stream timestamp. |
+| `Magic` | `uint32_t` | 0 | 4 | Must equal `0x4D53484E`. Mismatch → `InvalidMagic`, datagram dropped. |
+| `Version` | `uint16_t` | 4 | 2 | `0x0101` (Major: 1, Minor: 1). Mismatch → `UnsupportedVersion`, datagram dropped. |
+| `MessageType` | `uint16_t` | 6 | 2 | Message family + message identifier (§3). |
+| `PayloadSize` | `uint32_t` | 8 | 4 | Size of trailing payload **including the 16-byte AEAD tag when the message is protected** (§8). Must not exceed `negotiated_mtu - 32`. |
+| `SequenceNumber` | `uint32_t` | 12 | 4 | Monotonically increasing per **direction per stream** (`stream_id` 0 for control). Wraparound is handled by the continuity rule in §8.4. |
+| `SessionId` | `uint64_t` | 16 | 8 | 64-bit random session token assigned by the host. **Not a security credential**; routing/multiplexing hint only. |
+| `TimestampUs` | `uint64_t` | 24 | 8 | **Relative monotonic** microseconds since session anchor time (`SessionSetupResponse` receive on the client, its send on the host). Unix-epoch timestamps are **invalid** in this field. |
+
+### Validation Rules (Header) *(New in v1.1)*
+1. `PayloadSize` for fixed-size message types must equal exactly the specified size; otherwise `MalformedHeader`, datagram dropped.
+2. `PayloadSize` for variable-size message types must not exceed the type's documented maximum; otherwise `MalformedHeader`.
+3. `PayloadSize` must satisfy `32 + PayloadSize <= datagram_length` and `PayloadSize <= negotiated_mtu - 32`; otherwise `PayloadTruncated` / `MalformedHeader`.
+4. All `reserved` fields must be **zero on send**. Receivers **must validate** reserved fields are zero and drop the datagram with `MalformedHeader` otherwise.
+5. `SessionId` must match the active session for all post-`HelloResponse` traffic; otherwise `InvalidSession`, datagram dropped (do not respond pre-auth — see §11 anti-amplification).
 
 ---
 
 ## 3. Message Family Taxonomy
 
-| Message Family | Code Range | Description |
-| --- | --- | --- |
-| **Control & Session** | `0x0100` - `0x01FF` | Connection handshake, authentication, stream negotiation, teardown. |
-| **Media Video** | `0x0200` - `0x02FF` | Codec-agnostic video frame and FEC parity shard transmission. |
-| **Audio** | `0x0300` - `0x03FF` | Low-latency multi-channel audio stream transmission (Host to Client). |
-| **Microphone** | `0x0400` - `0x04FF` | Low-latency audio backchannel (Client to Host). |
-| **Feedback & QoS** | `0x0500` - `0x05FF` | Packet loss statistics, round-trip latency, jitter, IDR keyframe requests. |
-| **Input Injection** | `0x0600` - `0x06FF` | High-frequency keyboard, mouse, and gamepad input state transmission. |
-| **Telemetry** | `0x0700` - `0x07FF` | Latency breakdown reports, render statistics, and health metrics. |
-| **Host Management** | `0x0800` - `0x08FF` | Authenticated remote host configuration queries and mutations. |
+| Message Family | Code Range | Pre-Auth Permitted | Description |
+| --- | --- | --- | --- |
+| **Control & Session** | `0x0100` - `0x01FF` | Only `Hello`, `HelloResponse`, `ClientAuth` (§4.1) | Handshake, **authenticated key exchange**, stream negotiation, teardown. |
+| **Media Video** | `0x0200` - `0x02FF` | No | Codec-agnostic video frame and FEC parity transmission. |
+| **Audio** | `0x0300` - `0x03FF` | No | Low-latency audio (Host → Client). |
+| **Microphone** | `0x0400` - `0x04FF` | No | Low-latency audio backchannel (Client → Host). |
+| **Feedback & QoS** | `0x0500` - `0x05FF` | No | Loss stats, RTT, jitter, IDR requests. |
+| **Input Injection** | `0x0600` - `0x06FF` | No | Keyboard, mouse, gamepad input state. |
+| **Telemetry** | `0x0700` - `0x07FF` | No | Latency breakdowns, health metrics. |
+| **Host Management** | `0x0800` - `0x08FF` | No | Authenticated host configuration queries and mutations. |
+
+Receiving any message outside its permitted state is a protocol violation: pre-auth → drop datagram silently (control plane) or terminate TCP control connection; post-auth → session teardown with `InvalidSession`.
 
 ---
 
@@ -79,220 +99,271 @@ Every datagram transmitted across control and media channels starts with a manda
 
 ### 4.1 Control & Session Payloads
 
-#### `Hello` (`0x0101`, 32 bytes payload)
-Sent by Client to initiate protocol version and capability handshake:
+#### `Hello` (`0x0101`, 32 bytes payload) — Client → Host, pre-auth, plaintext
 - `uint16_t client_version_major`
 - `uint16_t client_version_minor`
 - `uint32_t capabilities_mask`
-- `uint64_t client_nonce`
-- `uint8_t client_uuid[16]` (RFC 4122 Big-Endian 128-bit UUID)
+- `uint64_t client_nonce` — CSPRNG-generated, MUST NOT repeat within the host's replay window (host tracks recent nonces; duplicate → `DuplicateSequence`, drop).
+- `uint8_t client_uuid[16]`
 
-#### `HelloResponse` (`0x0102`, 48 bytes payload)
-Sent by Host in response to `Hello`:
+#### `HelloResponse` (`0x0102`, 80 bytes payload) — Host → Client, pre-auth, plaintext
 - `uint16_t server_version_major`
 - `uint16_t server_version_minor`
 - `uint32_t negotiated_capabilities`
-- `uint64_t assigned_session_id`
-- `uint64_t server_nonce`
-- `uint8_t challenge_salt[16]`
+- `uint64_t assigned_session_id` — **MUST be generated by a CSPRNG**, uniform random 64-bit value; rejected values: 0 and 0xFFFFFFFFFFFFFFFF.
+- `uint64_t server_nonce` — CSPRNG-generated.
+- `uint8_t challenge_salt[16]` — CSPRNG-generated per session.
+- `uint32_t argon2_memory_kib` — host-chosen Argon2id memory cost (e.g., 65536).
+- `uint32_t argon2_iterations` — host-chosen (e.g., 3).
+- `uint32_t argon2_parallelism` — host-chosen (e.g., 1).
 - `uint32_t session_lease_seconds`
 - `uint32_t reserved`
 
-#### `SessionSetup` (`0x0103`, 40 bytes payload)
-Negotiates video, audio, and network stream parameters:
-- `uint32_t video_width`
-- `uint32_t video_height`
-- `uint32_t video_fps`
-- `uint32_t video_bitrate_kbps`
-- `uint8_t video_codec` (1: AV1, 2: HEVC, 3: H.264)
-- `uint8_t video_color_format` (1: NV12, 2: P010_HDR10)
-- `uint8_t audio_channels` (2: Stereo, 6: 5.1, 8: 7.1)
-- `uint8_t audio_codec` (1: Opus, 2: PCM16)
-- `uint32_t audio_sample_rate` (e.g. 48000)
-- `uint32_t audio_bitrate_kbps`
-- `uint16_t client_udp_video_port`
-- `uint16_t client_udp_audio_port`
-- `uint16_t client_udp_feedback_port`
-- `uint16_t reserved`
-- `uint32_t mtu_payload_size`
+**Version selection rule**: The host sets `server_version_major/minor` to the highest mutually supported version. The negotiated version is `min(client, server)` per component. If no compatible version exists, the host responds with `version = 0x0000` and stops. **Downgrade protection**: the full negotiated version tuple is covered by the auth transcript (§4.1.1); an on-path attacker cannot force an older version without breaking the HMAC proof.
 
-#### `SessionSetupResponse` (`0x0104`, 32 bytes payload)
+#### `ClientAuth` (`0x0107`, 116 bytes payload) — Client → Host, pre-auth, plaintext, begins protected handshake *(New in v1.1)*
+- `uint8_t client_ephemeral_x25519[32]` — CSPRNG ephemeral public key, single use per session.
+- `uint8_t client_proof[32]` — HMAC-SHA-256 authentication tag, computed as specified in §4.1.1.
+- `uint8_t client_uuid_confirmation[16]` — must equal `Hello.client_uuid`; mismatch → `AuthenticationFailed`.
+- `uint32_t reserved`
+
+#### `ServerConfirm` (`0x0108`, 80 bytes payload) — Host → Client, sent **protected with the newly derived key** (§4.1.2) *(New in v1.1)*
+- `uint8_t host_ephemeral_x25519[32]`
+- `uint8_t host_proof[32]` — HMAC tag per §4.1.1 (host role).
+- `uint8_t aead_nonce_prefix[8]` — host's 8-byte per-direction AEAD nonce prefix.
+- `uint32_t handshake_result` — 0 = Success, `AuthenticationFailed` (7), `RateLimited` (14).
+- `uint32_t reserved`
+
+Receipt of `ServerConfirm` with `handshake_result == 0` transitions the session to `Established`.
+
+#### 4.1.1 Authentication and Key Schedule *(New in v1.1)*
+
+**Secret material.** The host and client share a pre-provisioned secret: either a user-typed host PIN (6–32 Unicode code points) or a 256-bit pairing token from an out-of-band pairing flow. Implementations MUST NOT hardcode or derive-from-public-data secrets.
+
+**Password hardening (host side, for PINs).**
+```
+psk = Argon2id(password = secret, salt = challenge_salt,
+               memory = argon2_memory_kib, iterations = argon2_iterations,
+               parallelism = argon2_parallelism, tag_length = 32)
+```
+For 256-bit pairing tokens, `psk = HKDF-SHA256(ikm = token, salt = challenge_salt, info = "MNBP v1.1 psk", L = 32)`.
+
+**Authentication transcript.** Define `T` as the exact on-wire bytes, in this order:
+```
+T = "MNBP-AUTH-v1"                     (12 ASCII bytes)
+  || Hello (32 bytes, as sent)
+  || HelloResponse (80 bytes, as sent)
+  || ClientAuth.client_ephemeral_x25519 (32 bytes)
+```
+This binds the negotiated version, capabilities, nonces, salt, Argon2 parameters, and session id into the proof — providing downgrade protection and replay protection in one structure.
+
+**Proofs.**
+```
+client_proof = HMAC-SHA-256(key = psk,
+    data = T || "C" || ServerConfirm.receipt_placeholder )
+  where the final element is the ASCII label "client" (6 bytes):
+  client_proof = HMAC-SHA-256(psk, T || "client")
+host_proof   = HMAC-SHA-256(psk, T || "host")
+```
+Comparison MUST be constant-time. Failure → `AuthenticationFailed`, session torn down, and the failure counts against the host's brute-force rate limiter (§11).
+
+**Key schedule.**
+```
+shared_secret = X25519(client_ephemeral, host_ephemeral)
+handshake_key = HKDF-SHA256(ikm = shared_secret,
+                            salt = SHA-256(T),
+                            info = "MNBP v1.1 handshake", L = 64)
+```
+The 64-byte output splits into two 32-byte ChaCha20-Poly1305 keys:
+- `k_client_to_host = handshake_key[0..31]`
+- `k_host_to_client = handshake_key[32..63]`
+
+Both directions derive per-packet AEAD nonces as `nonce_prefix (8 bytes, per direction) || sequence_number encoded big-endian (4 bytes)`. The client derives its `nonce_prefix` as `HKDF(handshake_key, info = "MNBP v1.1 client nonce")` — equivalently, the client's prefix is HKDF-derived and the host's is carried in `ServerConfirm.aead_nonce_prefix`. Nonces MUST NEVER repeat under the same key.
+
+**Ephemeral key hygiene.** X25519 keypairs are generated fresh per session from a CSPRNG and zeroized immediately after key derivation. Implementations MUST reject `ClientAuth` with an all-zero or low-order point (`X25519` all-zero output → `AuthenticationFailed`).
+
+#### `SessionSetup` (`0x0103`, 40 bytes payload) — post-auth, AEAD-protected
+As in v1.0, **with mandatory validation bounds** (§4.1.3):
+- `uint32_t video_width` — 1..`max_encode_width` from `HostCapabilitiesResponse`
+- `uint32_t video_height` — 1..`max_encode_height`
+- `uint32_t video_fps` — 1..1000
+- `uint32_t video_bitrate_kbps` — 1..`max_bitrate_kbps`
+- `uint8_t video_codec` (1: AV1, 2: HEVC, 3: H.264)
+- `uint8_t video_color_format` (1: NV12, 2: P010_HDR10) — P010 only when `supports_hdr10`
+- `uint8_t audio_channels` (2, 6, 8)
+- `uint8_t audio_codec` (1: Opus, 2: PCM16)
+- `uint32_t audio_sample_rate` — 8000..192000
+- `uint32_t audio_bitrate_kbps` — 16..1024
+- `uint16_t client_udp_video_port` — 1024..65535, or 0 to disable
+- `uint16_t client_udp_audio_port` — 1024..65535, or 0
+- `uint16_t client_udp_feedback_port` — 1024..65535, or 0
+- `uint16_t reserved` — must be 0
+- `uint32_t mtu_payload_size` — 576..9000
+
+Any violation → `SessionSetupResponse` with `InvalidConfigurationParameter`; session remains in `Established` but streams are not started.
+
+#### `SessionSetupResponse` (`0x0104`, 32 bytes payload) — post-auth, AEAD-protected
 - `uint32_t status_code` (0: Success, non-zero: ErrorCode)
-- `uint32_t video_stream_id`
+- `uint32_t video_stream_id` — nonzero on success
 - `uint32_t audio_stream_id`
 - `uint32_t feedback_stream_id`
-- `uint16_t host_udp_video_port`
+- `uint16_t host_udp_video_port` — 1024..65535, or 0
 - `uint16_t host_udp_audio_port`
 - `uint16_t host_udp_feedback_port`
 - `uint16_t host_udp_input_port`
-- `uint32_t negotiated_mtu`
+- `uint32_t negotiated_mtu` — ≤ client's `mtu_payload_size`
 - `uint32_t reserved`
 
----
+#### 4.1.2 Note on Handshake Encryption
+`ClientAuth` and its payload transit in the clear (they contain no secret: the X25519 public key is public, and the HMAC proof is not replayable thanks to transcript binding and nonce tracking). `ServerConfirm` is the first AEAD-protected datagram, proving to the client that the host possesses `psk` before the client treats the channel as trusted. The first two handshake round trips occur over the TCP control connection; pre-auth datagrams are additionally rate-limited (§11).
 
-### 4.2 Media Stream Framing
+### 4.2 Media Stream Framing — post-auth, AEAD-protected, UDP media plane
 
 #### `VideoPacket` (`0x0201`, 32 bytes header + variable bitstream payload)
-Codec-agnostic video transmission framing:
 - `uint32_t stream_id`
-- `uint64_t frame_index` (64-bit monotonic frame sequence)
-- `uint32_t packet_index` (0-indexed packet within frame)
-- `uint32_t total_packets` (Total packet count in frame)
-- `uint32_t fec_block_index` (FEC shard group index)
-- `uint16_t payload_size` (Size of bitstream slice following header)
+- `uint64_t frame_index` — strictly monotonically increasing per stream, starting at 0
+- `uint32_t packet_index` — 0-indexed; **MUST satisfy `packet_index < total_packets`**; violation → drop datagram
+- `uint32_t total_packets` — **MUST satisfy `total_packets ≤ max_packets_per_frame`** where `max_packets_per_frame = ceil(max_frame_bytes / (negotiated_mtu - 32 - 32))` and `max_frame_bytes` is negotiated (default 4 MiB); violation → drop datagram and count toward `MalformedHeader` budget
+- `uint32_t fec_block_index` — `< ceil(total_packets / fec_group_size)`
+- `uint16_t payload_size` — **MUST be ≤ `negotiated_mtu - 32 - 32`** and equal the actual trailing AEAD-protected slice length; violation → `PayloadTruncated`
 - `uint8_t packet_type` (0: Data Shard, 1: FEC Parity Shard)
-- `uint8_t flags` (Bit 0: Keyframe, Bit 1: FrameStart, Bit 2: FrameEnd, Bit 3: HDR10 Present)
+- `uint8_t flags` (Bit 0: Keyframe, Bit 1: FrameStart, Bit 2: FrameEnd, Bit 3: HDR10 Present; **bits 4–7 reserved, must be 0**)
 - `uint32_t reserved`
 
----
+**Reassembly invariant**: decoders MUST NOT preallocate reassembly buffers from `total_packets`. Buffers are allocated against the negotiated `max_frame_bytes` bound only. A frame is assembled only when all `total_packets` shards with consistent values (`total_packets` identical across the frame; `payload_size` sums to ≤ `max_frame_bytes`) are present; inconsistent values → discard the entire frame's buffered shards and count a decode error.
 
-### 4.3 Audio & Microphone Framing
+### 4.3 Audio & Microphone Framing — post-auth, AEAD-protected
 
 #### `AudioPacket` (`0x0301`, 24 bytes header + compressed audio payload)
 - `uint32_t stream_id`
 - `uint64_t sample_index`
-- `uint32_t sample_rate`
-- `uint16_t frame_duration_us`
-- `uint16_t payload_size`
-- `uint8_t channels` (2, 6, 8)
-- `uint8_t codec` (1: Opus, 2: PCM16)
+- `uint32_t sample_rate` — must match negotiated value
+- `uint16_t frame_duration_us` — 1000..20000
+- `uint16_t payload_size` — ≤ `negotiated_mtu - 32 - 24`
+- `uint8_t channels` — must match negotiated value
+- `uint8_t codec` — must match negotiated value
 - `uint16_t reserved`
 
-#### `MicPacket` (`0x0401`, 20 bytes header + compressed audio payload)
+#### `MicPacket` (`0x0401`, 20 bytes header + compressed audio payload) — Client → Host only
 - `uint32_t stream_id`
 - `uint64_t sample_index`
-- `uint16_t payload_size`
+- `uint16_t payload_size` — ≤ `negotiated_mtu - 32 - 20`
 - `uint8_t channels` (1: Mono, 2: Stereo)
 - `uint8_t codec` (1: Opus, 2: PCM16)
-- `uint32_t sample_rate`
+- `uint32_t sample_rate` — 8000..192000
 
----
+Mic backchannel is active only when `supports_mic_backchannel == 1` **and** the authenticated peer is the client role **and** mic was enabled in `SessionSetup` capability negotiation. Hosts MUST drop `MicPacket`s from clients without mic entitlement (`UnauthorizedConfiguration`).
 
-### 4.4 Feedback & Quality of Service Payloads
+### 4.4 Feedback & Quality of Service Payloads — post-auth, AEAD-protected
 
 #### `FeedbackLossStats` (`0x0501`, 40 bytes payload)
+As in v1.0, with these clarifications:
 - `uint32_t stream_id`
-- `uint64_t last_received_frame_index` (Highest monotonic frame index received / processed by client)
-- `uint32_t packets_received` (Cumulative packets received for active stream)
-- `uint32_t packets_lost` (Cumulative packets lost)
-- `uint32_t packets_recovered_fec` (Cumulative packets recovered via FEC)
-- `uint32_t round_trip_time_us` (Measured RTT in microseconds)
-- `uint32_t jitter_us` (Smoothed jitter in microseconds)
-- `uint32_t estimated_bandwidth_kbps` (Estimated throughput in Kbps)
-- `uint32_t receive_queue_depth` (Current client jitter/decode queue depth in frames)
+- `uint64_t last_received_frame_index`
+- `uint32_t packets_received`
+- `uint32_t packets_lost`
+- `uint32_t packets_recovered_fec`
+- `uint32_t round_trip_time_us`
+- `uint32_t jitter_us`
+- `uint32_t estimated_bandwidth_kbps` — ≤ 10,000,000, else `MalformedHeader` (drop)
+- `uint32_t receive_queue_depth`
 
 #### `IdrRequest` (`0x0502`, 16 bytes payload)
 - `uint32_t stream_id`
 - `uint64_t last_valid_frame_index`
 - `uint32_t reason_code` (1: UnrecoverableLoss, 2: SequenceGap, 3: DecoderError)
 
+**IDR rate limit *(New in v1.1)***: Hosts MUST service at most **one IDR request per `idr_min_interval_us`** (default: 3 × current measured RTT, floor 10 ms, ceiling 500 ms) per stream. Additional requests within the window are counted; **exceeding 30 IDR requests in any 10-second window is a protocol violation → session teardown with `UnauthorizedConfiguration`**. This prevents keyframe-request DoS amplification of encoder load and uplink bandwidth.
+
 #### 4.4.1 Feedback Ordering & Monotonic Stream Horizon Invariants
+Unchanged from v1.0 (strictly monotonic frame indices; stale feedback with `last_received_frame_index < last_processed_frame_index` discarded; re-anchoring on `stream_id` change), with one addition:
+4. **Stream horizon cannot regress**: a feedback datagram with `last_received_frame_index` more than `2^32` above the current horizon is malformed (drop); this bounds the impact of AEAD nonce-adjacent corruption bugs and hostile feedback.
 
-1. **Monotonic Frame Indices**: Frame indices (`frame_index`) in MNBP video packets are strictly monotonically increasing per stream (`0, 1, 2, ...`). Even if individual video packet slices arrive out-of-order over UDP or are reconstructed after a delay via FEC, the client's `last_received_frame_index` represents the **stream horizon** (the highest frame index observed/processed).
-2. **Stale Feedback Filtering**: Because UDP feedback datagrams may experience reordering or transit delay, the host congestion controller enforces monotonic progression of `last_received_frame_index`. Any feedback datagram with `last_received_frame_index < last_processed_frame_index` is treated as a delayed/stale datagram and discarded without polluting moving averages or delta counters.
-3. **Session Re-Anchoring**: When `stream_id` changes, the baseline is reset, establishing a new monotonic horizon for the incoming stream.
+### 4.5 Input Injection Payloads — post-auth, AEAD-protected, Client → Host only
 
-
----
-
-### 4.5 Input Injection Payloads
+**Input is refused while the host workstation is locked or on the secure desktop (UAC)** unless an explicitly configured `allow_input_when_locked` policy permits it, and it is always refused on the UAC secure desktop. *(New in v1.1)*
 
 #### `KeyboardInput` (`0x0601`, 12 bytes payload)
-- `uint16_t key_code` (Win32 Virtual-Key code)
+- `uint16_t key_code` — Win32 VK code; host MUST reject injection of key sequences that trigger OS-level secure attention (see §4.5.1)
 - `uint16_t scan_code`
-- `uint8_t is_down` (1: Pressed, 0: Released)
-- `uint8_t modifiers` (Bit 0: Shift, Bit 1: Ctrl, Bit 2: Alt, Bit 3: Meta)
+- `uint8_t is_down` (1/0; other values → drop)
+- `uint8_t modifiers` (Bit 0: Shift, 1: Ctrl, 2: Alt, 3: Meta; bits 4–7 must be 0)
 - `uint16_t reserved`
 - `uint32_t timestamp_offset_us`
 
 #### `MouseInput` (`0x0602`, 20 bytes payload)
-- `int32_t x`
+- `int32_t x` — for `is_absolute = 1`: 0..`desktop_width - 1` for the captured display (out-of-range values are clamped, not rejected, to tolerate display changes mid-session; multi-monitor spans use the virtual desktop bounds)
 - `int32_t y`
 - `int16_t wheel_delta_y`
 - `int16_t wheel_delta_x`
-- `uint16_t button_flags` (Bit 0: Left, Bit 1: Right, Bit 2: Middle, Bit 3: X1, Bit 4: X2)
-- `uint8_t is_absolute` (1: Absolute desktop coords, 0: Relative delta)
+- `uint16_t button_flags` (Bits 0–4: Left, Right, Middle, X1, X2; bits 5–15 must be 0)
+- `uint8_t is_absolute`
 - `uint8_t reserved`
 - `uint32_t timestamp_offset_us`
 
 #### `GamepadInput` (`0x0603`, 24 bytes payload)
-- `uint8_t gamepad_index` (0..3)
+As in v1.0:
+- `uint8_t gamepad_index` (0..3; >3 → drop)
 - `uint8_t reserved`
-- `uint16_t button_mask` (Standard XInput / Moonshine bitmask)
-- `uint8_t left_trigger` (0..255)
-- `uint8_t right_trigger` (0..255)
-- `int16_t thumb_lx` (-32768..32767)
-- `int16_t thumb_ly`
-- `int16_t thumb_rx`
-- `int16_t thumb_ry`
-- `uint16_t motor_left`
-- `uint16_t motor_right`
+- `uint16_t button_mask`
+- `uint8_t left_trigger`, `right_trigger`
+- `int16_t thumb_lx`, `thumb_ly`, `thumb_rx`, `thumb_ry`
+- `uint16_t motor_left`, `motor_right`
 - `uint32_t timestamp_offset_us`
-- `uint16_t reserved2`
+- `uint16_t reserved2` — must be 0
 
----
+#### 4.5.1 Input Injection Safety Rules *(New in v1.1)*
+1. Hosts MUST filter secure-attention sequences (e.g., SAS chord) from injected input regardless of client flags.
+2. Hosts MUST rate-limit input messages: `input_rate_max` (default 8000 events/sec aggregate). Above the limit, excess events are dropped and the client is notified via `ConfigurationChanged` `change_reason_flags` bit 4 (`InputThrottled`). Sustained 10× over-limit → session teardown.
+3. Input is accepted only from the peer holding the input entitlement for the current session mode; hosts in `Host only` role MUST drop all 0x0600 messages.
 
-### 4.6 Telemetry Payloads
+### 4.6 Telemetry Payloads — post-auth, AEAD-protected
 
 #### `TelemetryReport` (`0x0701`, 32 bytes payload)
-- `uint32_t encode_latency_us`
-- `uint32_t decode_latency_us`
-- `uint32_t render_latency_us`
-- `uint32_t network_latency_us`
-- `uint32_t frames_rendered`
-- `uint32_t frames_dropped`
-- `uint32_t fec_recovered_frames`
+As in v1.0:
+- `uint32_t encode_latency_us`, `decode_latency_us`, `render_latency_us`, `network_latency_us`
+- `uint32_t frames_rendered`, `frames_dropped`, `fec_recovered_frames`
 - `uint32_t reserved`
 
----
+Telemetry is **best-effort and never security-relevant**: hosts/clients MUST NOT make access-control, entitlement, or state-machine decisions from telemetry content.
 
-### 4.7 Host Management & Remote Configuration Payloads
+### 4.7 Host Management & Remote Configuration — post-auth, AEAD-protected
+
+**Authorization model *(New in v1.1)***: Host management messages require the **management entitlement**. Entitlements are bound to the shared secret's provisioning level: PIN-based sessions receive streaming entitlements only; pairing-token sessions receive the entitlements granted at pairing time (bitmask persisted with the pairing record). All management messages from a peer without the management entitlement receive `UnauthorizedConfiguration` — and **that error response itself is rate-limited** (max 10/min) so unauthorized peers cannot use it as an oracle.
 
 #### `GetHostCapabilities` (`0x0801`, 4 bytes payload)
-- `uint32_t query_mask`
+- `uint32_t query_mask` — 0 = all; individual bits reserved for selective queries; undefined bits must be 0
 
 #### `HostCapabilitiesResponse` (`0x0802`, 32 bytes payload)
-- `uint32_t supported_video_codecs` (Bitmask: AV1, HEVC, H264)
-- `uint32_t supported_audio_codecs` (Bitmask: Opus, PCM16)
-- `uint32_t max_encode_width`
-- `uint32_t max_encode_height`
-- `uint32_t max_encode_fps`
-- `uint8_t supports_hdr10` (0/1)
-- `uint8_t supports_virtual_audio` (0/1)
-- `uint8_t supports_mic_backchannel` (0/1)
+As in v1.0:
+- `uint32_t supported_video_codecs`, `supported_audio_codecs`
+- `uint32_t max_encode_width` (≤ 16384), `max_encode_height` (≤ 16384), `max_encode_fps` (≤ 1000)
+- `uint8_t supports_hdr10`, `supports_virtual_audio`, `supports_mic_backchannel` (0/1)
 - `uint8_t reserved`
-- `uint32_t max_bitrate_kbps`
+- `uint32_t max_bitrate_kbps` (≤ 1,000,000)
 - `uint32_t reserved2`
 
 #### `GetHostConfiguration` (`0x0803`, 4 bytes payload)
-- `uint32_t config_scope`
+- `uint32_t config_scope` (0: active session, 1: persistent defaults; >1 → drop)
 
-#### `HostConfigurationResponse` (`0x0804`, 48 bytes payload) & `SetHostConfiguration` (`0x0805`, 48 bytes payload)
-- `uint32_t config_version`
-- `uint32_t display_width`
-- `uint32_t display_height`
-- `uint32_t refresh_rate_hz`
-- `uint32_t target_bitrate_kbps`
-- `uint32_t max_bitrate_kbps`
-- `uint8_t preferred_codec` (1: AV1, 2: HEVC, 3: H264)
-- `uint8_t hdr10_enabled` (0/1)
-- `uint8_t audio_channels` (2, 6, 8)
-- `uint8_t audio_quality_mode`
-- `uint32_t audio_bitrate_kbps`
-- `uint16_t input_polling_rate_hz` (e.g. 1000)
-- `uint8_t mic_passthrough_enabled` (0/1)
-- `uint8_t virtual_audio_driver_enabled` (0/1)
-- `uint32_t reserved1`
-- `uint32_t reserved2`
-- `uint32_t reserved3`
+#### `HostConfigurationResponse` (`0x0804`, 48 bytes) & `SetHostConfiguration` (`0x0805`, 48 bytes)
+As in v1.0, with bounds enforced per §4.1.3 ranges:
+- `uint32_t config_version`, `display_width` (≤ 16384), `display_height` (≤ 16384), `refresh_rate_hz` (≤ 1000), `target_bitrate_kbps` (≤ `max_bitrate_kbps`), `max_bitrate_kbps`
+- `uint8_t preferred_codec` (1–3), `hdr10_enabled` (0/1), `audio_channels` (2/6/8), `audio_quality_mode` (0/1)
+- `uint32_t audio_bitrate_kbps` (16..1024)
+- `uint16_t input_polling_rate_hz` (30..8000)
+- `uint8_t mic_passthrough_enabled` (0/1), `virtual_audio_driver_enabled` (0/1)
+- `uint32_t reserved1`, `reserved2`, `reserved3`
+
+`SetHostConfiguration` from a streaming-only peer → `UnauthorizedConfiguration`.
 
 #### `SetHostConfigurationResponse` (`0x0806`, 8 bytes payload)
-- `uint32_t status_code` (0: Success, non-zero: ErrorCode)
-- `uint32_t applied_config_version`
+- `uint32_t status_code`
+- `uint32_t applied_config_version` — monotonically increasing; responses MUST echo the applied version
 
 #### `ConfigurationChanged` (`0x0807`, 8 bytes payload)
 - `uint32_t new_config_version`
-- `uint32_t change_reason_flags`
+- `uint32_t change_reason_flags` (Bit 0: Remote mutation, 1: Local mutation, 2: Display change, 3: Policy change, 4: InputThrottled; bits 5–31 reserved, must be 0)
 
 ---
 
@@ -303,14 +374,180 @@ Codec-agnostic video transmission framing:
 | `Success` | 0 | Operation completed successfully. |
 | `InvalidMagic` | 1 | Packet magic is not `0x4D53484E`. |
 | `UnsupportedVersion` | 2 | Protocol version mismatch. |
-| `MalformedHeader` | 3 | Header size less than 32 bytes or invalid field value. |
+| `MalformedHeader` | 3 | Header < 32 bytes, reserved field nonzero, fixed payload size mismatch, or invalid field value. |
 | `BufferTooSmall` | 4 | Destination buffer insufficient for serialization. |
-| `PayloadTruncated` | 5 | Available bytes less than declared `PayloadSize`. |
-| `InvalidSession` | 6 | Session ID does not match active session token. |
-| `AuthenticationFailed` | 7 | Nonce or challenge HMAC mismatch. |
+| `PayloadTruncated` | 5 | Available bytes less than declared `PayloadSize`, or payload exceeds message maximum. |
+| `InvalidSession` | 6 | Session ID does not match active session, or message received outside its permitted state (§9). |
+| `AuthenticationFailed` | 7 | HMAC proof mismatch, replayed nonce, or low-order X25519 key. Counts against rate limiter. |
 | `StreamNotFound` | 8 | Referenced stream ID does not exist in session. |
-| `DuplicateSequence` | 9 | Sequence number already processed. |
-| `StaleTimestamp` | 10 | Packet timestamp is older than discard window. |
-| `UnsupportedCodec` | 11 | Requested video or audio codec unsupported by backend. |
-| `UnauthorizedConfiguration` | 12 | Remote peer lacks authorization to modify host settings. |
-| `InvalidConfigurationParameter` | 13 | Requested setting outside acceptable hardware boundaries. |
+| `DuplicateSequence` | 9 | Sequence number already processed, or replayed `client_nonce`. |
+| `StaleTimestamp` | 10 | Packet timestamp older than discard window (relative monotonic domain only). |
+| `UnsupportedCodec` | 11 | Requested codec unsupported or not negotiated. |
+| `UnauthorizedConfiguration` | 12 | Peer lacks entitlement, or IDR/input rate abuse. |
+| `InvalidConfigurationParameter` | 13 | Setting outside bounds in §4.1.3 / §4.7. |
+| `RateLimited` | 14 | Handshake or pre-auth rate limit exceeded; sender MUST back off (≥ 1 s, exponential). *(New in v1.1)* |
+| `SessionExpired` | 15 | Session lease elapsed; re-handshake required. *(New in v1.1)* |
+| `AeadFailure` | 16 | AEAD authentication tag verification failed. Datagrams with this condition are dropped and counted; > 100 failures in 10 s → session teardown. *(New in v1.1)* |
+
+**Error delivery rules**: Pre-auth (plaintext), error codes are returned **only on the TCP control connection**, never in response to UDP datagrams, to avoid reflection. Post-auth, errors arrive as AEAD-protected messages on the appropriate plane.
+
+---
+
+## 6. Serialization Rules *(New in v1.1, formalized)*
+
+1. All structs are **packed**: each field immediately follows the previous with no padding. Spec-declared payload sizes are normative (`sizeof`-checks in tests MUST assert exact sizes).
+2. Multi-byte fields are Big-Endian on the wire. Frame/payload **bitstream bytes** (video/audio compressed data) are copied verbatim — never byte-swapped.
+3. Senders write reserved fields as zero; receivers verify.
+4. Codecs MUST NOT read or write past the declared payload bounds; out-of-bounds attempts are programming errors and MUST be caught by fuzzing (§12) and debug-mode bounds assertions.
+
+---
+
+## 7. Transport Binding *(New in v1.1)*
+
+- **7.1 Control plane (TCP or QUIC stream)**: handshake, session setup, management, telemetry. Handshake messages (`Hello` → `ServerConfirm`) are length-prefixed (4-byte BE length) on the stream.
+- **7.2 Media plane (UDP)**: video, audio, mic, feedback, input. All post-handshake UDP datagrams are AEAD-protected per §8- **7.3 The host binds client media endpoints only to the observed source IP of the authenticated TCP connection.** The `client_udp_*_port` fields select the port only. If the first protected UDP datagram from `(client_ip, declared_port)` fails to decrypt to a valid `MediaEndpointConfirm`, the endpoint is unconfirmed and **the host MUST NOT send media to it**.
+- **7.4** Host→client media is sent only to confirmed endpoints. Unconfirmed endpoints receive nothing (amplification bound: zero bytes).
+- **7.5** Client media ports may change mid-session via a new `SessionSetup`; reconfirmation applies.
+- **7.6 `MediaEndpointConfirm` (`0x0109`, 16 bytes payload, client → host, one per UDP port)**: `uint32_t stream_id || uint32_t reserved || uint64_t echo_of_server_nonce`. The host validates the AEAD tag and the echoed nonce before confirming the endpoint.
+
+---
+
+## 8. Post-Handshake Packet Protection *(New in v1.1)*
+
+**8.1** Every datagram after `ServerConfirm` — on both control and media planes — carries its payload encrypted and authenticated with ChaCha20-Poly1305 using the direction-appropriate key from §4.1.2. The AEAD tag (16 bytes) is appended to the message payload and is included in `PayloadSize`.
+
+**8.2** The AAD (additional authenticated data) for every packet is the 32-byte packet header. This authenticates magic, version, type, payload size, sequence, session id, and timestamp — any header tampering breaks the tag.
+
+**8.3** Receivers MUST verify the tag before any payload parsing. Tag failure → drop, count `AeadFailure` (§5).
+
+**8.4 Sequence continuity and anti-replay.** Per direction per stream: receivers track a 64-bit extended sequence number (the 32-bit wire value plus a maintained epoch). Accept only packets whose extended sequence is ≥ `highest_seen - 64` and not previously seen (sliding replay window of 64). The 32-bit wrap increments the epoch when the wire sequence crosses from ≥ 2^31 to < 2^31. Out-of-window or replayed packets → `DuplicateSequence`, drop.
+
+**8.5 Key separation.** Handshake keys are never used for media. If a future v2 rekeys, new keys derive via HKDF with `info = "MNBP v2 rekey"`; v1.1 sessions live at most `session_lease_seconds` (default 86400) after which re-handshake is required (`SessionExpired`).
+
+**8.6 Forward secrecy.** Because both X25519 keys are ephemeral and zeroized, compromise of the long-term secret (PIN/token) does not decrypt previously recorded sessions.
+
+---
+
+## 9. Session State Machine *(New in v1.1)*
+
+```
+Idle
+  │ (TCP control connection accepted)
+  ▼
+AwaitHello ── Hello ──► validate version, nonce freshness
+  │                        │ incompatible version
+  │                        ▼
+  │                     Closed (respond 0x0000 version, close)
+  ▼
+AwaitClientAuth ── ClientAuth ──► verify rate limits → verify HMAC proof → X25519 → derive keys
+  │                                   │ AuthenticationFailed / RateLimited / timeout (10 s)
+  │                                   ▼
+  │                                 Closed
+  ▼
+Established ◄── ServerConfirm (handshake_result = 0, AEAD-protected)
+  │
+  ├── SessionSetup ──► SessionSetupResponse (success) ──► StreamsActive
+  │                         │ InvalidConfigurationParameter
+  │                         ▼
+  │                    Established (no streams; client may retry)
+  │
+  ├── MediaEndpointConfirm (per UDP port) ──► endpoint confirmed; media may flow
+  │
+  ├── SetHostConfiguration / Get* ──► entitlement check (§4.7)
+  │
+  ├── ConfigurationChanged ──► (host → client, async)
+  │
+  ├── SessionExpired (lease elapsed) ──► Teardown
+  ├── Violation budget exceeded (§11) ──► Teardown (state: reason recorded)
+  └── GracefulClose (`0x010A`, 8 bytes: `uint32_t close_code`, `uint32_t reserved`) ──► Closed
+Closed ──► session keys, nonce prefixes, and ephemeral secrets zeroized; SessionId retired (never reused)
+```
+
+### 9.1 State machine rules
+1. In any state, receipt of a message not listed as legal for that state and direction → the datagram is dropped; in `Established`, repeated violations (≥ 20 in 10 s) → teardown with `InvalidSession`.
+2. `Hello` retransmission by the client before `ClientAuth` is permitted (identical bytes, idempotent); a *different* `Hello` from the same connection restarts the handshake.
+3. Handshake timeout: if `ClientAuth` is not received within 10 s of `HelloResponse`, the host releases the session slot.
+4. Only one handshake may be in flight per control connection per source IP (§11).
+
+---
+
+## 10. Replay, Nonce, and Session Lifecycle Rules *(New in v1.1)*
+
+1. **Nonce freshness**: The host maintains a rolling Bloom filter or LRU of the last 4096 `client_nonce` values seen (per client UUID and globally). A repeated nonce → `DuplicateSequence`, handshake refused, counts toward the rate limiter.
+2. **Session lease**: `assigned_session_id` and derived keys expire after `session_lease_seconds`. Renewal requires a full re-handshake; there is no resume without fresh X25519 key agreement (preserving §8.6).
+3. **Single-use handshakes**: A transcript `T` may produce at most one successful session. Replaying `ClientAuth` bytes with a new connection fails because the host rejects the reused nonce and because `assigned_session_id` and salts are fresh per handshake.
+4. **Zeroization**: `psk`, `shared_secret`, `handshake_key`, and both X25519 private keys MUST be zeroized immediately after key derivation and at session close. Managed copies in C# must use fixed pinned buffers with explicit overwrite; language-level copies of key material are forbidden.
+5. **SessionId hygiene**: `SessionId` never appears in logs, telemetry exports, or crash dumps.
+
+---
+
+## 11. Anti-Abuse Budgets *(New in v1.1)*
+
+Host-enforced limits, all enforced *before* any state change, memory allocation, or reply:
+
+| Vector | Limit | Action on excess |
+| --- | --- | --- |
+| Pre-auth `Hello` rate | 5 per source IP per 10 s | `RateLimited`, then silent drop; source ban 60 s |
+| Handshake attempts (HMAC failures) | 5 per source IP per minute | `RateLimited` + exponential backoff ≥ 1 s; ban 10 min after 3 consecutive windows |
+| Concurrent half-open handshakes | 8 per source IP, 256 global | Reject oldest / refuse new |
+| Pre-auth UDP datagrams | Host sends **zero** bytes in response to pre-auth UDP; all such datagrams dropped silently | — |
+| AEAD tag failures | > 100 in 10 s | Session teardown (`AeadFailure`) |
+| IDR requests | See §4.4 | Teardown (`UnauthorizedConfiguration`) |
+| Input event rate | `input_rate_max` (default 8000/s) | Throttle, then teardown (§4.5.1) |
+| Malformed-header budget | 50 in 10 s per source | Teardown / source ban |
+| Error-response oracle | Max 10 `UnauthorizedConfiguration` replies/min per session | Silent drop beyond |
+
+Anti-amplification invariant: **the host never emits more bytes than it has received on an unauthenticated or unconfirmed channel**, and emits zero bytes on the media plane before `MediaEndpointConfirm`.
+
+---
+
+## 12. Conformance Testing & Fuzzing Requirements *(New in v1.1)*
+
+Implementations claiming MNBP v1.1 conformance MUST include:
+
+1. **Round-trip codec tests** asserting exact packed sizes for every message (e.g., `sizeof(HelloResponse) == 80`), big-endian layout, and reserved-field zeroing.
+2. **Structure-aware fuzzing** of every deserializer with libFuzzer (C++) / SharpFuzz (C#), with the invariants of §2, §4.2, §6 as oracle checks (no OOB, no allocation proportional to attacker-controlled counts).
+3. **Handshake vectors**: published deterministic test vectors for Argon2id/HKDF/HMAC/X25519/ChaCha20-Poly1305 stages (RFC 8439 test vectors + MNBP-specific transcript vectors).
+4. **Replay/downgrade tests**: recorded-session replay rejected; MITM version-tamper test (mutate `Hello`/`HelloResponse` in transit → HMAC must fail).
+5. **Amplification test**: unconfirmed-endpoint media suppression; pre-auth UDP response silence.
+6. **State machine tests**: every message type attempted in every state; only legal transitions accepted.
+
+---
+
+## 13. Summary of Changes from v1.0
+
+| # | Change | Rationale |
+| --- | --- | --- |
+| 1 | Added `ClientAuth` / `ServerConfirm` with HMAC-SHA-256 proof, Argon2id PSK hardening, X25519 key agreement | No auth message existed; nonce/salt exchange alone provided zero security |
+| 2 | AEAD (ChaCha20-Poly1305) protection of all post-handshake traffic, header-as-AAD | Plaintext `SessionId` was a bearer credential; protocol had no confidentiality/integrity |
+| 3 | SessionId reclassified as non-credential routing hint | Eliminates hijack-by-sniffing |
+| 4 | `MediaEndpointConfirm` + endpoint binding to observed source IP | Removes pre-auth UDP amplification/reflection |
+| 5 | Downgrade protection via auth transcript `T` | Version negotiation was spoofable |
+| 6 | IDR rate limiting | Keyframe-request DoS |
+| 7 | Input safety rules (lock-screen/UAC policy, SAS filtering, rate limits) | Input injection was unconstrained |
+| 8 | Explicit validation bounds for all `SessionSetup`/management fields | Implementations invented their own limits |
+| 9 | `TimestampUs` fixed to relative monotonic; sequence scoping + wraparound rule; reserved-field enforcement; fixed-size payload strictness | Interoperability/ambiguity repairs |
+| 10 | Formal session state machine, abuse budgets, `RateLimited`/`SessionExpired`/`AeadFailure` error codes | "Unreachable before auth" is now a contract, not a hope |
+| 11 | Conformance + fuzzing requirements (§12) | Parsers of custom binary protocols are the top bug source |
+| 12 | Ephemeral key hygiene, zeroization, forward secrecy, no SessionId in logs | Key lifecycle discipline |
+
+---
+
+## 14. Implementation Checklist (normative "must" index)
+
+- [ ] CSPRNG for all nonces, salts, session ids, X25519 keys (§4.1)
+- [ ] Argon2id for PINs; HKDF for tokens; constant-time HMAC compares (§4.1.1)
+- [ ] Transcript `T` computed from exact on-wire bytes (§4.1.1)
+- [ ] AEAD tag verified before any payload parse (§8.3)
+- [ ] Sliding replay window + epoch handling (§8.4)
+- [ ] Pre-auth message allowlist enforced at dispatcher (§3, §9)
+- [ ] Zero bytes to unconfirmed/unauthenticated endpoints (§7.3, §11)
+- [ ] `total_packets`/`packet_index`/`payload_size` bounds checked before any allocation (§4.2)
+- [ ] IDR, input, handshake, and error-oracle rate limits (§4.4, §4.5.1, §11)
+- [ ] Reserved fields zero-checked (§2)
+- [ ] Secure-attention input filtered; locked-desktop policy (§4.5, §4.5.1)
+- [ ] Management entitlement model (§4.7)
+- [ ] Zeroization on close; no `SessionId` in logs (§10)
+- [ ] Exact-size codec assertions + fuzzers in CI (§12)
+
+*End of MNBP v1.1 specification.*
