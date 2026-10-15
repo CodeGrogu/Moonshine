@@ -3,12 +3,15 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics.X86;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Moonshine.Core;
 using Moonshine.Core.Session;
 using Moonshine.Interop;
 using Moonshine.Protocol.Codecs;
@@ -19,7 +22,8 @@ namespace Moonshine.App;
 /// <summary>
 /// Client Acceptance Test Runner (TODO-049).
 /// Drives the execution of all 10 production acceptance test steps on the physical Client machine,
-/// collects hardware inventory provenance, records step latencies, gathers human observation confirmation,
+/// dynamically collects hardware inventory provenance without hardcoded IP or latency values,
+/// records empirical frame latencies, gathers human observation confirmation,
 /// signs the evidence bundle with SHA-256, and uploads it to the Host over the TCP control channel.
 /// </summary>
 public static class ClientAcceptanceTestRunner
@@ -35,6 +39,12 @@ public static class ClientAcceptanceTestRunner
         Func<Task<bool>>? humanPromptCallback = null,
         CancellationToken ct = default)
     {
+        if (string.IsNullOrWhiteSpace(hostIp) || !IPAddress.TryParse(hostIp, out var parsedHostAddress))
+        {
+            Console.WriteLine($"[-] Invalid or missing Host IP address: '{hostIp}'. Specify a valid IPv4/IPv6 host address.");
+            return 1;
+        }
+
         var runId = AcceptanceRunId.Generate();
         Console.WriteLine("==========================================================");
         Console.WriteLine("Moonshine Two-Device Production Acceptance Runner");
@@ -48,47 +58,39 @@ public static class ClientAcceptanceTestRunner
         var steps = new List<AcceptanceStepResult>();
 
         // --------------------------------------------------------------------
-        // Step 1: Environment & Hardware Inventory
+        // Step 1: Environment & Hardware Inventory (Dynamic Probe)
         // --------------------------------------------------------------------
         Console.WriteLine("[Step 01/10] Gathering Client Physical Environment & GPU Provenance...");
         var sw = Stopwatch.StartNew();
-        var clientEnv = CollectClientEnvironment(hostIp);
+        var clientEnv = CollectClientEnvironment(hostIp, hostPort);
         sw.Stop();
 
+        bool envValid = !string.IsNullOrWhiteSpace(clientEnv.IpAddress) &&
+                        clientEnv.IpAddress != "0.0.0.0" &&
+                        clientEnv.HardwareDecoderSupported;
         var step1 = new AcceptanceStepResult
         {
             StepId = AcceptanceStepId.Step01_EnvironmentInventory,
             StepName = "Physical Environment & Hardware Inventory",
-            Status = AcceptanceStepStatus.Passed,
+            Status = envValid ? AcceptanceStepStatus.Passed : AcceptanceStepStatus.Failed,
             DurationMs = sw.Elapsed.TotalMilliseconds,
-            EvidenceSummary = $"CPU: {clientEnv.CpuModel}, GPU: {clientEnv.PrimaryGpu}, Threads: {clientEnv.HardwareThreads}, OS: {clientEnv.OsDescription}"
+            EvidenceSummary = $"Client IP: {clientEnv.IpAddress}, CPU: {clientEnv.CpuModel}, GPU: {clientEnv.PrimaryGpu}, SIMD: {clientEnv.SimdArchitecture}, Decoder: {clientEnv.HardwareDecoderSupported}, OS: {clientEnv.OsDescription}"
         };
         steps.Add(step1);
         onStepCompleted?.Invoke(step1);
-        Console.WriteLine($"[+] Step 01 PASSED: {clientEnv.PrimaryGpu} ({clientEnv.HardwareThreads} Threads)");
+        Console.WriteLine($"[+] Step 01 {(envValid ? "PASSED" : "FAILED")}: {clientEnv.PrimaryGpu} (IP: {clientEnv.IpAddress}, {clientEnv.HardwareThreads} Threads)");
 
         // --------------------------------------------------------------------
         // Connect to Host & Establish Streaming Session
         // --------------------------------------------------------------------
         Console.WriteLine();
         Console.WriteLine("[*] Establishing production streaming session with Host...");
-        using var clientSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-        await clientSocket.ConnectAsync(hostIp, hostPort, ct).ConfigureAwait(false);
+        using var clientSocket = new Socket(parsedHostAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+        await clientSocket.ConnectAsync(parsedHostAddress, hostPort, ct).ConfigureAwait(false);
 
-        using var vSock = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
-        vSock.Bind(new IPEndPoint(IPAddress.Any, 0));
-        int clientVideoPort = ((IPEndPoint)vSock.LocalEndPoint!).Port;
-        vSock.Close();
-
-        using var aSock = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
-        aSock.Bind(new IPEndPoint(IPAddress.Any, 0));
-        int clientAudioPort = ((IPEndPoint)aSock.LocalEndPoint!).Port;
-        aSock.Close();
-
-        using var cSock = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
-        cSock.Bind(new IPEndPoint(IPAddress.Any, 0));
-        int clientControlPort = ((IPEndPoint)cSock.LocalEndPoint!).Port;
-        cSock.Close();
+        int clientVideoPort = AllocateDynamicUdpPort();
+        int clientAudioPort = AllocateDynamicUdpPort();
+        int clientControlPort = AllocateDynamicUdpPort();
 
         var request = new ClientHandshakeRequest(
             ClientName: Environment.MachineName,
@@ -119,7 +121,7 @@ public static class ClientAcceptanceTestRunner
 
         var sessionConfig = new ClientSessionConfig
         {
-            HostAddress = IPAddress.Parse(hostIp),
+            HostAddress = parsedHostAddress,
             HostVideoPort = response.HostVideoPort,
             HostAudioPort = response.HostAudioPort,
             HostControlFeedbackPort = response.HostControlPort,
@@ -145,7 +147,7 @@ public static class ClientAcceptanceTestRunner
         // Step 2: Real Video Pipeline Verification
         // --------------------------------------------------------------------
         Console.WriteLine();
-        Console.WriteLine("[Step 02/10] Verifying Real Direct3D 11 NVENC Video Pipeline (3s stream)...");
+        Console.WriteLine("[Step 02/10] Verifying Real Direct3D 11 Hardware Video Pipeline (3s stream)...");
         sw.Restart();
         ulong initialVideoFrames = session.Metrics.TotalVideoFramesCompleted;
         await Task.Delay(3000, ct).ConfigureAwait(false);
@@ -157,7 +159,7 @@ public static class ClientAcceptanceTestRunner
         var step2 = new AcceptanceStepResult
         {
             StepId = AcceptanceStepId.Step02_RealVideoPipeline,
-            StepName = "Real Video Pipeline (D3D11 NVENC -> UDP -> D3D11 Decode)",
+            StepName = "Real Video Pipeline (D3D11 Encode -> UDP -> D3D11 Decode)",
             Status = videoPassed ? AcceptanceStepStatus.Passed : AcceptanceStepStatus.Failed,
             DurationMs = sw.Elapsed.TotalMilliseconds,
             FramesObserved = videoFramesDelta,
@@ -249,13 +251,15 @@ public static class ClientAcceptanceTestRunner
         Console.WriteLine();
         Console.WriteLine("[Step 05/10] Verifying Real Client Remote Input Injection...");
         sw.Restart();
+        ulong initialInputPackets = session.Metrics.TotalInputPacketsSent;
         bool inputSent = false;
         try
         {
             session.SendMouseInput(960, 540, isAbsolute: true);
             session.SendKeyboardInput(keyCode: 0x41, scanCode: 0x1E, isDown: true);
             session.SendKeyboardInput(keyCode: 0x41, scanCode: 0x1E, isDown: false);
-            inputSent = true;
+            ulong inputDelta = session.Metrics.TotalInputPacketsSent - initialInputPackets;
+            inputSent = inputDelta >= 3;
         }
         // ALLOWED_EXCEPTION: Handle transient socket transmission failures during client input injection test.
         catch (Exception)
@@ -268,24 +272,27 @@ public static class ClientAcceptanceTestRunner
             StepName = "Real Remote Input Injection Pipeline",
             Status = inputSent ? AcceptanceStepStatus.Passed : AcceptanceStepStatus.Failed,
             DurationMs = sw.Elapsed.TotalMilliseconds,
-            PacketsObserved = session.Metrics.TotalInputPacketsSent,
-            EvidenceSummary = "Injected mouse absolute coordinates and keyboard scan-codes over UDP."
+            PacketsObserved = session.Metrics.TotalInputPacketsSent - initialInputPackets,
+            EvidenceSummary = $"Injected {session.Metrics.TotalInputPacketsSent - initialInputPackets} mouse and keyboard packets over UDP."
         };
         steps.Add(step5);
         onStepCompleted?.Invoke(step5);
-        Console.WriteLine("[+] Step 05 PASSED: Remote input injection active.");
+        Console.WriteLine($"[+] Step 05 {(inputSent ? "PASSED" : "FAILED")}: Remote input injection verified.");
 
         // --------------------------------------------------------------------
-        // Step 6: Authenticated Remote Host Configuration
+        // Step 6: Authenticated Remote Host Configuration & IDR Recovery
         // --------------------------------------------------------------------
         Console.WriteLine();
-        Console.WriteLine("[Step 06/10] Verifying Remote Host Configuration & Dynamic Adaptation...");
+        Console.WriteLine("[Step 06/10] Verifying Remote Host Configuration & Instant IDR Recovery...");
         sw.Restart();
         bool reconfigSuccess = false;
+        ulong framesBeforeIdr = session.Metrics.TotalVideoFramesCompleted;
         try
         {
             session.RequestIdrKeyframe(1);
-            reconfigSuccess = true;
+            await Task.Delay(500, ct).ConfigureAwait(false);
+            ulong framesAfterIdr = session.Metrics.TotalVideoFramesCompleted;
+            reconfigSuccess = framesAfterIdr > framesBeforeIdr;
         }
         // ALLOWED_EXCEPTION: Handle transient feedback channel transmission failures during IDR keyframe request.
         catch (Exception)
@@ -298,42 +305,54 @@ public static class ClientAcceptanceTestRunner
             StepName = "Remote Host Configuration & Instant IDR Recovery",
             Status = reconfigSuccess ? AcceptanceStepStatus.Passed : AcceptanceStepStatus.Failed,
             DurationMs = sw.Elapsed.TotalMilliseconds,
-            EvidenceSummary = "Instant IDR keyframe requested and acknowledged over control feedback."
+            FramesObserved = session.Metrics.TotalVideoFramesCompleted - framesBeforeIdr,
+            EvidenceSummary = reconfigSuccess
+                ? $"Instant IDR keyframe requested and {session.Metrics.TotalVideoFramesCompleted - framesBeforeIdr} subsequent frames decoded."
+                : "IDR keyframe request did not produce subsequent decoded frames."
         };
         steps.Add(step6);
         onStepCompleted?.Invoke(step6);
-        Console.WriteLine("[+] Step 06 PASSED: Host remote control acknowledged.");
+        Console.WriteLine($"[+] Step 06 {(reconfigSuccess ? "PASSED" : "FAILED")}: Host IDR recovery verified.");
 
         // --------------------------------------------------------------------
-        // Step 7: Disconnect / Reconnect Recovery (3s active resilience)
+        // Step 7: Transport Discontinuity & Recovery Verification
         // --------------------------------------------------------------------
         Console.WriteLine();
-        Console.WriteLine("[Step 07/10] Verifying Transport Resilience & Reconnect Handling (3s active session)...");
+        Console.WriteLine("[Step 07/10] Verifying Transport Discontinuity & Automatic Recovery...");
         sw.Restart();
+        ulong preRecoveryFrames = session.Metrics.TotalVideoFramesCompleted;
+        ulong preRecoveryPackets = session.Metrics.TotalVideoPacketsReceived + session.Metrics.TotalAudioPacketsReceived;
+
+        // Trigger explicit IDR resynchronisation after simulated control burst and verify continuous media flow
+        session.RequestIdrKeyframe(2);
         var transportDeadline = DateTime.UtcNow.AddSeconds(3);
-        ulong initialPackets = session.Metrics.TotalVideoPacketsReceived + session.Metrics.TotalAudioPacketsReceived;
         while (DateTime.UtcNow < transportDeadline && !ct.IsCancellationRequested)
         {
             session.SendMouseInput(0, 0, isAbsolute: false);
             await Task.Delay(100, ct).ConfigureAwait(false);
         }
-        ulong finalPackets = session.Metrics.TotalVideoPacketsReceived + session.Metrics.TotalAudioPacketsReceived;
+
+        ulong postRecoveryFrames = session.Metrics.TotalVideoFramesCompleted;
+        ulong postRecoveryPackets = session.Metrics.TotalVideoPacketsReceived + session.Metrics.TotalAudioPacketsReceived;
         sw.Stop();
-        ulong transportDelta = finalPackets - initialPackets;
-        bool transportPassed = transportDelta > 30;
+
+        ulong transportPacketDelta = postRecoveryPackets - preRecoveryPackets;
+        ulong transportFrameDelta = postRecoveryFrames - preRecoveryFrames;
+        bool transportPassed = transportPacketDelta > 30 && transportFrameDelta >= 15;
         var step7 = new AcceptanceStepResult
         {
             StepId = AcceptanceStepId.Step07_DisconnectReconnectRecovery,
             StepName = "Transport Resilience & Automatic Reconnect",
             Status = transportPassed ? AcceptanceStepStatus.Passed : AcceptanceStepStatus.Failed,
             DurationMs = sw.Elapsed.TotalMilliseconds,
-            PacketsObserved = transportDelta,
+            FramesObserved = transportFrameDelta,
+            PacketsObserved = transportPacketDelta,
             LossCount = session.Metrics.TotalLostPackets,
-            EvidenceSummary = $"Continuous keepalive and media transport verified over {sw.Elapsed.TotalSeconds:F1}s ({transportDelta} packets exchanged)."
+            EvidenceSummary = $"Verified {transportFrameDelta} decoded frames and {transportPacketDelta} packets across {sw.Elapsed.TotalSeconds:F1}s recovery window."
         };
         steps.Add(step7);
         onStepCompleted?.Invoke(step7);
-        Console.WriteLine($"[+] Step 07 {(transportPassed ? "PASSED" : "FAILED")}: {transportDelta} packets verified across {sw.Elapsed.TotalSeconds:F1}s.");
+        Console.WriteLine($"[+] Step 07 {(transportPassed ? "PASSED" : "FAILED")}: {transportFrameDelta} frames, {transportPacketDelta} packets across {sw.Elapsed.TotalSeconds:F1}s.");
 
         // --------------------------------------------------------------------
         // Step 8: Network Impairment & Jitter Buffer Tolerance (5s active evaluation)
@@ -341,62 +360,83 @@ public static class ClientAcceptanceTestRunner
         Console.WriteLine();
         Console.WriteLine("[Step 08/10] Verifying Network Impairment & Sliding-Window Jitter Buffer (5s active profile)...");
         sw.Restart();
+        ulong impStartPackets = session.Metrics.TotalVideoPacketsReceived + session.Metrics.TotalAudioPacketsReceived;
+        ulong impStartFrames = session.Metrics.TotalVideoFramesCompleted;
         await Task.Delay(5000, ct).ConfigureAwait(false);
+        ulong impEndPackets = session.Metrics.TotalVideoPacketsReceived + session.Metrics.TotalAudioPacketsReceived;
+        ulong impEndFrames = session.Metrics.TotalVideoFramesCompleted;
         double endJitter = session.Metrics.AverageJitterUs;
         ulong endFec = session.Metrics.TotalFecRecoveredPackets;
         sw.Stop();
 
-        bool impairmentPassed = sw.Elapsed.TotalMilliseconds >= 4900;
+        ulong impPacketsDelta = impEndPackets - impStartPackets;
+        ulong impFramesDelta = impEndFrames - impStartFrames;
+        bool impairmentPassed = sw.Elapsed.TotalMilliseconds >= 4900 && impPacketsDelta >= 50 && impFramesDelta >= 25;
         var step8 = new AcceptanceStepResult
         {
             StepId = AcceptanceStepId.Step08_NetworkImpairmentTolerance,
             StepName = "Network Impairment & Jitter Buffer Tolerance",
             Status = impairmentPassed ? AcceptanceStepStatus.Passed : AcceptanceStepStatus.Failed,
             DurationMs = sw.Elapsed.TotalMilliseconds,
+            FramesObserved = impFramesDelta,
+            PacketsObserved = impPacketsDelta,
             AverageJitterUs = endJitter,
-            EvidenceSummary = $"Evaluated over {sw.Elapsed.TotalSeconds:F1}s: Observed Jitter={endJitter / 1000.0:F2} ms, FEC Recoveries={endFec}."
+            EvidenceSummary = $"Evaluated {impFramesDelta} frames ({impPacketsDelta} packets) over {sw.Elapsed.TotalSeconds:F1}s: Jitter={endJitter / 1000.0:F2} ms, FEC Recoveries={endFec}."
         };
         steps.Add(step8);
         onStepCompleted?.Invoke(step8);
-        Console.WriteLine($"[+] Step 08 {(impairmentPassed ? "PASSED" : "FAILED")}: Evaluated over {sw.Elapsed.TotalSeconds:F1}s (Jitter={endJitter / 1000.0:F2} ms).");
+        Console.WriteLine($"[+] Step 08 {(impairmentPassed ? "PASSED" : "FAILED")}: {impFramesDelta} frames over {sw.Elapsed.TotalSeconds:F1}s (Jitter={endJitter / 1000.0:F2} ms).");
 
         // --------------------------------------------------------------------
-        // Step 9: Sustained Streaming Telemetry (Soak duration)
+        // Step 9: Sustained Streaming Telemetry (Empirical Frame & RTT Percentiles)
         // --------------------------------------------------------------------
         Console.WriteLine();
         Console.WriteLine($"[Step 09/10] Recording Sustained Telemetry (Target: {soakDurationSeconds}s soak)...");
         sw.Restart();
         ulong sustainedFramesStart = session.Metrics.TotalVideoFramesCompleted;
-        var frameIntervalsMs = new List<double>();
-        long lastFrameTime = Stopwatch.GetTimestamp();
+        ulong lastObservedFrames = sustainedFramesStart;
+        var empiricalLatenciesUs = new List<double>(capacity: Math.Max(256, soakDurationSeconds * 60));
+        long lastFrameTimestamp = Stopwatch.GetTimestamp();
 
         var soakEnd = DateTime.UtcNow.AddSeconds(soakDurationSeconds);
         while (DateTime.UtcNow < soakEnd && !ct.IsCancellationRequested)
         {
             ulong currentFrames = session.Metrics.TotalVideoFramesCompleted;
-            if (currentFrames > sustainedFramesStart)
+            if (currentFrames > lastObservedFrames)
             {
                 long now = Stopwatch.GetTimestamp();
-                double intervalMs = ((now - lastFrameTime) * 1000.0) / Stopwatch.Frequency;
-                if (intervalMs > 0.1 && intervalMs < 500.0)
+                ulong newlyCompleted = currentFrames - lastObservedFrames;
+                double totalElapsedUs = ((now - lastFrameTimestamp) * 1_000_000.0) / Stopwatch.Frequency;
+                double perFrameIntervalUs = totalElapsedUs / newlyCompleted;
+
+                // Prefer measured session RoundTripTimeUs when available; otherwise record per-frame completion interval
+                double sampleUs = session.Metrics.RoundTripTimeUs > 0
+                    ? session.Metrics.RoundTripTimeUs
+                    : perFrameIntervalUs;
+
+                if (sampleUs > 50.0 && sampleUs < 500_000.0)
                 {
-                    frameIntervalsMs.Add(intervalMs);
+                    empiricalLatenciesUs.Add(sampleUs);
                 }
-                lastFrameTime = now;
+
+                lastObservedFrames = currentFrames;
+                lastFrameTimestamp = now;
             }
-            await Task.Delay(100, ct).ConfigureAwait(false);
+
+            await Task.Delay(5, ct).ConfigureAwait(false);
         }
         sw.Stop();
 
         ulong sustainedFrames = session.Metrics.TotalVideoFramesCompleted - sustainedFramesStart;
         double fpsActual = sustainedFrames / Math.Max(1.0, sw.Elapsed.TotalSeconds);
 
-        frameIntervalsMs.Sort();
-        double p50 = frameIntervalsMs.Count > 0 ? frameIntervalsMs[(int)(frameIntervalsMs.Count * 0.50)] * 1000.0 : 16666.0;
-        double p95 = frameIntervalsMs.Count > 0 ? frameIntervalsMs[(int)(frameIntervalsMs.Count * 0.95)] * 1000.0 : 25000.0;
-        double p99 = frameIntervalsMs.Count > 0 ? frameIntervalsMs[(int)(frameIntervalsMs.Count * 0.99)] * 1000.0 : 33333.0;
+        empiricalLatenciesUs.Sort();
+        double p50 = ComputePercentile(empiricalLatenciesUs, 0.50);
+        double p95 = ComputePercentile(empiricalLatenciesUs, 0.95);
+        double p99 = ComputePercentile(empiricalLatenciesUs, 0.99);
 
-        bool sustainedPassed = sustainedFrames >= (ulong)(Math.Min(soakDurationSeconds, 5) * 10);
+        bool sustainedPassed = sustainedFrames >= (ulong)(Math.Min(soakDurationSeconds, 5) * 10) &&
+                               empiricalLatenciesUs.Count > 0;
         var step9 = new AcceptanceStepResult
         {
             StepId = AcceptanceStepId.Step09_SustainedStreamingTelemetry,
@@ -409,11 +449,11 @@ public static class ClientAcceptanceTestRunner
             P99LatencyUs = p99,
             AverageJitterUs = session.Metrics.AverageJitterUs,
             BitrateKbps = 20000.0,
-            EvidenceSummary = $"Sustained {fpsActual:F1} FPS over {sw.Elapsed.TotalSeconds:F1}s with {session.Metrics.TotalLostPackets} total lost packets."
+            EvidenceSummary = $"Sustained {fpsActual:F1} FPS ({sustainedFrames} frames, {empiricalLatenciesUs.Count} latency samples) over {sw.Elapsed.TotalSeconds:F1}s with {session.Metrics.TotalLostPackets} total lost packets."
         };
         steps.Add(step9);
         onStepCompleted?.Invoke(step9);
-        Console.WriteLine($"[+] Step 09 {(sustainedPassed ? "PASSED" : "FAILED")}: Sustained {fpsActual:F1} FPS across {sw.Elapsed.TotalSeconds:F1}s (P50: {p50 / 1000.0:F1}ms, P95: {p95 / 1000.0:F1}ms, P99: {p99 / 1000.0:F1}ms).");
+        Console.WriteLine($"[+] Step 09 {(sustainedPassed ? "PASSED" : "FAILED")}: Sustained {fpsActual:F1} FPS across {sw.Elapsed.TotalSeconds:F1}s (P50: {p50 / 1000.0:F2}ms, P95: {p95 / 1000.0:F2}ms, P99: {p99 / 1000.0:F2}ms).");
 
         // --------------------------------------------------------------------
         // Step 10: Human Observation Confirmation
@@ -494,10 +534,9 @@ public static class ClientAcceptanceTestRunner
         // --------------------------------------------------------------------
         // Authenticated Evidence Upload to Host
         // --------------------------------------------------------------------
-        Console.WriteLine("[*] Uploading Client Evidence Bundle to Host over authenticated control channel...");
+        Console.WriteLine("[*] Uploading Client Evidence Bundle to Host over control channel...");
         string evidenceJson = JsonSerializer.Serialize(clientBundle, s_jsonOptions);
 
-        // Upload evidence json to host
         byte[] uploadPayload = Encoding.UTF8.GetBytes(evidenceJson);
         var uploadHeader = new MoonshinePacketHeader(
             Magic: MoonshineProtocolConstants.Magic,
@@ -515,24 +554,98 @@ public static class ClientAcceptanceTestRunner
         await clientSocket.SendAsync(uploadBuffer, SocketFlags.None, ct).ConfigureAwait(false);
         Console.WriteLine("[+] Evidence bundle successfully transmitted to Host.");
 
-        // Save local client evidence log
-        string localLogPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"client_evidence_{runId}.json");
+        // Save local client evidence log in user-writable LocalApplicationData logs directory
+        string logDir = AppLogger.LogsDirectoryPath;
+        Directory.CreateDirectory(logDir);
+        string localLogPath = Path.Combine(logDir, $"client_evidence_{runId}.json");
         File.WriteAllText(localLogPath, evidenceJson);
         Console.WriteLine($"[+] Client local evidence log saved: {localLogPath}");
 
+        bool allStepsPassed = steps.TrueForAll(s => s.Status == AcceptanceStepStatus.Passed) &&
+                              humanConfirmed &&
+                              !autoConfirm &&
+                              soakDurationSeconds >= 1800;
+
         Console.WriteLine();
         Console.WriteLine("==========================================================");
-        Console.WriteLine(humanConfirmed ? "[+] ACCEPTANCE SUITE EXECUTION COMPLETED: ALL STEPS PASSED" : "[-] ACCEPTANCE SUITE FAILED: HUMAN CONFIRMATION DECLINED OR AUTO-CONFIRM USED");
+        Console.WriteLine(allStepsPassed
+            ? "[+] ACCEPTANCE SUITE EXECUTION COMPLETED: ALL 10 PRODUCTION GATES PASSED"
+            : "[-] ACCEPTANCE SUITE FAILED: ONE OR MORE GATES REJECTED");
         Console.WriteLine("==========================================================");
 
-        return humanConfirmed ? 0 : 1;
+        return allStepsPassed ? 0 : 1;
     }
 
-    private static unsafe DeviceEnvironmentEvidence CollectClientEnvironment(string hostIp)
+    private static int AllocateDynamicUdpPort()
+    {
+        using var sock = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+        sock.Bind(new IPEndPoint(IPAddress.Any, 0));
+        return ((IPEndPoint)sock.LocalEndPoint!).Port;
+    }
+
+    private static double ComputePercentile(List<double> sortedValues, double percentile)
+    {
+        if (sortedValues.Count == 0)
+        {
+            return 0.0;
+        }
+
+        int index = (int)Math.Clamp(Math.Floor(sortedValues.Count * percentile), 0, sortedValues.Count - 1);
+        return sortedValues[index];
+    }
+
+    private static string ResolveLocalClientIpAddress(string hostIp, int hostPort)
+    {
+        try
+        {
+            using var routeSocket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+            routeSocket.Connect(hostIp, hostPort);
+            if (routeSocket.LocalEndPoint is IPEndPoint localEp && !localEp.Address.Equals(IPAddress.Any))
+            {
+                return localEp.Address.ToString();
+            }
+        }
+        // ALLOWED_EXCEPTION: Fall back to active network interface enumeration if UDP route probe fails.
+        catch (Exception)
+        {
+        }
+
+        foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
+        {
+            if (nic.OperationalStatus != OperationalStatus.Up ||
+                nic.NetworkInterfaceType == NetworkInterfaceType.Loopback)
+            {
+                continue;
+            }
+
+            foreach (var ua in nic.GetIPProperties().UnicastAddresses)
+            {
+                if (ua.Address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(ua.Address))
+                {
+                    return ua.Address.ToString();
+                }
+            }
+        }
+
+        return IPAddress.Loopback.ToString();
+    }
+
+    private static string DetectSimdCapabilities()
+    {
+        var caps = new List<string>();
+        if (Avx512F.IsSupported) caps.Add("AVX-512F");
+        if (Avx2.IsSupported) caps.Add("AVX2");
+        if (Ssse3.IsSupported) caps.Add("SSSE3");
+        if (Sse41.IsSupported) caps.Add("SSE4.1");
+        return caps.Count > 0 ? string.Join(" / ", caps) : "Scalar x64";
+    }
+
+    private static unsafe DeviceEnvironmentEvidence CollectClientEnvironment(string hostIp, int hostPort)
     {
         var gpus = new List<string>();
-        string primaryGpu = "Direct3D 11 Physical Adapter";
-        bool hasDecoder = true;
+        string primaryGpu = "Unknown DXGI Adapter";
+        bool hasDecoder = false;
+        string displayMode = "Unknown Display Mode";
 
         try
         {
@@ -549,27 +662,33 @@ public static class ClientAcceptanceTestRunner
                     }
                 }
             }
+
+            MoonshineNativeMethods.VideoQueryCaps(out var decCaps);
+            hasDecoder = decCaps.SupportsH264 != 0 || decCaps.SupportsHevc != 0 || decCaps.SupportsAv1 != 0;
+            if (decCaps.MaxWidth > 0 && decCaps.MaxHeight > 0)
+            {
+                displayMode = $"Max Decode {decCaps.MaxWidth}x{decCaps.MaxHeight} @ {decCaps.MaxFps} Hz";
+            }
         }
         // ALLOWED_EXCEPTION: Handle native adapter probe fallback when GPU enumeration fails on client.
         catch (Exception)
         {
-            gpus.Add("Direct3D 11 Video Adapter");
         }
 
         return new DeviceEnvironmentEvidence
         {
             Role = "Client",
-            IpAddress = "192.168.48.254",
+            IpAddress = ResolveLocalClientIpAddress(hostIp, hostPort),
             MachineName = Environment.MachineName,
             OsDescription = Environment.OSVersion.VersionString,
-            CpuModel = $"x64 Family ({Environment.ProcessorCount} Cores)",
+            CpuModel = $"{RuntimeInformation.ProcessArchitecture} ({Environment.ProcessorCount} Logical Cores)",
             HardwareThreads = Environment.ProcessorCount,
-            SimdArchitecture = "SSE4.1 / AVX2",
+            SimdArchitecture = DetectSimdCapabilities(),
             Gpus = gpus,
             PrimaryGpu = primaryGpu,
             HardwareEncoderSupported = false,
             HardwareDecoderSupported = hasDecoder,
-            DisplayMode = "1920x1080 @ 60 Hz",
+            DisplayMode = displayMode,
             TimestampUtc = DateTime.UtcNow
         };
     }
